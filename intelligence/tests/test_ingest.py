@@ -1,0 +1,305 @@
+"""Connector output into the database, end to end.
+
+These run against real Postgres because the properties under test are database
+properties: idempotency on a natural key, foreign keys that actually resolve,
+and nulls that survive as unknown rather than becoming zeros.
+"""
+
+from __future__ import annotations
+
+import datetime
+from collections.abc import Iterator
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from api.genesis_api.db import engine
+from api.genesis_api.models import Brand, IngestionFailure, Offer, OfferSize, Product
+from api.genesis_api.models.enums import Category, ColorFamily, SizeSystem
+from intelligence.catalog.connectors.affiliate_feed import (
+    RAKUTEN_COLUMNS,
+    AffiliateFeedConnector,
+)
+from intelligence.catalog.connectors.shopify import ShopifyConnector
+from intelligence.catalog.ingest import ingest, offer_id_for, product_id_for, slugify
+from intelligence.catalog.money import FxRates
+
+RATES = FxRates(
+    as_of=datetime.datetime(2026, 9, 3, tzinfo=datetime.UTC),
+    usd_per_unit={"EUR": Decimal("1.09"), "GBP": Decimal("1.27")},
+)
+
+
+@pytest.fixture
+def session() -> Iterator[Session]:
+    connection = engine().connect()
+    transaction = connection.begin()
+    sess = Session(bind=connection, expire_on_commit=False)
+    try:
+        yield sess
+    finally:
+        sess.close()
+        transaction.rollback()
+        connection.close()
+
+
+SHOPIFY_RECORDS = [
+    {
+        "id": "gid://shopify/Product/1",
+        "title": "Silk Shirt Dress",
+        "vendor": "Ganni",
+        "productType": "Dresses",
+        "tags": ["womens", "midi", "v-neck"],
+        "currencyCode": "EUR",
+        "colorHex": "#1a2b5e",
+        "onlineStoreUrl": "https://ganni.com/p/1",
+        "images": [{"url": "https://cdn/1.jpg", "width": 1200, "height": 1600}],
+        "variants": [
+            {"title": "EU 36", "price": "295.00", "availableForSale": True},
+            {"title": "EU 38", "price": "295.00", "availableForSale": False},
+        ],
+        "sizeSystem": "eu",
+    },
+    {
+        "id": "gid://shopify/Product/2",
+        "title": "Oversized Wool Coat",
+        "vendor": "Toteme",
+        "productType": "Coats",
+        "tags": ["womens"],
+        "currencyCode": "EUR",
+        "onlineStoreUrl": "https://toteme.com/p/2",
+        "variants": [{"title": "S", "price": "890.00", "availableForSale": True}],
+    },
+]
+
+FEED_ROWS = [
+    {
+        "sku": "NAP-1",
+        "productname": "Toteme High-Rise Wide Leg Jeans",
+        "brand": "Toteme",
+        "primarycategory": "Womens Denim",
+        "price": "290.00",
+        "saleprice": "245.00",
+        "currency": "GBP",
+        "linkurl": "https://nap.com/1",
+        "imageurl": "https://i/1.jpg",
+        "color": "Indigo",
+        "color_hex": "#2c3e6b",
+        "size": "XS,S,M",
+        "instock": "in stock",
+    }
+]
+
+
+def _shopify() -> ShopifyConnector:
+    return ShopifyConnector(rates=RATES, store_name="Ganni Store")
+
+
+def _feed() -> AffiliateFeedConnector:
+    return AffiliateFeedConnector(
+        source="rakuten-test", retailer_name="Net-a-Porter", rates=RATES, columns=RAKUTEN_COLUMNS
+    )
+
+
+def test_a_run_writes_products_offers_images_and_sizes(session: Session) -> None:
+    report = ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+
+    assert report.products_written == 2
+    assert report.offers_written == 2
+    assert report.images_written == 1
+    assert report.sizes_written == 3
+    assert report.brands_resolved == 2
+    assert report.retailers_resolved == 1
+    assert report.quarantined == 0
+
+
+def test_canonical_values_land_on_the_row(session: Session) -> None:
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    product_id = product_id_for(session, "shopify", "gid://shopify/Product/1")
+    assert product_id is not None
+
+    row = session.execute(
+        select(
+            Product.__table__.c.title,
+            Product.__table__.c.category,
+            Product.__table__.c.color_hex,
+            Product.__table__.c.color_family,
+            Product.__table__.c.garment_length,
+        ).where(Product.__table__.c.id == product_id)
+    ).one()
+    assert row.title == "Silk Shirt Dress"
+    assert row.category is Category.dress, "shirt dress is a dress, not a shirt"
+    assert row.color_hex == "#1a2b5e"
+    assert row.color_family is ColorFamily.navy, "family is derived from the hex"
+
+
+def test_a_currency_price_is_converted_and_the_source_amount_is_kept(
+    session: Session,
+) -> None:
+    """The listed amount and currency are the facts; the USD value is derived and
+    carries the rate that produced it."""
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    offer_id = offer_id_for(session, "shopify", "gid://shopify/Product/1@Ganni Store")
+    row = session.execute(
+        select(
+            Offer.__table__.c.price_amount_minor,
+            Offer.__table__.c.currency,
+            Offer.__table__.c.price_usd_cents,
+            Offer.__table__.c.fx_rate_at,
+        ).where(Offer.__table__.c.id == offer_id)
+    ).one()
+    assert row.price_amount_minor == 29500
+    assert row.currency == "EUR"
+    assert row.price_usd_cents == 32155
+    assert row.fx_rate_at is not None, "a derived price without its rate cannot be audited"
+
+
+def test_reingesting_the_same_feed_does_not_duplicate(session: Session) -> None:
+    """The property the whole ingestion design rests on."""
+    connector = _shopify()
+    ingest(session, connector.normalize(SHOPIFY_RECORDS))
+    first = session.execute(
+        select(func.count())
+        .select_from(Product.__table__)
+        .where(Product.__table__.c.source == "shopify")
+    ).scalar_one()
+
+    ingest(session, connector.normalize(SHOPIFY_RECORDS))
+    second = session.execute(
+        select(func.count())
+        .select_from(Product.__table__)
+        .where(Product.__table__.c.source == "shopify")
+    ).scalar_one()
+
+    assert first == second == 2
+
+
+def test_a_changed_price_updates_in_place(session: Session) -> None:
+    connector = _shopify()
+    ingest(session, connector.normalize(SHOPIFY_RECORDS))
+
+    marked_down = [dict(record) for record in SHOPIFY_RECORDS]
+    marked_down[0] = {
+        **marked_down[0],
+        "variants": [{"title": "EU 36", "price": "195.00", "availableForSale": True}],
+    }
+    ingest(session, connector.normalize(marked_down))
+
+    offer_id = offer_id_for(session, "shopify", "gid://shopify/Product/1@Ganni Store")
+    price = session.execute(
+        select(Offer.__table__.c.price_amount_minor).where(Offer.__table__.c.id == offer_id)
+    ).scalar_one()
+    assert price == 19500, "the latest write wins"
+
+
+def test_two_sources_converge_on_one_brand(session: Session) -> None:
+    """Toteme arrives from Shopify and from an affiliate feed; it is one brand."""
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    ingest(session, _feed().normalize(FEED_ROWS))
+
+    count = session.execute(
+        select(func.count())
+        .select_from(Brand.__table__)
+        .where(Brand.__table__.c.slug == slugify("Toteme"))
+    ).scalar_one()
+    assert count == 1
+
+
+def test_unknown_availability_stays_null_rather_than_false(session: Session) -> None:
+    """Null means unknown. A feed that omits availability is not asserting a
+    stock-out, and treating it as one would hide half the catalog."""
+    rows = [{**FEED_ROWS[0], "sku": "NAP-NOSTOCK", "instock": ""}]
+    ingest(session, _feed().normalize(rows))
+    offer_id = offer_id_for(session, "rakuten-test", "NAP-NOSTOCK")
+    in_stock = session.execute(
+        select(Offer.__table__.c.in_stock).where(Offer.__table__.c.id == offer_id)
+    ).scalar_one()
+    assert in_stock is None
+
+
+def test_a_sale_price_below_list_is_recorded_and_one_at_list_is_not(
+    session: Session,
+) -> None:
+    """Feeds repeat the list price in the sale column constantly; recording that
+    as a markdown would badge the whole catalog as discounted."""
+    rows = [
+        {**FEED_ROWS[0], "sku": "NAP-SALE", "price": "290.00", "saleprice": "245.00"},
+        {**FEED_ROWS[0], "sku": "NAP-NOSALE", "price": "290.00", "saleprice": "290.00"},
+    ]
+    ingest(session, _feed().normalize(rows))
+    with_sale = session.execute(
+        select(Offer.__table__.c.sale_price_amount_minor).where(
+            Offer.__table__.c.source_id == "NAP-SALE"
+        )
+    ).scalar_one()
+    without = session.execute(
+        select(Offer.__table__.c.sale_price_amount_minor).where(
+            Offer.__table__.c.source_id == "NAP-NOSALE"
+        )
+    ).scalar_one()
+    assert with_sale == 24500
+    assert without is None
+
+
+def test_bad_records_are_quarantined_with_their_payload(session: Session) -> None:
+    """A record that fails validation is kept with its error, not dropped."""
+    rows = [
+        {"sku": "", "productname": "no id"},
+        {"sku": "NAP-NOPRICE", "productname": "Missing Price", "currency": "GBP"},
+    ]
+    report = ingest(session, _feed().normalize(rows))
+    assert report.quarantined == 2
+    assert report.products_written == 0
+
+    failures = session.execute(
+        select(IngestionFailure.__table__.c.stage, IngestionFailure.__table__.c.error).where(
+            IngestionFailure.__table__.c.source == "rakuten-test"
+        )
+    ).all()
+    stages = {row.stage for row in failures}
+    assert stages == {"identify", "normalize"}
+    assert any("no price" in row.error for row in failures)
+
+
+def test_per_size_availability_survives_ingestion(session: Session) -> None:
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    offer_id = offer_id_for(session, "shopify", "gid://shopify/Product/1@Ganni Store")
+    sizes = session.execute(
+        select(OfferSize.__table__.c.size_value, OfferSize.__table__.c.in_stock)
+        .where(OfferSize.__table__.c.offer_id == offer_id)
+        .order_by(OfferSize.__table__.c.size_value)
+    ).all()
+    assert [(row.size_value, row.in_stock) for row in sizes] == [("36", True), ("38", False)]
+
+
+def test_size_system_is_recorded_not_guessed(session: Session) -> None:
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    offer_id = offer_id_for(session, "shopify", "gid://shopify/Product/1@Ganni Store")
+    systems = (
+        session.execute(
+            select(OfferSize.__table__.c.size_system).where(
+                OfferSize.__table__.c.offer_id == offer_id
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert set(systems) == {SizeSystem.eu}
+
+
+def test_both_connectors_produce_the_same_canonical_shape(session: Session) -> None:
+    """The boundary's whole claim: two sources with nothing structurally in
+    common land on identical row shapes."""
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    ingest(session, _feed().normalize(FEED_ROWS))
+
+    rows = session.execute(
+        select(Product.__table__.c.source, Product.__table__.c.category).where(
+            Product.__table__.c.source.in_(["shopify", "rakuten-test"])
+        )
+    ).all()
+    by_source = {row.source for row in rows}
+    assert by_source == {"shopify", "rakuten-test"}
+    assert all(row.category is not None for row in rows)

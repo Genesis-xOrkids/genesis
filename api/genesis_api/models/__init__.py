@@ -16,6 +16,7 @@ from api.genesis_api.models.catalog import (
     ProductImage,
     ProductMaterial,
 )
+from api.genesis_api.models.ingestion import IngestionFailure
 from api.genesis_api.models.taxonomy import Brand, Retailer, TaxonomyValue
 from api.genesis_api.models.user import (
     StyleProfile,
@@ -36,6 +37,7 @@ __all__ = [
     "BrandCode",
     "BrandTenant",
     "IdMixin",
+    "IngestionFailure",
     "Offer",
     "OfferSize",
     "Product",
