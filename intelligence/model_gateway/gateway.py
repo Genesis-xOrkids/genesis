@@ -22,7 +22,7 @@ import enum
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import structlog
 
@@ -32,8 +32,20 @@ log = structlog.get_logger(__name__)
 
 
 class Platform(enum.Enum):
-    """Where a call is served. Selected per tenant, not per call site."""
+    """Where a call is served. Selected per tenant, not per call site.
 
+    ``anthropic_api`` is the first-party API: no AWS account in the path, billed
+    on prepaid credits with a spend limit set in Anthropic's console. It is the
+    right default while the product is in testing, because it removes a cloud
+    dependency from something that has no other reason to need one.
+
+    The other two exist for customers rather than for us. ``claude_platform_aws``
+    bills through AWS Marketplace while keeping full API parity;
+    ``bedrock_mantle`` puts AWS in the position of sole data processor, which
+    some enterprise security reviews require.
+    """
+
+    anthropic_api = "anthropic_api"
     claude_platform_aws = "claude_platform_aws"
     bedrock_mantle = "bedrock_mantle"
 
@@ -149,6 +161,38 @@ def model_id_for(platform: Platform, model: str) -> str:
     if platform is Platform.bedrock_mantle:
         return f"anthropic.{bare}"
     return bare
+
+
+def build_client(platform: Platform, *, aws_region: str | None = None) -> AnthropicClient:
+    """Construct the SDK client for one platform.
+
+    The only place in the codebase that imports the Anthropic SDK's client
+    classes. Callers name a platform and get a client; nothing else needs to know
+    that the three differ in construction, authentication, or billing.
+
+    Credentials are resolved by the SDK from the environment rather than passed
+    in, so no key is ever held in application code or a settings object.
+    """
+    import anthropic
+
+    if platform is Platform.anthropic_api:
+        # Resolves ANTHROPIC_API_KEY, or an `ant auth login` profile.
+        return cast(AnthropicClient, anthropic.Anthropic())
+
+    if platform is Platform.claude_platform_aws:
+        # Region and workspace come from AWS_REGION and
+        # ANTHROPIC_AWS_WORKSPACE_ID; both are required and the client raises at
+        # construction if either is missing, which is the right time to find out.
+        return cast(AnthropicClient, anthropic.AnthropicAWS())
+
+    if platform is Platform.bedrock_mantle:
+        if not aws_region:
+            raise ModelGatewayError(
+                "bedrock_mantle needs an AWS region; pass aws_region or set AWS_REGION"
+            )
+        return cast(AnthropicClient, anthropic.AnthropicBedrockMantle(aws_region=aws_region))
+
+    raise ModelGatewayError(f"no client for platform {platform!r}")
 
 
 def build_request(

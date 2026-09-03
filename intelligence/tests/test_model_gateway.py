@@ -16,10 +16,12 @@ import pytest
 
 from intelligence.model_gateway import (
     ModelGateway,
+    ModelGatewayError,
     Platform,
     RefusalError,
     Route,
     UnknownModelError,
+    build_client,
     build_request,
     cost_usd,
     model_id_for,
@@ -142,12 +144,65 @@ def test_cache_breakpoint_can_be_disabled_for_volatile_prompts() -> None:
 @pytest.mark.parametrize(
     ("platform", "expected"),
     [
+        (Platform.anthropic_api, "claude-opus-5"),
         (Platform.claude_platform_aws, "claude-opus-5"),
         (Platform.bedrock_mantle, "anthropic.claude-opus-5"),
     ],
 )
 def test_model_ids_are_translated_per_platform(platform: Platform, expected: str) -> None:
     assert model_id_for(platform, "claude-opus-5") == expected
+
+
+def test_every_platform_builds_an_identical_request_body() -> None:
+    """Platform is a deployment choice, not a behavioural one.
+
+    If the request differed by platform, an enterprise tenant on Bedrock would
+    be getting a subtly different product from everyone else, and the bugs would
+    only appear for the customer hardest to debug against.
+    """
+    kwargs: dict[str, Any] = {
+        "route": Route.synthesis,
+        "system": "shared prompt",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    bodies = {}
+    for platform in Platform:
+        request = build_request(platform=platform, **kwargs)
+        request.pop("model")
+        bodies[platform] = request
+    assert len({repr(body) for body in bodies.values()}) == 1
+
+
+def test_the_first_party_client_needs_no_cloud_account() -> None:
+    """The point of this platform: nothing in the path but an API key."""
+    monkey = pytest.MonkeyPatch()
+    monkey.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkey.delenv("AWS_REGION", raising=False)
+    monkey.delenv("ANTHROPIC_AWS_WORKSPACE_ID", raising=False)
+    try:
+        client = build_client(Platform.anthropic_api)
+        assert type(client).__name__ == "Anthropic"
+    finally:
+        monkey.undo()
+
+
+def test_bedrock_without_a_region_fails_at_construction() -> None:
+    """No silent fallback to a default region: a wrong region is a wrong data
+    residency answer, which is the only reason a tenant chose Bedrock."""
+    monkey = pytest.MonkeyPatch()
+    monkey.delenv("AWS_REGION", raising=False)
+    try:
+        with pytest.raises(ModelGatewayError, match="needs an AWS region"):
+            build_client(Platform.bedrock_mantle)
+    finally:
+        monkey.undo()
+
+
+def test_the_default_platform_is_the_first_party_api() -> None:
+    """Testing and demos should not require a cloud account."""
+    from api.genesis_api.settings import settings
+
+    assert Platform(settings.model_platform) is Platform.anthropic_api
 
 
 def test_the_two_platforms_differ_only_in_the_model_id() -> None:
