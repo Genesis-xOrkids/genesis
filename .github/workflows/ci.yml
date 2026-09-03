@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector, matching Aurora in production. The schema uses native enums,
+        # check constraints, and a vector column; a test run that cannot see
+        # those is testing a different database than the one we deploy to.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: genesis
+          POSTGRES_PASSWORD: genesis
+          POSTGRES_DB: genesis
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U genesis -d genesis"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    env:
+      GENESIS_DATABASE_URL: postgresql+psycopg://genesis:genesis@localhost:5434/genesis
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --extra dev
+
+      - name: Lint
+        run: uv run ruff check api/ intelligence/ scripts/
+
+      - name: Format
+        run: uv run ruff format --check api/ intelligence/ scripts/
+
+      - name: Types
+        run: uv run mypy api/genesis_api intelligence/model_gateway
+
+      - name: Migration chain has exactly one head
+        working-directory: api
+        run: |
+          heads=$(uv run alembic heads | wc -l)
+          test "$heads" -eq 1 || { uv run alembic heads; echo "expected 1 head, found $heads"; exit 1; }
+
+      - name: Chain applies cleanly from empty
+        working-directory: api
+        run: uv run alembic upgrade head
+
+      - name: No model/migration drift
+        working-directory: api
+        run: |
+          uv run alembic revision --autogenerate -m "ci drift probe" >/dev/null
+          probe=$(ls alembic/versions/*_ci_drift_probe.py)
+          body=$(sed -n '/### commands auto generated/,/### end Alembic/p' "$probe" \
+                 | grep -v '###' | grep -v '^\s*pass\s*$' | grep -v '^\s*$' || true)
+          rm -f "$probe"
+          if [ -n "$body" ]; then
+            echo "a model changed without a matching migration, or vice versa:"
+            echo "$body"
+            exit 1
+          fi
+
+      - name: Every definition has a caller
+        run: uv run python scripts/check_orphans.py
+
+      - name: Tests
+        run: uv run pytest -q

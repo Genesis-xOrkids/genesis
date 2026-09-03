@@ -35,11 +35,7 @@ def _decorator_names(node: ast.AST) -> set[str]:
 
 
 def source_files() -> list[pathlib.Path]:
-    return [
-        path
-        for path in pathlib.Path(".").rglob("*.py")
-        if not EXCLUDED_DIRS & set(path.parts)
-    ]
+    return [path for path in pathlib.Path(".").rglob("*.py") if not EXCLUDED_DIRS & set(path.parts)]
 
 
 def main() -> int:
