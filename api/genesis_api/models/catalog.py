@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import (
     Enum as SAEnum,
@@ -70,6 +71,34 @@ class Product(IdMixin, TimestampMixin, Base):
         CheckConstraint(
             "color_hex is null or color_hex ~ '^#[0-9a-f]{6}$'",
             name="color_hex_format",
+        ),
+        # HNSW over cosine distance: the catalog is searched by similarity on
+        # every stylist turn, and a sequential scan over a few million products
+        # is not a search path. Cosine matches how the fashion embedding model
+        # was trained, so the operator class is not interchangeable here.
+        Index(
+            "ix_products_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        # Full-text ranking over title and description. Declared here, not only
+        # in a migration, so the model stays the single schema authority and
+        # autogenerate has something to compare the database against.
+        #
+        # The expression is written in the exact form Postgres reflects back,
+        # including the ::regconfig and ::text casts, because autogenerate
+        # compares these as strings: any other spelling is reported as drift on
+        # every run. It concatenates with || rather than concat_ws, which is only
+        # STABLE and so cannot appear in an index expression, and it is mirrored
+        # character for character by the query in intelligence/catalog/search.py.
+        Index(
+            "ix_products_search_document",
+            text(
+                "to_tsvector('english'::regconfig, "
+                "(title || ' '::text) || COALESCE(description, ''::text))"
+            ),
+            postgresql_using="gin",
         ),
     )
 
