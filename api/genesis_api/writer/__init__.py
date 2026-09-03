@@ -75,9 +75,7 @@ def natural_key_columns(mapper: Mapper[Any]) -> list[str]:
     """
     table = cast(Table, mapper.local_table)
     unique_constraints = [
-        constraint
-        for constraint in table.constraints
-        if isinstance(constraint, UniqueConstraint)
+        constraint for constraint in table.constraints if isinstance(constraint, UniqueConstraint)
     ]
     if len(unique_constraints) == 1:
         return [column.name for column in unique_constraints[0].columns]

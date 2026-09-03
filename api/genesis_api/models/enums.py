@@ -242,33 +242,6 @@ class BrandRelation(enum.Enum):
     avoid = "avoid"
 
 
-class MarketSegment(enum.Enum):
-    """Where a trend observation was seen. Drives cross-segment lead/lag."""
-
-    runway = "runway"
-    designer = "designer"
-    contemporary = "contemporary"
-    instagram_native = "instagram_native"
-    mass = "mass"
-    social = "social"
-    resale = "resale"
-
-
-class OutfitSlotRole(enum.Enum):
-    """The job an item does in an outfit, independent of its category."""
-
-    top = "top"
-    bottom = "bottom"
-    dress = "dress"
-    layer = "layer"
-    outerwear = "outerwear"
-    footwear = "footwear"
-    bag = "bag"
-    belt = "belt"
-    jewelry = "jewelry"
-    accessory = "accessory"
-
-
 class AttributeSource(enum.Enum):
     """Kept distinct from Provenance: this records how an attribute value was
     determined, where Provenance records which system supplied the record."""
