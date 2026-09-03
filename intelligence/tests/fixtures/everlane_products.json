@@ -1,0 +1,1013 @@
+{
+ "products": [
+  {
+   "id": 7994255179862,
+   "title": "Everywhere Pinwale Corduroy Pant | Deep Taupe",
+   "handle": "f-btm-fic-pltcrv-pnt-choc",
+   "body_html": "Our best-selling Everywhere Pant takes a textural turn in fine-wale corduroy. The high-rise, ankle-length barrel leg is shaped with front and back darts, and finished with angled and welt pockets. It's made with 100% organic cotton. Pair it with a fitted knit and loafers for an in-out silhouette.",
+   "vendor": "Everlane",
+   "product_type": "Bottoms",
+   "tags": [
+    "Brown",
+    "category: bottoms",
+    "fabric: corduroy",
+    "female",
+    "Go Live: 09-13-2026",
+    "Healthy Stock",
+    "New",
+    "Product Group: 4145",
+    "Style SKU: F-BTM-FIC-PLTCRV-PNT",
+    "subcategory: pants",
+    "YGroup_4145"
+   ],
+   "variants": [
+    {
+     "id": 45547840208982,
+     "title": "00",
+     "option1": "00",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-CHOC-00",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547840241750,
+     "title": "0",
+     "option1": "0",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-CHOC-0",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547840274518,
+     "title": "2",
+     "option1": "2",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-CHOC-2",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547840307286,
+     "title": "4",
+     "option1": "4",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-CHOC-4",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547840340054,
+     "title": "6",
+     "option1": "6",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-CHOC-6",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547840372822,
+     "title": "8",
+     "option1": "8",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-CHOC-8",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-09-13_F-BTM-FIC-PLTCRV-PNT-CHOC_01.jpg?v=1788326333",
+     "width": 2400,
+     "height": 3000
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-09-13_F-BTM-FIC-PLTCRV-PNT-CHOC_flat.jpg?v=1788326333",
+     "width": 2400,
+     "height": 3000
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "00",
+      "0",
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14",
+      "16"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7994254917718,
+   "title": "Everywhere Pinwale Corduroy Pant | Coffee Bean",
+   "handle": "f-btm-fic-pltcrv-pnt-dbrn",
+   "body_html": "Our best-selling Everywhere Pant takes a textural turn in fine-wale corduroy. The high-rise, ankle-length barrel leg is shaped with front and back darts, and finished with angled and welt pockets. It's made with 100% organic cotton. Pair it with a fitted knit and loafers for an in-out silhouette.",
+   "vendor": "Everlane",
+   "product_type": "Bottoms",
+   "tags": [
+    "Brown",
+    "category: bottoms",
+    "fabric: corduroy",
+    "female",
+    "Go Live: 09-13-2026",
+    "Healthy Stock",
+    "New",
+    "Product Group: 4145",
+    "Style SKU: F-BTM-FIC-PLTCRV-PNT",
+    "subcategory: pants",
+    "YGroup_4145"
+   ],
+   "variants": [
+    {
+     "id": 45547837423702,
+     "title": "00",
+     "option1": "00",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-DBRN-00",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547837456470,
+     "title": "0",
+     "option1": "0",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-DBRN-0",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547837489238,
+     "title": "2",
+     "option1": "2",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-DBRN-2",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547837522006,
+     "title": "4",
+     "option1": "4",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-DBRN-4",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547837554774,
+     "title": "6",
+     "option1": "6",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-DBRN-6",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547837587542,
+     "title": "8",
+     "option1": "8",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-FIC-PLTCRV-PNT-DBRN-8",
+     "requires_shipping": true,
+     "available": true,
+     "price": "128.00",
+     "compare_at_price": null
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-09-13_F-BTM-FIC-PLTCRV-PNT-DBRN_01.jpg?v=1788326095",
+     "width": 2400,
+     "height": 3000
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-09-13_F-BTM-FIC-PLTCRV-PNT-DBRN_flat.jpg?v=1788326095",
+     "width": 2400,
+     "height": 3000
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "00",
+      "0",
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14",
+      "16"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7980643680342,
+   "title": "Tissue Long-Sleeve Turtleneck | Black",
+   "handle": "womens-tissue-long-sleeve-turtleneck-black",
+   "body_html": "Sheer by design, with an extended body and extra-long sleeves that scrunch up at the wrists.",
+   "vendor": "Everlane",
+   "product_type": "Knit Tops",
+   "tags": [
+    "Black",
+    "category: knit tops",
+    "fabric: cotton",
+    "female",
+    "Go Live: 09-13-2026",
+    "Healthy Stock",
+    "New",
+    "Product Group: 4106",
+    "Style SKU: F-T-TIS-TTL-LS",
+    "YGroup_4106"
+   ],
+   "variants": [
+    {
+     "id": 45454195785814,
+     "title": "XXS",
+     "option1": "XXS",
+     "option2": null,
+     "option3": null,
+     "sku": "F-T-TIS-TTL-LS-BLK-XXS",
+     "requires_shipping": true,
+     "available": true,
+     "price": "68.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45454195818582,
+     "title": "XS",
+     "option1": "XS",
+     "option2": null,
+     "option3": null,
+     "sku": "F-T-TIS-TTL-LS-BLK-XS",
+     "requires_shipping": true,
+     "available": true,
+     "price": "68.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45454195851350,
+     "title": "S",
+     "option1": "S",
+     "option2": null,
+     "option3": null,
+     "sku": "F-T-TIS-TTL-LS-BLK-S",
+     "requires_shipping": true,
+     "available": true,
+     "price": "68.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45454195884118,
+     "title": "M",
+     "option1": "M",
+     "option2": null,
+     "option3": null,
+     "sku": "F-T-TIS-TTL-LS-BLK-M",
+     "requires_shipping": true,
+     "available": true,
+     "price": "68.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45454195916886,
+     "title": "L",
+     "option1": "L",
+     "option2": null,
+     "option3": null,
+     "sku": "F-T-TIS-TTL-LS-BLK-L",
+     "requires_shipping": true,
+     "available": true,
+     "price": "68.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45454195949654,
+     "title": "XL",
+     "option1": "XL",
+     "option2": null,
+     "option3": null,
+     "sku": "F-T-TIS-TTL-LS-BLK-B",
+     "requires_shipping": true,
+     "available": true,
+     "price": "68.00",
+     "compare_at_price": null
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/Reshoot_2026-09-06_F-T-TIS-TTL-LS-BLK_01.jpg?v=1788326163",
+     "width": 2400,
+     "height": 3000
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-09-06_F-T-TIS-TTL-LS-BLK_flat.jpg?v=1788326163",
+     "width": 2400,
+     "height": 3000
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "XXS",
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL",
+      "XXL"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7539404210262,
+   "title": "The Utility Barrel Jean | Washed Black | Regular",
+   "handle": "womens-utility-barrel-jean-black",
+   "body_html": "Made of regenerative cotton denim with just a touch of stretch, the Utility Barrel Jean is complete with a waist-nipping high rise, a cool curved leg, and an easy cropped length. Plus, it has utilitarian details, like accent stitching and patch pockets for a craftsman-inspired look. ",
+   "vendor": "Everlane",
+   "product_type": "Denim",
+   "tags": [
+    "Black",
+    "category: denim",
+    "Discounted",
+    "fabric: denim/chambray",
+    "female",
+    "Go Live: 12-05-2024",
+    "Healthy Stock",
+    "Product Group: 2671",
+    "Style SKU: F-BTM-DNM-BAREL-UTL",
+    "subcategory: pants",
+    "YGroup_2671"
+   ],
+   "variants": [
+    {
+     "id": 42243135995990,
+     "title": "23",
+     "option1": "23",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-BAREL-UTL-BLK-23R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42243136028758,
+     "title": "24",
+     "option1": "24",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-BAREL-UTL-BLK-24R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42243136061526,
+     "title": "25",
+     "option1": "25",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-BAREL-UTL-BLK-25R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42243136094294,
+     "title": "26",
+     "option1": "26",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-BAREL-UTL-BLK-26R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42243136127062,
+     "title": "27",
+     "option1": "27",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-BAREL-UTL-BLK-27R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42243136159830,
+     "title": "28",
+     "option1": "28",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-BAREL-UTL-BLK-28R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/d6cf831e_0431.jpg?v=1753411723",
+     "width": 1000,
+     "height": 1250
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/7ed35856_00bb.jpg?v=1753411724",
+     "width": 1000,
+     "height": 1250
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7539396280406,
+   "title": "The Day Glove | Black Suede",
+   "handle": "womens-leather-day-glove2-black-suede",
+   "body_html": "From the box to the pavement, our cult-fave flat is ready to adjust to your lifestyle. Featuring buttery soft leather, extra insole cushioning comfort, a back pull tab, side vents, rubber sole, and a cushioned insole, like its name, you can wear them all damn day\u2014and night, on repeat. Now with an improved, true-to-size fit featuring extra insole cushioning for added comfort in LWG Gold-rated leather.",
+   "vendor": "Everlane",
+   "product_type": "Flats + Other",
+   "tags": [
+    "Black",
+    "category: flats + other",
+    "Discounted",
+    "fabric: leather",
+    "female",
+    "Go Live: 08-02-2026",
+    "Product Group: 2885",
+    "Selling fast",
+    "Style SKU: F-FTWR-LTHR-GLV-NBAL",
+    "subcategory: flats",
+    "YGroup_2885"
+   ],
+   "variants": [
+    {
+     "id": 42243080978518,
+     "title": "5",
+     "option1": "5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-BLKSD-5",
+     "requires_shipping": true,
+     "available": false,
+     "price": "39.00",
+     "compare_at_price": "98.00"
+    },
+    {
+     "id": 42243081011286,
+     "title": "5.5",
+     "option1": "5.5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-BLKSD-5H",
+     "requires_shipping": true,
+     "available": false,
+     "price": "39.00",
+     "compare_at_price": "98.00"
+    },
+    {
+     "id": 42243081044054,
+     "title": "6",
+     "option1": "6",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-BLKSD-6",
+     "requires_shipping": true,
+     "available": false,
+     "price": "39.00",
+     "compare_at_price": "98.00"
+    },
+    {
+     "id": 42243081076822,
+     "title": "6.5",
+     "option1": "6.5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-BLKSD-6H",
+     "requires_shipping": true,
+     "available": false,
+     "price": "39.00",
+     "compare_at_price": "98.00"
+    },
+    {
+     "id": 42243081109590,
+     "title": "7",
+     "option1": "7",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-BLKSD-7",
+     "requires_shipping": true,
+     "available": false,
+     "price": "39.00",
+     "compare_at_price": "98.00"
+    },
+    {
+     "id": 42243081142358,
+     "title": "7.5",
+     "option1": "7.5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-BLKSD-7H",
+     "requires_shipping": true,
+     "available": false,
+     "price": "39.00",
+     "compare_at_price": "98.00"
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/afb630e1_285a.jpg?v=1753411683",
+     "width": 1000,
+     "height": 1250
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/a4ae22cd_5df9.jpg?v=1753411683",
+     "width": 1000,
+     "height": 1250
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "5",
+      "5.5",
+      "6",
+      "6.5",
+      "7",
+      "7.5",
+      "8",
+      "8.5",
+      "9",
+      "9.5",
+      "10",
+      "10.5",
+      "11"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7599783575638,
+   "title": "Loose Curve Jean | Tungsten Bright",
+   "handle": "womens-mid-rise-baggy-jean-tungsten-bright",
+   "body_html": "A mid-rise waist that sits just right on the hip, falling into an easy barrel-shaped wide leg. Full length so the hem stacks naturally. Cut from 100% organic cotton denim that\u2019s airy, soft, and subtly drapey\u2014yet still sturdy enough to hold its shape. Finished with natural marbling for that perfectly broken-in look. Style it with kitten heels and a blazer or keep it casual with sneakers and a cozy sweater.",
+   "vendor": "Everlane",
+   "product_type": "Denim",
+   "tags": [
+    "Blue",
+    "category: denim",
+    "Discounted",
+    "fabric: denim/chambray",
+    "female",
+    "Go Live: 08-17-2025",
+    "Healthy Stock",
+    "Product Group: 3555",
+    "Style SKU: F-BTM-DNM-MID-BGY",
+    "subcategory: pants",
+    "YGroup_3555"
+   ],
+   "variants": [
+    {
+     "id": 42509807845462,
+     "title": "23",
+     "option1": "23",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-MID-BGY-LTW-23R",
+     "requires_shipping": true,
+     "available": false,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42509807878230,
+     "title": "24",
+     "option1": "24",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-MID-BGY-LTW-24R",
+     "requires_shipping": true,
+     "available": false,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42509807910998,
+     "title": "25",
+     "option1": "25",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-MID-BGY-LTW-25R",
+     "requires_shipping": true,
+     "available": false,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42509807943766,
+     "title": "26",
+     "option1": "26",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-MID-BGY-LTW-26R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42509807976534,
+     "title": "27",
+     "option1": "27",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-MID-BGY-LTW-27R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    },
+    {
+     "id": 42509808009302,
+     "title": "28",
+     "option1": "28",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-MID-BGY-LTW-28R",
+     "requires_shipping": true,
+     "available": true,
+     "price": "54.00",
+     "compare_at_price": "108.00"
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/41f2ecc1_da83.jpg?v=1765843207",
+     "width": 1000,
+     "height": 1250
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/d5fb6d80_b08e.jpg?v=1765843207",
+     "width": 1000,
+     "height": 1250
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7994253181014,
+   "title": "The Day Glove | Red",
+   "handle": "f-ftwr-lthr-glv-nbal-rstsd",
+   "body_html": "The Day Glove is made of buttery soft leather that molds to your foot for a perfect, custom fit. With features like a back pull tab, side vents, a rubber sole, and a cushioned insole, it's truly up for anything. Now with an improved, true-to-size fit featuring extra insole cushioning for added comfort in LWG Gold-rated leather.   Did You Know? This leather is sourced from a Leather Working Group Gold certified tannery. The Leather Working Group (LWG) Audit Standards provide transparency and accountability within the leather supply chain\u2014covering energy and water usage, safe chemical practices, worker health and safety, and wastewater management. Gold and Silver are the highest ratings a tannery can receive for demonstrating best practices in environmental compliance and performance capabilities.",
+   "vendor": "Everlane",
+   "product_type": "Flats + Other",
+   "tags": [
+    "algolia-ignore",
+    "category: flats + other",
+    "fabric: leather",
+    "female",
+    "Go Live: 08-02-2026",
+    "Healthy Stock",
+    "Product Group: 2885",
+    "Red",
+    "Style SKU: F-FTWR-LTHR-GLV-NBAL",
+    "subcategory: flats",
+    "YGroup_2885"
+   ],
+   "variants": [
+    {
+     "id": 45547826413654,
+     "title": "5",
+     "option1": "5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-RSTSD-5",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547826446422,
+     "title": "5.5",
+     "option1": "5.5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-RSTSD-5H",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547826479190,
+     "title": "6",
+     "option1": "6",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-RSTSD-6",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547826511958,
+     "title": "6.5",
+     "option1": "6.5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-RSTSD-6H",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547826544726,
+     "title": "7",
+     "option1": "7",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-RSTSD-7",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 45547826577494,
+     "title": "7.5",
+     "option1": "7.5",
+     "option2": null,
+     "option3": null,
+     "sku": "F-FTWR-LTHR-GLV-NBAL-RSTSD-7H",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    }
+   ],
+   "images": [],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "5",
+      "5.5",
+      "6",
+      "6.5",
+      "7",
+      "7.5",
+      "8",
+      "8.5",
+      "9",
+      "9.5",
+      "10",
+      "10.5",
+      "11"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 7841450885206,
+   "title": "Flowy Denim Midi Skirt | Rinse Indigo",
+   "handle": "womens-flowy-denim-midi-skirt-rinse-indigo",
+   "body_html": "A high-rise midi with an easy A-line shape\u2014light, comfortable, and made for warmer days.",
+   "vendor": "Everlane",
+   "product_type": "Denim",
+   "tags": [
+    "algolia-ignore",
+    "Blue",
+    "category: denim",
+    "fabric: denim/chambray",
+    "female",
+    "Go Live: 09-06-2026",
+    "Healthy Stock",
+    "Product Group: 3973",
+    "Selling fast",
+    "Style SKU: F-BTM-DNM-FLOW-SKIRT",
+    "subcategory: skirts",
+    "YGroup_3973"
+   ],
+   "variants": [
+    {
+     "id": 44418921660502,
+     "title": "23",
+     "option1": "23",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-FLOW-SKIRT-DRK-23",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 44418921726038,
+     "title": "24",
+     "option1": "24",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-FLOW-SKIRT-DRK-24",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 44418921791574,
+     "title": "25",
+     "option1": "25",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-FLOW-SKIRT-DRK-25",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 44418921857110,
+     "title": "26",
+     "option1": "26",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-FLOW-SKIRT-DRK-26",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 44418921922646,
+     "title": "27",
+     "option1": "27",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-FLOW-SKIRT-DRK-27",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    },
+    {
+     "id": 44418921988182,
+     "title": "28",
+     "option1": "28",
+     "option2": null,
+     "option3": null,
+     "sku": "F-BTM-DNM-FLOW-SKIRT-DRK-28",
+     "requires_shipping": true,
+     "available": true,
+     "price": "98.00",
+     "compare_at_price": null
+    }
+   ],
+   "images": [
+    {
+     "position": 1,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-05-03_F-BTM-DNM-FLOW-SKIRT-DRK_01_e1544622-912a-4ea0-b5c8-b8d62672f7ee.jpg?v=1788306594",
+     "width": 2400,
+     "height": 3000
+    },
+    {
+     "position": 2,
+     "src": "https://cdn.shopify.com/s/files/1/0623/7916/3734/files/2026-05-03_F-BTM-DNM-FLOW-SKIRT-DRK_flat_3a0fd406-30f9-47ee-b597-bce10b7cc8d8.jpg?v=1788306595",
+     "width": 2400,
+     "height": 3000
+    }
+   ],
+   "options": [
+    {
+     "name": "Size",
+     "position": 1,
+     "values": [
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33"
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,353 @@
+"""Shopify public storefront connector.
+
+Reads the ``/products.json`` document Shopify publishes on every storefront: a
+public, unauthenticated, structured feed intended for machine consumption. It is
+the coverage supplement for brands we have no partner relationship with, not the
+primary path - it carries no affiliate link, so it earns nothing on its own.
+
+Where a storefront advertises UCP (see :mod:`intelligence.catalog.ucp`), prefer
+it. Shopify's own agent instructions say so, and a sanctioned protocol does not
+change shape underneath us the way a page can.
+
+The payload is snake_case and shaped nothing like the partner Catalog API, so
+this is its own connector rather than a configuration of that one. Two details
+drive most of the translation: variants carry their options positionally
+(``option1``..``option3``, resolved through the product's ``options`` list), and
+the document carries no currency at all - that comes from the store's
+``/meta.json`` and is configuration here.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any
+
+from api.genesis_api.models.enums import SizeSystem
+from intelligence.catalog import vocabulary
+from intelligence.catalog.color import ColorError, family_for_hex, family_for_name, parse_hex
+from intelligence.catalog.money import CurrencyError, FxRates, to_minor_units, to_usd_cents
+from intelligence.catalog.normalized import (
+    NormalizationResult,
+    NormalizedImage,
+    NormalizedOffer,
+    NormalizedProduct,
+    NormalizedSize,
+    SourceRecord,
+)
+from intelligence.catalog.sizes import parse_size
+
+_HTML_TAG = re.compile(r"<[^>]+>")
+_WHITESPACE = re.compile(r"\s+")
+
+# Option names that identify the size and color axes. Merchants name these
+# themselves, so the match is on a small set of conventions rather than position.
+_SIZE_OPTION_NAMES = {"size", "sizes", "shoe size", "waist", "length"}
+_COLOR_OPTION_NAMES = {"color", "colour", "shade", "colorway"}
+
+# Storefronts sell warranties, gift cards, and shipping protection through the
+# same catalog. They are real products and none of them are clothing, so they are
+# filtered rather than ingested and later explained away.
+_NON_GARMENT_TERMS = {
+    "gift card",
+    "e-gift",
+    "egift",
+    "warranty",
+    "protection",
+    "insurance",
+    "shipping",
+    "donation",
+    "sample",
+    "swatch",
+    "returns coverage",
+    "package protection",
+    "carbon offset",
+    "extended care",
+}
+
+
+# A storefront states its own country in /meta.json. That stated fact gives a
+# default size system for the bare numeric labels these feeds are full of
+# ("00", "0", "2"), which would otherwise be dropped as ambiguous. It is a
+# per-store default, not a per-product guess: if it is wrong it is wrong
+# consistently and visibly, and the operator overrides it on the profile.
+_COUNTRY_SIZE_SYSTEMS: dict[str, SizeSystem] = {
+    "US": SizeSystem.us,
+    "CA": SizeSystem.us,
+    "GB": SizeSystem.uk,
+    "AU": SizeSystem.uk,
+    "FR": SizeSystem.fr,
+    "IT": SizeSystem.it,
+    "JP": SizeSystem.jp,
+    "DE": SizeSystem.eu,
+    "ES": SizeSystem.eu,
+    "NL": SizeSystem.eu,
+    "SE": SizeSystem.eu,
+    "DK": SizeSystem.eu,
+}
+
+
+@dataclass(frozen=True)
+class StorefrontProfile:
+    """What we know about one storefront before reading its products.
+
+    ``currency`` is required because ``/products.json`` omits it entirely; a
+    price without its currency is not a fact. It comes from the store's
+    ``/meta.json``, which is why :func:`fetch_storefront_profile` exists rather
+    than leaving callers to assume USD.
+    """
+
+    domain: str
+    retailer_name: str
+    currency: str
+    brand_name: str | None = None
+    # The system bare numeric sizes are quoted in. Defaulted from the store's
+    # own stated country and overridable; never inferred per product.
+    size_system: SizeSystem | None = None
+
+
+def fetch_storefront_profile(fetcher: Any, domain: str) -> StorefrontProfile:
+    """Read a storefront's own metadata to learn its name and currency."""
+    meta = fetcher.get_json(f"https://{domain}/meta.json")
+    name = meta.get("name") or domain
+    currency = meta.get("currency")
+    if not currency:
+        raise ValueError(
+            f"{domain}/meta.json states no currency; supply one explicitly rather "
+            "than defaulting, because a price without a currency is not a fact"
+        )
+    country = str(meta.get("country") or "").upper()
+    return StorefrontProfile(
+        domain=domain,
+        retailer_name=name,
+        currency=currency,
+        brand_name=name,
+        size_system=_COUNTRY_SIZE_SYSTEMS.get(country),
+    )
+
+
+def strip_html(raw: str | None) -> str | None:
+    """Reduce ``body_html`` to text.
+
+    The markup is never useful downstream and description text reaches a model,
+    so tags are removed here rather than travelling further as untrusted markup.
+    """
+    if not raw:
+        return None
+    text = _WHITESPACE.sub(" ", _HTML_TAG.sub(" ", raw)).strip()
+    return text or None
+
+
+def looks_like_a_garment(title: str, product_type: str | None) -> bool:
+    haystack = f"{title} {product_type or ''}".lower()
+    return not any(term in haystack for term in _NON_GARMENT_TERMS)
+
+
+class ShopifyPublicConnector:
+    """Translates one storefront's public product feed."""
+
+    def __init__(self, *, profile: StorefrontProfile, rates: FxRates) -> None:
+        self._profile = profile
+        self._rates = rates
+
+    @property
+    def source(self) -> str:
+        # Scoped to the storefront: the same numeric product id exists on every
+        # Shopify store, so a shared source would collide across brands.
+        return f"shopify-public:{self._profile.domain}"
+
+    def normalize(self, records: Iterable[Any]) -> NormalizationResult:
+        result = NormalizationResult()
+        for record in records:
+            source_id = str(record.get("id") or "")
+            raw = SourceRecord(
+                source=self.source, source_id=source_id, payload=json.dumps(record, default=str)
+            )
+            if not source_id:
+                result.record_failure(raw, "identify", "product has no id")
+                continue
+
+            title = str(record.get("title") or "").strip()
+            if not title:
+                result.record_failure(raw, "identify", "product has no title")
+                continue
+            if not looks_like_a_garment(title, record.get("product_type")):
+                result.record_failure(raw, "filter", "not a garment (service or gift SKU)")
+                continue
+
+            try:
+                product, offer = self._one(record, source_id, title)
+            except (CurrencyError, ColorError, ValueError, KeyError, TypeError) as exc:
+                result.record_failure(raw, "normalize", f"{type(exc).__name__}: {exc}")
+                continue
+
+            result.products.append(product)
+            if offer is not None:
+                result.offers.append(offer)
+        return result
+
+    def _one(
+        self, record: dict[str, Any], source_id: str, title: str
+    ) -> tuple[NormalizedProduct, NormalizedOffer | None]:
+        description = strip_html(record.get("body_html"))
+        product_type = record.get("product_type")
+        tags = record.get("tags") or []
+        tag_text = " ".join(str(tag) for tag in tags)
+        colour = self._option_values(record, _COLOR_OPTION_NAMES)
+
+        # Trustworthiness order: an explicit product type, then the merchant's
+        # tags, then the marketing title, then prose.
+        texts = (product_type, tag_text, title, description)
+
+        family = None
+        for candidate in [*colour, *[str(tag) for tag in tags]]:
+            family = family_for_name(candidate)
+            if family is not None:
+                break
+        colour_hex = None
+        if record.get("color_hex"):
+            colour_hex = parse_hex(str(record["color_hex"]))
+            if family is None:
+                family = family_for_hex(colour_hex)
+
+        product = NormalizedProduct(
+            source=self.source,
+            source_id=source_id,
+            title=title,
+            brand_name=record.get("vendor") or self._profile.brand_name,
+            description=description,
+            category=vocabulary.category_for(*texts),
+            gender=vocabulary.gender_for(tag_text, product_type, title),
+            silhouette=vocabulary.silhouette_for(*texts),
+            neckline=vocabulary.neckline_for(*texts),
+            sleeve_length=vocabulary.sleeve_length_for(*texts),
+            sleeve_style=vocabulary.sleeve_style_for(*texts),
+            garment_length=vocabulary.length_for(*texts),
+            rise=vocabulary.rise_for(*texts),
+            fit=vocabulary.fit_for(*texts),
+            pattern=vocabulary.pattern_for(*texts),
+            color_hex=colour_hex,
+            color_family=family,
+            images=tuple(
+                NormalizedImage(
+                    source_url=image["src"],
+                    position=int(image.get("position", index + 1)) - 1,
+                    width_px=image.get("width"),
+                    height_px=image.get("height"),
+                )
+                for index, image in enumerate(record.get("images") or [])
+                if image.get("src")
+            ),
+        )
+        return product, self._offer(record, source_id, title)
+
+    def _size_option_index(self, record: dict[str, Any]) -> int | None:
+        """Which of ``option1``..``option3`` holds the size, by option name."""
+        for option in record.get("options") or []:
+            if str(option.get("name", "")).strip().lower() in _SIZE_OPTION_NAMES:
+                position = int(option.get("position", 0))
+                if 1 <= position <= 3:
+                    return position
+        return None
+
+    def _option_values(self, record: dict[str, Any], names: set[str]) -> list[str]:
+        for option in record.get("options") or []:
+            if str(option.get("name", "")).strip().lower() in names:
+                return [str(value) for value in option.get("values") or []]
+        return []
+
+    def _offer(self, record: dict[str, Any], source_id: str, title: str) -> NormalizedOffer | None:
+        variants = record.get("variants") or []
+        if not variants:
+            return None
+
+        # Service line items are not shippable; a product whose variants all
+        # decline shipping is not clothing however its title reads.
+        if all(variant.get("requires_shipping") is False for variant in variants):
+            raise ValueError("no shippable variant")
+
+        currency = self._profile.currency
+        priced = [v for v in variants if v.get("price") not in (None, "")]
+        if not priced:
+            raise ValueError("no variant carries a price")
+        cheapest = min(priced, key=lambda v: float(v["price"]))
+        minor = to_minor_units(str(cheapest["price"]), currency)
+
+        sale_minor: int | None = None
+        compare_at = cheapest.get("compare_at_price")
+        if compare_at:
+            was = to_minor_units(str(compare_at), currency)
+            # compare_at_price is the pre-markdown price, so the listed price is
+            # the sale price when it is genuinely lower. Merchants leave stale
+            # compare_at values behind constantly, and treating one as a markdown
+            # would badge an undiscounted item.
+            if was > minor:
+                sale_minor, minor = minor, was
+
+        usd_cents: int | None = None
+        fx_at = None
+        try:
+            usd_cents = to_usd_cents(minor, currency, self._rates)
+            fx_at = self._rates.as_of
+        except CurrencyError:
+            usd_cents = None
+
+        size_index = self._size_option_index(record)
+        sizes: list[NormalizedSize] = []
+        for variant in variants:
+            label = variant.get(f"option{size_index}") if size_index else variant.get("title")
+            if not label or str(label).strip().lower() == "default title":
+                continue
+            parsed = parse_size(str(label), declared_system=self._profile.size_system)
+            if parsed is None:
+                continue
+            available = variant.get("available")
+            sizes.append(
+                NormalizedSize(
+                    system=parsed.system,
+                    value=parsed.value,
+                    in_stock=None if available is None else bool(available),
+                )
+            )
+
+        flags = [variant.get("available") for variant in variants]
+        in_stock = None if all(flag is None for flag in flags) else any(bool(f) for f in flags)
+
+        handle = record.get("handle")
+        return NormalizedOffer(
+            source=self.source,
+            source_id=source_id,
+            product_source_id=source_id,
+            retailer_name=self._profile.retailer_name,
+            url=f"https://{self._profile.domain}/products/{handle}" if handle else "",
+            affiliate_url=None,
+            price_amount_minor=minor,
+            currency=currency,
+            sale_price_amount_minor=sale_minor,
+            price_usd_cents=usd_cents,
+            fx_rate_at=fx_at,
+            in_stock=in_stock,
+            sizes=tuple(sizes),
+        )
+
+
+def iter_storefront_products(
+    fetcher: Any, profile: StorefrontProfile, *, page_size: int = 250, max_pages: int = 40
+) -> Iterable[dict[str, Any]]:
+    """Page through a storefront's public product feed.
+
+    ``max_pages`` is a guard, not a tuning knob: a paginated endpoint that never
+    returns an empty page would otherwise loop forever against someone's server.
+    """
+    for page in range(1, max_pages + 1):
+        payload = fetcher.get_json(
+            f"https://{profile.domain}/products.json?limit={page_size}&page={page}"
+        )
+        products = payload.get("products") or []
+        if not products:
+            return
+        yield from products
+        if len(products) < page_size:
+            return

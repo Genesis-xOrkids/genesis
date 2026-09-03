@@ -73,4 +73,6 @@ jobs:
         run: uv run python scripts/check_orphans.py
 
       - name: Tests
+        # No network. The storefront connector runs against a captured payload,
+        # so a third party's uptime can never fail this build.
         run: uv run pytest -q
