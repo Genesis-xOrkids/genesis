@@ -16,5 +16,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://genesis:genesis@localhost:5434/genesis"
     sql_echo: bool = False
 
+    # Which platform serves model calls. The first-party API is the default
+    # because it keeps a cloud account out of the path of something that has no
+    # other reason to need one; the AWS options exist for enterprise customers
+    # whose security review requires them, and are selected per tenant.
+    model_platform: str = "anthropic_api"
+    # Only read for bedrock_mantle, which has no region default.
+    aws_region: str | None = None
+
 
 settings = Settings()

@@ -15,6 +15,7 @@ from intelligence.model_gateway.gateway import (
     Route,
     RouteConfig,
     Usage,
+    build_client,
     build_request,
     model_id_for,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "UnknownModelError",
     "Usage",
     "bare_model_id",
+    "build_client",
     "build_request",
     "cost_usd",
     "model_id_for",
