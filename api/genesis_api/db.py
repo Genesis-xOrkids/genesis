@@ -19,7 +19,14 @@ _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
-def engine() -> Engine:
+def engine(url: str | None = None) -> Engine:
+    """The application engine, or a one-off engine for an explicit URL.
+
+    Tests pass their own URL so a hosted database configured for the app is
+    never written to by a test run.
+    """
+    if url is not None:
+        return create_engine(url, echo=settings.sql_echo, pool_pre_ping=True)
     global _engine
     if _engine is None:
         _engine = create_engine(settings.database_url, echo=settings.sql_echo, pool_pre_ping=True)

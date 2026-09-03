@@ -96,7 +96,7 @@ jobs:
           curl -sSfL -o /tmp/gitleaks.tar.gz \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          /tmp/gitleaks dir . --redact --no-banner
+          /tmp/gitleaks dir . --redact --no-banner --config .gitleaks.toml
 
       - name: Tests
         # No network. The storefront connector runs against a captured payload,

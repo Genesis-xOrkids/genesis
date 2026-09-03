@@ -1,0 +1,17 @@
+# Gitleaks configuration.
+#
+# Extends the default rules rather than replacing them: the point is to silence
+# specific false positives, not to narrow what is looked for. A scanner that
+# reports noise gets ignored, which is the same as not running it.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Build artifacts and local tooling state, none of which is committed"
+paths = [
+  # CDK synthesis output. Contains S3 object keys, which are content hashes that
+  # look like API keys to a generic rule. Gitignored, so it never reaches a commit.
+  '''infra/cdk\.out/.*''',
+  # Documents the shape of the variables; the values are blank.
+  '''\.env\.example''',
+]

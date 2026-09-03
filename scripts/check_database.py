@@ -52,13 +52,22 @@ def main() -> int:
                 print("pgvector  NOT AVAILABLE on this server - the catalog schema cannot deploy")
                 return 1
 
-            revision = connection.execute(
+            # Two statements, not one with an EXISTS guard: Postgres parses the
+            # whole statement before evaluating anything, so referencing a table
+            # that does not exist fails at parse time however it is guarded.
+            has_alembic = connection.execute(
                 text(
-                    "select version_num from alembic_version"
-                    " where exists (select 1 from information_schema.tables"
-                    " where table_name = 'alembic_version')"
+                    "select 1 from information_schema.tables"
+                    " where table_schema = 'public' and table_name = 'alembic_version'"
                 )
             ).scalar_one_or_none()
+            revision = (
+                connection.execute(
+                    text("select version_num from alembic_version")
+                ).scalar_one_or_none()
+                if has_alembic
+                else None
+            )
             print(
                 f"schema    {revision or 'not migrated yet - run: cd api && uv run alembic upgrade head'}"
             )

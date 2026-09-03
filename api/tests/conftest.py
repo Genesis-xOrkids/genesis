@@ -10,20 +10,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from api.genesis_api.db import engine
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _require_database() -> None:
-    try:
-        with engine().connect() as connection:
-            connection.execute(text("select 1"))
-    except Exception as exc:  # pragma: no cover - environment guard
-        pytest.skip(f"database unavailable: {exc}")
 
 
 @pytest.fixture
