@@ -1,0 +1,24 @@
+{
+  "name": "genesis-infra",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "genesis-infra": "bin/genesis.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "aws-cdk": "^2.1029.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.219.0",
+    "constructs": "^10.4.2"
+  }
+}
