@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default: no job needs to write to the repository, and a
+# token that cannot write cannot be turned against the repo by a dependency.
+permissions:
+  contents: read
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -28,9 +33,13 @@ jobs:
       GENESIS_DATABASE_URL: postgresql+psycopg://genesis:genesis@localhost:5434/genesis
 
     steps:
-      - uses: actions/checkout@v4
+      # Third-party actions are pinned to a commit SHA, not a tag. A tag is a
+      # moving pointer the action's owner can repoint at any commit, so a
+      # compromised or simply careless release runs in a job that already holds
+      # our credentials. Dependabot proposes SHA bumps as reviewable PRs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
@@ -71,6 +80,23 @@ jobs:
 
       - name: Every definition has a caller
         run: uv run python scripts/check_orphans.py
+
+      - name: Secrets
+        # Free stand-in for GitHub's push protection, which costs money on
+        # private repos. The binary is run directly rather than through
+        # gitleaks-action: the action needs a paid licence once this moves to an
+        # organization account, and running it here keeps one less third-party
+        # action holding the job's token.
+        #
+        # This detects after the fact rather than blocking the push, so a hit
+        # means rotate the credential, not just amend the commit.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks dir . --redact --no-banner
 
       - name: Tests
         # No network. The storefront connector runs against a captured payload,

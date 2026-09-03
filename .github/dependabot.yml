@@ -1,0 +1,24 @@
+# Dependency updates as reviewable pull requests.
+#
+# Actions are included deliberately: the workflow pins them to commit SHAs, and
+# a pinned SHA is frozen until something proposes a new one. Without this, "pin
+# for safety" quietly becomes "never update", which is its own vulnerability.
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine version bumps. Security updates still arrive
+      # individually so they are never buried in a batch.
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
