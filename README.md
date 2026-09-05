@@ -6,8 +6,11 @@ An AI fashion platform with two halves on one core:
 - **Enterprise** - a trend and design studio that turns brand DNA plus market
   trend data into trend intelligence and design mockups.
 
-`CLAUDE.md` holds the engineering principles. `PLAN.md` holds the architecture
-and research behind them. Read both before making structural changes.
+Three documents carry the thinking, and they do different jobs:
+
+- `CLAUDE.md` holds the engineering principles. Read before making structural changes.
+- `PLAN.md` holds the architecture and the research behind it.
+- `ROADMAP.md` holds the delivery plan: what is next, in what order, and why.
 
 ## Local development
 
