@@ -287,3 +287,37 @@ def test_pagination_respects_the_page_guard() -> None:
     collected = list(iter_storefront_products(fetcher, _profile(), page_size=2, max_pages=3))
     assert len(fetcher.requested) == 3
     assert len(collected) == 6
+
+
+@pytest.mark.parametrize(
+    ("title", "product_type", "expected"),
+    [
+        ("Knit Cami Mini Dress", "Sweaters", Category.dress),
+        ("Super Fine Cashmere Tank Dress", "Sweaters", Category.dress),
+        ("The Ranch Boot in Espresso", "Bottoms", Category.boots),
+        ("The Oversized Blazer in Wool", "Outerwear", Category.blazer),
+        ("Cashmere Crew Sweater", "Sweaters", Category.sweater),
+    ],
+)
+def test_the_garment_name_outranks_the_merchandising_department(
+    title: str, product_type: str, expected: Category
+) -> None:
+    """A department is a shelf, not a description.
+
+    Storefronts file "Knit Cami Mini Dress" under Sweaters so a shopper browsing
+    knitwear finds it. Taking that at face value labelled three dresses as
+    sweaters, which a search for a dress then correctly refused to return.
+    """
+    records = [
+        {
+            "id": 900,
+            "title": title,
+            "product_type": product_type,
+            "handle": "x",
+            "variants": [
+                {"title": "M", "price": "100.00", "available": True, "requires_shipping": True}
+            ],
+        }
+    ]
+    product = _connector().normalize(records).products[0]
+    assert product.category is expected

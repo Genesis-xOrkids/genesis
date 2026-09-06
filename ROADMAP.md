@@ -50,7 +50,8 @@ Success is judged on these, all measurable:
 | Dead-link rate | < 2% of surfaced items | The plan's own gate; above it the product feels broken |
 | Items purchasable at render | 100% | A recommendation you cannot buy is not a recommendation |
 | Stylist rubric score | ≥ 4.0 / 5.0 mean | Set at baseline, then held as a regression gate |
-| Retrieval recall@8 | ≥ 0.80 on a labelled query set | The agent only sees eight results; the right item has to be in them |
+| Retrieval category precision | ≥ 0.75 on semantic queries | The agent only sees eight results; if half are the wrong garment type it cannot build an outfit |
+| Retrieval recall@8 | ≥ 0.90 on known-item queries | A regression guard, not a measure of semantic quality: lexical matching alone already clears it |
 | First-token latency | p95 < 2.5s | Conversational threshold; beyond it the product feels stalled |
 | Cost per active user | ≤ $2.40 / month | From the unit economics in `PLAN.md` §9 |
 
@@ -108,7 +109,14 @@ Make search semantic rather than lexical.
 - Backfill over the catalog, incremental for new arrivals.
 - Hosted inference initially rather than self-managed GPU; revisit when volume justifies it.
 
-**Acceptance.** Recall@8 target in §3 met on a labelled query set of at least 200 queries, measured against the lexical-only baseline so the improvement is attributable. Vector index used by the planner, verified by query plan rather than assumed.
+**Acceptance.** Constraint satisfaction on hand-written semantic queries, measured against the lexical-only baseline in the same run so the improvement is attributable. Vector index used by the planner, verified by query plan rather than assumed.
+
+**Correction, 2026-09-06.** This originally called for recall@8 on a labelled
+set. That was the wrong metric and it would have passed before the work started:
+those queries are generated from product titles, so lexical matching already
+scored 95%. Recall is still reported as a regression guard, but it does not
+measure what this milestone is for. Category precision on semantic queries does,
+and it moved from 20% to 79%.
 
 **Depends on.** C2 for a corpus worth measuring against.
 

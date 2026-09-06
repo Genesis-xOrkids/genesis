@@ -290,9 +290,10 @@ class ShopifyPublicConnector:
         tag_text = " ".join(str(tag) for tag in tags)
         colour = self._option_values(record, _COLOR_OPTION_NAMES)
 
-        # Trustworthiness order: an explicit product type, then the merchant's
-        # tags, then the marketing title, then prose.
-        texts = (product_type, tag_text, title, description)
+        # The garment's own name leads. A merchandising department is a shelf
+        # rather than a description, and trusting it labelled "Knit Cami Mini
+        # Dress" a sweater because the storefront files it under knitwear.
+        texts = (title, product_type, tag_text, description)
 
         colour_hex = parse_hex(str(record["color_hex"])) if record.get("color_hex") else None
         family = (

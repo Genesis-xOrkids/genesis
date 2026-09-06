@@ -133,7 +133,9 @@ class AffiliateFeedConnector:
 
         description = _text(row.get(columns.description))
         category_text = _text(row.get(columns.category))
-        texts = (category_text, title, description)
+        # The garment's own name leads over the feed's category column, which
+        # is a merchandising shelf rather than a description.
+        texts = (title, category_text, description)
 
         color_name = _text(row.get(columns.color))
         color_hex = None
