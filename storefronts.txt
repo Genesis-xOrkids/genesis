@@ -1,0 +1,15 @@
+# Storefronts in the ingestion registry.
+# Verified ingestible by scripts/probe_storefronts.py before being added here.
+# Contemporary apparel, mixed price tiers, two non-USD to exercise conversion.
+www.everlane.com          # Everlane (USD)
+www.allbirds.com          # Allbirds (USD)
+www.rothys.com            # Rothy's (USD)
+www.marinelayer.com       # Marine Layer (USD)
+www.naadam.co             # NAADAM (USD)
+www.girlfriend.com        # Girlfriend Collective (USD)
+www.tentree.com           # Tentree (USD)
+www.taylorstitch.com      # Taylor Stitch (USD)
+www.outdoorvoices.com     # Outdoor Voices (USD)
+www.lisasaysgah.com       # Lisa Says Gah (USD)
+www.organicbasics.com     # Organic Basics (EUR)
+www.colorfulstandard.com  # Colorful Standard (EUR)

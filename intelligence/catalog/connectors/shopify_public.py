@@ -25,7 +25,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from api.genesis_api.models.enums import SizeSystem
+from api.genesis_api.models.enums import ColorFamily, SizeSystem
 from intelligence.catalog import vocabulary
 from intelligence.catalog.color import ColorError, family_for_hex, family_for_name, parse_hex
 from intelligence.catalog.money import CurrencyError, FxRates, to_minor_units, to_usd_cents
@@ -140,6 +140,34 @@ def strip_html(raw: str | None) -> str | None:
     return text or None
 
 
+# Merchandisers separate the colourway from the product name with a pipe or a
+# spaced dash, and both conventions appear across storefronts.
+_TITLE_SEPARATORS = re.compile(r"\s+[|\u2013\u2014-]\s+|\|")
+# Parentheticals describe a trim or a sole, not the garment: "Natural Black
+# (Dark Grey Sole)" is a black shoe, and matching inside the bracket would make
+# it grey.
+_PARENTHETICAL = re.compile(r"\([^)]*\)")
+
+
+def _title_colour_segments(title: str) -> list[str]:
+    """Segments of a title that may name the colourway, most likely first.
+
+    Everything after the product name, in order: "Barrel Jean | Washed Black |
+    Regular" names the colour in the segment right after the name, with fit
+    following it.
+    """
+    parts = _TITLE_SEPARATORS.split(title)
+    return [_PARENTHETICAL.sub(" ", part).strip() for part in parts[1:] if part.strip()]
+
+
+_SLUG = re.compile(r"[^a-z0-9]+")
+
+
+def _slug(value: str) -> str:
+    """A stable id fragment for a colourway name."""
+    return _SLUG.sub("-", value.lower()).strip("-") or "default"
+
+
 def looks_like_a_garment(title: str, product_type: str | None) -> bool:
     haystack = f"{title} {product_type or ''}".lower()
     return not any(term in haystack for term in _NON_GARMENT_TERMS)
@@ -178,18 +206,83 @@ class ShopifyPublicConnector:
                 continue
 
             try:
-                product, offer = self._one(record, source_id, title)
+                pairs = self._colourways(record, source_id, title)
             except (CurrencyError, ColorError, ValueError, KeyError, TypeError) as exc:
                 result.record_failure(raw, "normalize", f"{type(exc).__name__}: {exc}")
                 continue
 
-            result.products.append(product)
-            if offer is not None:
-                result.offers.append(offer)
+            for product, offer in pairs:
+                result.products.append(product)
+                if offer is not None:
+                    result.offers.append(offer)
         return result
 
-    def _one(
+    def _colourways(
         self, record: dict[str, Any], source_id: str, title: str
+    ) -> list[tuple[NormalizedProduct, NormalizedOffer | None]]:
+        """Split one source record into one product per colourway.
+
+        Storefronts model colour two ways. Some publish a separate record per
+        colourway, naming it in the title. Others publish one record with colour
+        as a variant option, so a single shoe covers a dozen colourways.
+
+        Our model treats a colourway as part of what a product is, so the second
+        shape has to be split rather than flattened. Flattening it loses colour
+        entirely, and colour is one of the two filters a shopper reaches for
+        first. Each split product gets a stable id derived from the source id and
+        the colour name, so re-runs update rather than duplicating.
+        """
+        colour_index = self._option_index(record, _COLOR_OPTION_NAMES)
+        colours = self._option_values(record, _COLOR_OPTION_NAMES)
+
+        if colour_index is None or len(colours) <= 1:
+            return [self._one(record, source_id, title)]
+
+        pairs: list[tuple[NormalizedProduct, NormalizedOffer | None]] = []
+        for colour in colours:
+            variants = [
+                variant
+                for variant in record.get("variants") or []
+                if str(variant.get(f"option{colour_index}") or "") == colour
+            ]
+            if not variants:
+                continue
+            scoped = {
+                **record,
+                "variants": variants,
+                "images": self._images_for(record, variants),
+            }
+            pairs.append(
+                self._one(
+                    scoped,
+                    f"{source_id}:{_slug(colour)}",
+                    title,
+                    colour_override=colour,
+                )
+            )
+        return pairs or [self._one(record, source_id, title)]
+
+    def _images_for(
+        self, record: dict[str, Any], variants: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Images belonging to one colourway.
+
+        Shopify links images to variants, so a split product can carry its own
+        photographs rather than the whole range's. Where no image declares a
+        link, every image is kept: showing the range beats showing nothing.
+        """
+        images = record.get("images") or []
+        wanted = {variant.get("id") for variant in variants if variant.get("id") is not None}
+        scoped = [image for image in images if wanted.intersection(image.get("variant_ids") or [])]
+        return scoped or images
+
+    def _one(
+        self,
+        record: dict[str, Any],
+        source_id: str,
+        title: str,
+        *,
+        colour_override: str | None = None,
     ) -> tuple[NormalizedProduct, NormalizedOffer | None]:
         description = strip_html(record.get("body_html"))
         product_type = record.get("product_type")
@@ -201,16 +294,12 @@ class ShopifyPublicConnector:
         # tags, then the marketing title, then prose.
         texts = (product_type, tag_text, title, description)
 
-        family = None
-        for candidate in [*colour, *[str(tag) for tag in tags]]:
-            family = family_for_name(candidate)
-            if family is not None:
-                break
-        colour_hex = None
-        if record.get("color_hex"):
-            colour_hex = parse_hex(str(record["color_hex"]))
-            if family is None:
-                family = family_for_hex(colour_hex)
+        colour_hex = parse_hex(str(record["color_hex"])) if record.get("color_hex") else None
+        family = (
+            family_for_name(colour_override)
+            if colour_override
+            else self._colour_family(record, title, tags, colour, colour_hex)
+        )
 
         product = NormalizedProduct(
             source=self.source,
@@ -242,6 +331,57 @@ class ShopifyPublicConnector:
             ),
         )
         return product, self._offer(record, source_id, title)
+
+    def _colour_family(
+        self,
+        record: dict[str, Any],
+        title: str,
+        tags: list[Any],
+        colour_options: list[str],
+        colour_hex: str | None,
+    ) -> ColorFamily | None:
+        """Work out the colour from whatever the storefront actually states.
+
+        This feed has no colour field. The colour lives in a variant option, in
+        the back half of the title, or in the tags. Sources are tried in order of
+        precision rather than convenience: the colourway name a merchandiser
+        wrote is more specific than the bucket they filed it under. A product
+        named "Deep Navy" and tagged "Blue" is navy, and for a stylist that
+        distinction is the whole point of storing colour.
+
+        A product offering several colourways is left with no colour rather than
+        assigned one of them. Our model treats a colourway as part of what a
+        product is, so the honest representation is to split it into separate
+        products; asserting the first would quietly mislabel the rest.
+        """
+        if len(colour_options) > 1:
+            return None
+        if len(colour_options) == 1:
+            named = family_for_name(colour_options[0])
+            if named is not None:
+                return named
+
+        for segment in _title_colour_segments(title):
+            named = family_for_name(segment)
+            if named is not None:
+                return named
+
+        for tag in tags:
+            named = family_for_name(str(tag))
+            if named is not None:
+                return named
+
+        if colour_hex:
+            return family_for_hex(colour_hex)
+        return None
+
+    def _option_index(self, record: dict[str, Any], names: set[str]) -> int | None:
+        for option in record.get("options") or []:
+            if str(option.get("name", "")).strip().lower() in names:
+                position = int(option.get("position", 0))
+                if 1 <= position <= 3:
+                    return position
+        return None
 
     def _size_option_index(self, record: dict[str, Any]) -> int | None:
         """Which of ``option1``..``option3`` holds the size, by option name."""

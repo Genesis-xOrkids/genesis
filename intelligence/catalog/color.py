@@ -95,25 +95,173 @@ def family_for_hex(hex_color: str) -> ColorFamily:
     return ColorFamily.pink if saturation <= 0.75 else ColorFamily.red
 
 
-# Metallics cannot be told from hex - gold and beige occupy the same coordinates -
-# so they are recognised from the source's own words or not at all.
-_NAMED_OVERRIDES: dict[str, ColorFamily] = {
+# Colour names, because most sources give a name and no hex at all. Shopify's
+# public product feed has no colour field whatsoever: the colour is in the
+# variant options, the tags, and the back half of the title. Without this
+# lexicon every product from those sources lands with no colour, which removes
+# one of the two filters a shopper reaches for first.
+#
+# Metallics are here for a different reason: gold and beige occupy the same
+# coordinates in hex, so no classifier can separate them. Only the word can.
+_COLOR_NAMES: dict[str, ColorFamily] = {
+    # neutrals
+    "black": ColorFamily.black,
+    "jet": ColorFamily.black,
+    "onyx": ColorFamily.black,
+    "white": ColorFamily.white,
+    "ivory": ColorFamily.white,
+    "cream": ColorFamily.white,
+    "ecru": ColorFamily.white,
+    "bone": ColorFamily.white,
+    "chalk": ColorFamily.white,
+    "optic white": ColorFamily.white,
+    "off white": ColorFamily.white,
+    "grey": ColorFamily.gray,
+    "gray": ColorFamily.gray,
+    "charcoal": ColorFamily.gray,
+    "heather grey": ColorFamily.gray,
+    "heather gray": ColorFamily.gray,
+    "slate": ColorFamily.gray,
+    "graphite": ColorFamily.gray,
+    "ash": ColorFamily.gray,
+    "beige": ColorFamily.beige,
+    "tan": ColorFamily.beige,
+    "camel": ColorFamily.beige,
+    "taupe": ColorFamily.beige,
+    "khaki": ColorFamily.beige,
+    "sand": ColorFamily.beige,
+    "oatmeal": ColorFamily.beige,
+    "natural": ColorFamily.beige,
+    "stone": ColorFamily.beige,
+    "putty": ColorFamily.beige,
+    "nude": ColorFamily.beige,
+    "biscuit": ColorFamily.beige,
+    "brown": ColorFamily.brown,
+    "chocolate": ColorFamily.brown,
+    "espresso": ColorFamily.brown,
+    "cocoa": ColorFamily.brown,
+    "walnut": ColorFamily.brown,
+    "chestnut": ColorFamily.brown,
+    "coffee": ColorFamily.brown,
+    "mocha": ColorFamily.brown,
+    "toffee": ColorFamily.brown,
+    "cognac": ColorFamily.brown,
+    "sienna": ColorFamily.brown,
+    # blues
+    "navy": ColorFamily.navy,
+    "midnight": ColorFamily.navy,
+    "ink": ColorFamily.navy,
+    "indigo": ColorFamily.navy,
+    "dark denim": ColorFamily.navy,
+    "blue": ColorFamily.blue,
+    "sky": ColorFamily.blue,
+    "cobalt": ColorFamily.blue,
+    "azure": ColorFamily.blue,
+    "denim": ColorFamily.blue,
+    "chambray": ColorFamily.blue,
+    "cornflower": ColorFamily.blue,
+    "powder blue": ColorFamily.blue,
+    "teal": ColorFamily.blue,
+    "turquoise": ColorFamily.blue,
+    "aqua": ColorFamily.blue,
+    # greens
+    "green": ColorFamily.green,
+    "olive": ColorFamily.green,
+    "sage": ColorFamily.green,
+    "forest": ColorFamily.green,
+    "emerald": ColorFamily.green,
+    "mint": ColorFamily.green,
+    "moss": ColorFamily.green,
+    "fern": ColorFamily.green,
+    "hunter": ColorFamily.green,
+    "pistachio": ColorFamily.green,
+    "seafoam": ColorFamily.green,
+    # warms
+    "yellow": ColorFamily.yellow,
+    "mustard": ColorFamily.yellow,
+    "butter": ColorFamily.yellow,
+    "lemon": ColorFamily.yellow,
+    "ochre": ColorFamily.yellow,
+    "orange": ColorFamily.orange,
+    "rust": ColorFamily.orange,
+    "terracotta": ColorFamily.orange,
+    "apricot": ColorFamily.orange,
+    "amber": ColorFamily.orange,
+    "clay": ColorFamily.orange,
+    "red": ColorFamily.red,
+    "burgundy": ColorFamily.red,
+    "wine": ColorFamily.red,
+    "maroon": ColorFamily.red,
+    "crimson": ColorFamily.red,
+    "scarlet": ColorFamily.red,
+    "cherry": ColorFamily.red,
+    "brick": ColorFamily.red,
+    "oxblood": ColorFamily.red,
+    "pink": ColorFamily.pink,
+    "blush": ColorFamily.pink,
+    "rose": ColorFamily.pink,
+    "fuchsia": ColorFamily.pink,
+    "magenta": ColorFamily.pink,
+    "coral": ColorFamily.pink,
+    "salmon": ColorFamily.pink,
+    "peach": ColorFamily.pink,
+    "purple": ColorFamily.purple,
+    "lilac": ColorFamily.purple,
+    "lavender": ColorFamily.purple,
+    "plum": ColorFamily.purple,
+    "violet": ColorFamily.purple,
+    "aubergine": ColorFamily.purple,
+    "mauve": ColorFamily.purple,
+    # metallics and prints, which hex cannot express
     "gold": ColorFamily.gold,
     "golden": ColorFamily.gold,
+    "brass": ColorFamily.gold,
     "silver": ColorFamily.silver,
-    "metallic silver": ColorFamily.silver,
+    "pewter": ColorFamily.silver,
+    "chrome": ColorFamily.silver,
     "multi": ColorFamily.multicolor,
     "multicolor": ColorFamily.multicolor,
     "multicolour": ColorFamily.multicolor,
     "multi-color": ColorFamily.multicolor,
     "printed": ColorFamily.multicolor,
+    "print": ColorFamily.multicolor,
+    "floral": ColorFamily.multicolor,
+    "stripe": ColorFamily.multicolor,
 }
+
+_NAME_TOKENS = re.compile(r"[^a-z]+")
 
 
 def family_for_name(name: str) -> ColorFamily | None:
-    """Recognise the families a hex value cannot express.
+    """Read a colour family out of a colour name.
 
-    Returns None rather than guessing, so an unrecognised name falls through to
-    the hex classifier instead of overriding it with a worse answer.
+    Two passes, because colour names are modifier-then-head. Multi-word entries
+    are matched first, so "off white" resolves as white and "dark denim" as navy
+    rather than through their component words. Everything else is read
+    right-to-left, because the last colour word is the actual colour and the ones
+    before it qualify it: "Natural Black" is black, "Deep Navy" is navy, and
+    "Heather Grey" is grey. Matching longest-word-first instead makes "Natural
+    Black" beige, which is how this was wrong the first time.
+
+    Returns None rather than guessing. An unrecognised name falls through to the
+    hex classifier where one exists, and to no colour where none does, which is
+    honest: null means we do not know.
     """
-    return _NAMED_OVERRIDES.get(name.strip().lower())
+    tokens = [token for token in _NAME_TOKENS.sub(" ", name.lower()).split() if token]
+    if not tokens:
+        return None
+
+    padded = " " + " ".join(tokens) + " "
+    for phrase, family in sorted(
+        ((p, f) for p, f in _COLOR_NAMES.items() if " " in p),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if f" {phrase} " in padded:
+            return family
+
+    for token in reversed(tokens):
+        single = _COLOR_NAMES.get(token)
+        if single is not None:
+            return single
+    return None

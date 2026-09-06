@@ -144,9 +144,46 @@ def test_invalid_hex_raises() -> None:
 
 
 def test_metallics_come_from_names_because_hex_cannot_express_them() -> None:
+    """Gold and beige are the same coordinates in hex. Only the word separates them."""
     assert family_for_name("Gold") is ColorFamily.gold
     assert family_for_name("multi") is ColorFamily.multicolor
-    assert family_for_name("cerulean") is None, "unknown names fall through to the hex"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Black", ColorFamily.black),
+        ("Washed Black", ColorFamily.black),
+        ("Heather Grey", ColorFamily.gray),
+        ("Off White", ColorFamily.white),
+        ("Coffee Bean", ColorFamily.brown),
+        ("Deep Taupe", ColorFamily.beige),
+        ("Navy", ColorFamily.navy),
+        ("Indigo", ColorFamily.navy),
+        ("Sage Green", ColorFamily.green),
+        ("Bone", ColorFamily.white),
+        ("Burgundy", ColorFamily.red),
+        ("Blush", ColorFamily.pink),
+    ],
+)
+def test_colour_names_resolve_to_a_family(name: str, expected: ColorFamily) -> None:
+    """Most sources give a name and no hex at all, so this is the primary path
+    rather than a fallback. Shopify's public feed has no colour field whatsoever."""
+    assert family_for_name(name) is expected
+
+
+def test_longest_phrase_wins_over_a_shorter_contained_one() -> None:
+    """ "Off white" must not resolve through "white" alone, and "dark denim" is
+    navy rather than the blue that "denim" would give."""
+    assert family_for_name("Off White") is ColorFamily.white
+    assert family_for_name("Dark Denim") is ColorFamily.navy
+    assert family_for_name("Denim") is ColorFamily.blue
+
+
+def test_an_unrecognised_colour_name_returns_none() -> None:
+    """Null means unknown. Guessing here would put a wrong colour on a garment,
+    which a shopper filtering by colour would see immediately."""
+    assert family_for_name("Tungsten Nebula") is None
 
 
 # --- sizes ---------------------------------------------------------------

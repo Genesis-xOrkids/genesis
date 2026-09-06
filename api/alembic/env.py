@@ -3,10 +3,18 @@
 The models are the schema authority: this file points autogenerate at
 ``Base.metadata`` and at the same database URL the application uses, so a drift
 check is just ``upgrade head`` followed by ``revision --autogenerate``.
+
+``alembic_postgresql_enum`` is imported for its side effect. Stock autogenerate
+does not track which Postgres enum types already exist, so the first new table
+reusing an existing type emits a second CREATE TYPE and the migration fails. The
+alternative is hand-editing inside the generated block on every such migration,
+which is exactly the drift the no-hand-editing rule exists to prevent. Fixing
+the generator is the durable version of that fix.
 """
 
 from __future__ import annotations
 
+import alembic_postgresql_enum  # noqa: F401  - registers enum handling on import
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 

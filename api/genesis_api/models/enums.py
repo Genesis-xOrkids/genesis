@@ -251,3 +251,33 @@ class AttributeSource(enum.Enum):
     model_text = "model_text"
     human_label = "human_label"
     derived = "derived"
+
+
+class StorefrontRoute(enum.Enum):
+    """How a storefront's catalog is read.
+
+    ``ucp`` is the interface a merchant publishes for agents and asks them to
+    prefer. ``public_feed`` is the platform's public product document, which is
+    the fallback where no sanctioned interface is advertised. ``unknown`` means
+    discovery has not run yet, which is distinct from having run and found
+    nothing.
+    """
+
+    ucp = "ucp"
+    public_feed = "public_feed"
+    unknown = "unknown"
+
+
+class IngestionRunStatus(enum.Enum):
+    """Outcome of one storefront's ingestion.
+
+    ``blocked`` and ``disallowed`` are separated from ``failed`` on purpose. A
+    site refusing us is a fact about that source, not a defect in the run, and
+    conflating them would make a rising failure rate unreadable.
+    """
+
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    blocked = "blocked"
+    disallowed = "disallowed"

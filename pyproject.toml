@@ -52,3 +52,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["api/tests", "intelligence/tests"]
 pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "alembic-postgresql-enum>=1.10.0",
+]
