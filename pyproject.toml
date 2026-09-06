@@ -59,8 +59,20 @@ plugins = ["pydantic.mypy"]
 # fakes until they stop resembling the failure being tested.
 exclude = ["/tests/", "^evals/.*/fixtures/"]
 
+# torch and PIL come from the optional embeddings extra, which CI does not
+# install: two gigabytes of download on every run to typecheck one module is a
+# bad trade. This only relaxes checking where the package is absent, so local
+# runs with the extra installed still get the real types.
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "strawberry.*", "open_clip.*", "httpx2.*", "protego.*"]
+module = [
+    "pgvector.*",
+    "strawberry.*",
+    "open_clip.*",
+    "httpx2.*",
+    "protego.*",
+    "torch.*",
+    "PIL.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
