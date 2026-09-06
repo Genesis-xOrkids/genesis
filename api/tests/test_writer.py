@@ -204,3 +204,35 @@ def test_natural_keys_match_the_database_constraints(session: Session) -> None:
     assert actual, "expected unique constraints in the database"
     assert set(natural_key_columns(Product.__mapper__)) == actual["products"]
     assert set(natural_key_columns(Brand.__mapper__)) == actual["brands"]
+
+
+def test_a_batch_larger_than_the_parameter_cap_is_split(session: Session) -> None:
+    """Postgres accepts at most 65535 bind parameters per statement.
+
+    A wide table reaches that ceiling in a few thousand rows, and the failure is
+    a hard error mid-ingest rather than anything graceful, so the writer has to
+    split rather than trust that batches stay small.
+    """
+    specs = [
+        WriteSpec(
+            entity="Product",
+            natural_key={"source": "captest", "source_id": f"sku-{i}"},
+            values={
+                "provenance": Provenance.feed_sync,
+                "title": f"Product {i}",
+                "description": "x" * 20,
+                "category": Category.dress,
+            },
+        )
+        for i in range(9000)
+    ]
+    results = write(session, specs)
+    assert len(results) == 9000
+    assert all(r.created for r in results)
+
+    count = session.execute(
+        select(func.count())
+        .select_from(Product.__table__)
+        .where(Product.__table__.c.source == "captest")
+    ).scalar_one()
+    assert count == 9000
