@@ -57,6 +57,13 @@ def _row(sku: str, name: str, brand: str, category: str, price: str, **extra: ob
     }
 
 
+def _connector() -> AffiliateFeedConnector:
+    """The same connector the catalog fixture uses, for tests adding rows."""
+    return AffiliateFeedConnector(
+        source="searchtest", retailer_name="Test Retailer", rates=RATES, columns=RAKUTEN_COLUMNS
+    )
+
+
 CATALOG = [
     _row("S1", "Black Silk Slip Dress", "Ganni", "Womens Dresses", "180.00", color_hex="#0a0a0a"),
     _row("S2", "Navy Wool Column Dress", "Toteme", "Womens Dresses", "450.00", color_hex="#1a2b5e"),
@@ -253,3 +260,46 @@ def test_one_row_per_product_even_with_several_offers(catalog: Session) -> None:
     # Two source rows, but each source keys its own product; what matters is that
     # a single product never appears twice through its own offers.
     assert len({r.product_id for r in slips}) == len(slips)
+
+
+def test_colourways_of_one_style_are_collapsed(catalog: Session) -> None:
+    """Splitting records per colourway is what gave the catalog colour at all,
+    but it means one shoe can exist as forty-nine products. Eight results that
+    are the same shoe in eight colours is not a result set."""
+    rows = [
+        _row(f"CW{i}", f"Signature Loafer | {colour}", "Testwear", "Womens Shoes", "180.00")
+        for i, colour in enumerate(["Black", "Navy", "Bone", "Cognac", "Sage", "Rust"])
+    ]
+    ingest(catalog, _connector().normalize(rows))
+    catalog.flush()
+
+    results, _ = search_catalog(catalog.connection(), query="signature loafer", limit=8)
+    loafers = [r for r in results if "Signature Loafer" in r.title]
+    assert len(loafers) <= 2, "one style must not fill the page"
+    assert any(r.other_colourways > 0 for r in loafers), "folded colourways must be counted"
+
+
+def test_a_collapsed_result_reports_how_many_were_folded(catalog: Session) -> None:
+    rows = [
+        _row(f"CT{i}", f"Everyday Tee | {colour}", "Testwear", "Womens Tops", "40.00")
+        for i, colour in enumerate(["Black", "White", "Navy", "Sage"])
+    ]
+    ingest(catalog, _connector().normalize(rows))
+    catalog.flush()
+
+    results, _ = search_catalog(catalog.connection(), query="everyday tee", limit=8)
+    tees = [r for r in results if "Everyday Tee" in r.title]
+    assert tees
+    assert sum(1 for _ in tees) + tees[0].other_colourways == 4
+
+
+def test_distinct_styles_are_not_collapsed_together(catalog: Session) -> None:
+    """Collapsing keys on brand and style stem, so two genuinely different
+    garments from one brand must both survive."""
+    results, _ = search_catalog(
+        catalog.connection(),
+        filters=SearchFilters(categories=(Category.dress,)),
+        limit=20,
+    )
+    titles = {r.title for r in results}
+    assert len(titles) == len(results), "no duplicate titles among survivors"

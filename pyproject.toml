@@ -17,6 +17,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Kept out of the default install. The API, the write path, and the ingestion
+# pipelines never need torch, and making every deploy carry two gigabytes of it
+# to serve a GraphQL query is the wrong trade.
+embeddings = [
+    "torch>=2.6.0",
+    "open-clip-torch>=2.32.0",
+    "transformers>=4.50.0",
+    "pillow>=11.0.0",
+]
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.0",
@@ -45,8 +54,25 @@ warn_return_any = true
 disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
+# Tests are excluded: they build deliberately malformed inputs and substitute
+# fakes for transports, and satisfying strict typing there means weakening the
+# fakes until they stop resembling the failure being tested.
+exclude = ["/tests/", "^evals/.*/fixtures/"]
+
+# torch and PIL come from the optional embeddings extra, which CI does not
+# install: two gigabytes of download on every run to typecheck one module is a
+# bad trade. This only relaxes checking where the package is absent, so local
+# runs with the extra installed still get the real types.
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "strawberry.*"]
+module = [
+    "pgvector.*",
+    "strawberry.*",
+    "open_clip.*",
+    "httpx2.*",
+    "protego.*",
+    "torch.*",
+    "PIL.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

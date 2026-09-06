@@ -21,6 +21,7 @@ smuggled in.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -35,9 +36,19 @@ from api.genesis_api.models.enums import Category, ColorFamily, SizeSystem
 # of any one ranker cannot dominate the fusion on their own.
 RRF_K = 60
 
+# Merchandisers append the colourway to the title after a pipe or a spaced dash.
+_TITLE_SEPARATOR = re.compile(r"\s+[|\u2013\u2014-]\s+|\|")
+
 # How deep each ranker goes before fusion. Deeper than the final limit so a
-# result ranked poorly by one ranker can still be rescued by another.
-CANDIDATE_DEPTH = 100
+# result ranked poorly by one ranker can still be rescued by another, and deep
+# enough that collapsing colourways afterwards still leaves a full page.
+CANDIDATE_DEPTH = 200
+
+# At most this many colourways of one style in a result set. Splitting source
+# records per colourway is what gave the catalog colour at all, but it means one
+# shoe can exist as forty-nine products. Eight results that are the same shoe in
+# eight colours is not a result set, and no amount of ranking quality fixes it.
+MAX_PER_STYLE = 2
 
 
 class Embedder(Protocol):
@@ -83,6 +94,10 @@ class SearchResult:
     in_stock: bool | None
     score: float = 0.0
     matched_by: tuple[str, ...] = ()
+    # How many further colourways of this style were collapsed behind this
+    # result, so the agent can say "also in four other colours" rather than
+    # letting the shopper discover it by clicking through.
+    other_colourways: int = 0
 
 
 @dataclass
@@ -344,4 +359,42 @@ def _hydrate(
         for row in cheapest.values()
     ]
     results.sort(key=lambda result: (-result.score, result.price_usd_cents or 1 << 31))
-    return results[:limit]
+    return _collapse_colourways(results, limit)
+
+
+def _style_key(result: SearchResult) -> tuple[str, str]:
+    """What makes two results the same garment in different colours.
+
+    Colourway splitting gives each colour its own product with its own id, so
+    identity has to come from the brand and the style name rather than the row.
+    The colour is stripped from the title first, since merchandisers append it
+    ("Barrel Jean | Washed Black") and leaving it in makes every colourway look
+    like a different style, which is exactly the collapse this is trying to do.
+    """
+    stem = _TITLE_SEPARATOR.split(result.title)[0].strip().lower()
+    return ((result.brand or "").lower(), stem)
+
+
+def _collapse_colourways(results: list[SearchResult], limit: int) -> list[SearchResult]:
+    """Keep the best few colourways per style, and count the rest.
+
+    Order is preserved, so the highest-ranked colourway of a style is the one
+    kept. Nothing is discarded silently: the survivors carry a count of what was
+    folded behind them.
+    """
+    kept: list[SearchResult] = []
+    seen: dict[tuple[str, str], int] = {}
+    folded: dict[tuple[str, str], int] = {}
+
+    for result in results:
+        key = _style_key(result)
+        count = seen.get(key, 0)
+        if count < MAX_PER_STYLE and len(kept) < limit:
+            seen[key] = count + 1
+            kept.append(result)
+        else:
+            folded[key] = folded.get(key, 0) + 1
+
+    for result in kept:
+        result.other_colourways = folded.get(_style_key(result), 0)
+    return kept
