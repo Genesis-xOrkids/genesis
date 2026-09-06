@@ -73,9 +73,9 @@ class ShopifyConnector:
         description = record.get("descriptionHtml") or record.get("description")
         product_type = record.get("productType")
         tags = " ".join(record.get("tags") or [])
-        # Trustworthiness order: an explicit field beats a tag, a tag beats the
-        # marketing title.
-        texts = (product_type, tags, title, description)
+        # The garment's own name leads; a merchandising department is a shelf
+        # rather than a description of what the thing is.
+        texts = (title, product_type, tags, description)
 
         color_hex, color_family = self._color(record)
 

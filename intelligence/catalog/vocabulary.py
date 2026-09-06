@@ -43,6 +43,11 @@ CATEGORY_TERMS: dict[str, Category] = {
     "puffer": Category.coat,
     "parka": Category.coat,
     "overcoat": Category.coat,
+    "peacoat": Category.coat,
+    "pea coat": Category.coat,
+    "anorak": Category.coat,
+    "windbreaker": Category.coat,
+    "raincoat": Category.coat,
     "coat": Category.coat,
     "blazer": Category.blazer,
     "sport coat": Category.blazer,
@@ -69,10 +74,16 @@ CATEGORY_TERMS: dict[str, Category] = {
     "tank": Category.top,
     "camisole": Category.top,
     "bodysuit": Category.top,
+    "cami": Category.top,
+    "polo": Category.top,
     "top": Category.top,
     "jeans": Category.jeans,
+    "jean": Category.jeans,
     "denim pant": Category.jeans,
     "trouser": Category.pants,
+    "jogger": Category.pants,
+    "sweatpant": Category.pants,
+    "cargo pant": Category.pants,
     "chino": Category.pants,
     "legging": Category.pants,
     "pant": Category.pants,
@@ -286,9 +297,24 @@ def _match[T](text: str, terms: dict[str, T]) -> T | None:
     haystack = _tokens(text)
     for phrase in sorted(terms, key=len, reverse=True):
         normalized = _tokens(phrase).strip()
-        if f" {normalized} " in haystack or f" {normalized}s " in haystack:
+        if any(f" {form} " in haystack for form in _inflections(normalized)):
             return terms[phrase]
     return None
+
+
+def _inflections(phrase: str) -> tuple[str, ...]:
+    """The phrase, plus the plural and singular it might appear as.
+
+    Both directions are needed and only one was there originally. Titles say
+    "Sailor Jean" where the vocabulary says "jeans", so matching only
+    phrase-plus-s filed a whole category of denim under trousers.
+    """
+    forms = {phrase, f"{phrase}s"}
+    if phrase.endswith("es") and len(phrase) > 3:
+        forms.add(phrase[:-2])
+    if phrase.endswith("s") and len(phrase) > 2:
+        forms.add(phrase[:-1])
+    return tuple(forms)
 
 
 def category_for(*texts: str | None) -> Category | None:
@@ -334,8 +360,14 @@ def gender_for(*texts: str | None) -> Gender | None:
 def _first[T](terms: dict[str, T], texts: tuple[str | None, ...]) -> T | None:
     """First non-empty text that yields a match wins.
 
-    Callers pass fields in order of trustworthiness - an explicit category field
-    before a marketing title - so a stated fact beats one inferred from prose.
+    Callers pass fields in order of trustworthiness, and for what a garment *is*
+    that order starts with its own name. A merchandising department is a shelf,
+    not a description: storefronts file "Knit Cami Mini Dress" under Sweaters
+    because that is where a shopper browsing knitwear should find it, and taking
+    the department at its word labelled three dresses as sweaters.
+
+    Facts that names do not carry are the exception. Gender is almost never in a
+    title and almost always in a tag, so it reads those first.
     """
     for text in texts:
         if not text:
