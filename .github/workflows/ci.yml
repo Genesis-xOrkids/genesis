@@ -46,13 +46,13 @@ jobs:
       - run: uv sync --extra dev
 
       - name: Lint
-        run: uv run ruff check api/ intelligence/ scripts/
+        run: uv run ruff check api/ intelligence/ services/ scripts/ evals/
 
       - name: Format
-        run: uv run ruff format --check api/ intelligence/ scripts/
+        run: uv run ruff format --check api/ intelligence/ services/ scripts/ evals/
 
       - name: Types
-        run: uv run mypy api/genesis_api intelligence/model_gateway
+        run: uv run mypy api/genesis_api intelligence services evals
 
       - name: Migration chain has exactly one head
         working-directory: api
