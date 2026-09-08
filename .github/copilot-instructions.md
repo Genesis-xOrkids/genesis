@@ -77,7 +77,7 @@ is there.
 
 - `api/alembic/versions/**` — Alembic writes these; review the models instead.
 - `uv.lock`, `package-lock.json`, `skills-lock.json`.
-- `second-brain/wiki/**` — compiled output, not hand-written source.
+- `second-brain/wiki/**` — compiled output; don’t review diffs here, but do consult it (especially `decisions/` and `projects/`) for context checks.
 - Test code that deliberately violates production rules to build a bad input.
 
 ## Summary shape
