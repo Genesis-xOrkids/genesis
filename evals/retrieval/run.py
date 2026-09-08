@@ -29,7 +29,7 @@ from intelligence.catalog.search import search_catalog
 from services.embeddings import FashionEmbedder
 
 TOP_K = 8
-_SEPARATOR = re.compile(r"\s+[|–—-]\s+|\|")
+_SEPARATOR = re.compile(r"\s+[|–—-]\s+|\|")  # noqa: RUF001 - en/em dashes are the separators
 
 
 @dataclass

@@ -47,7 +47,7 @@ class UcpError(RuntimeError):
     pass
 
 
-class UcpUnavailable(UcpError):
+class UcpUnavailableError(UcpError):
     """The storefront advertises no UCP support.
 
     Not a failure. Most storefronts do not implement it, and the caller falls
@@ -98,35 +98,35 @@ class UcpDiscovery:
 def _parse_services(raw: dict[str, Any]) -> tuple[UcpService, ...]:
     services: list[UcpService] = []
     for name, entries in (raw.get("services") or {}).items():
-        for entry in entries or []:
-            services.append(
-                UcpService(
-                    name=str(name),
-                    version=str(entry.get("version", "")),
-                    transport=str(entry.get("transport", "")),
-                    spec=entry.get("spec"),
-                    schema=entry.get("schema"),
-                    endpoint=entry.get("endpoint"),
-                )
+        services.extend(
+            UcpService(
+                name=str(name),
+                version=str(entry.get("version", "")),
+                transport=str(entry.get("transport", "")),
+                spec=entry.get("spec"),
+                schema=entry.get("schema"),
+                endpoint=entry.get("endpoint"),
             )
+            for entry in entries or []
+        )
     return tuple(services)
 
 
 def discover(fetcher: JsonFetcher, domain: str) -> UcpDiscovery:
     """Read a storefront's UCP discovery document.
 
-    Raises :class:`UcpUnavailable` when the storefront does not advertise UCP,
+    Raises :class:`UcpUnavailableError` when the storefront does not advertise UCP,
     which is the common case and a routing decision rather than an error.
     """
     url = f"https://{domain}{DISCOVERY_PATH}"
     try:
         payload = fetcher.get_json(url)
-    except Exception as exc:  # noqa: BLE001 - any failure here means "no UCP"
-        raise UcpUnavailable(f"{domain}: no UCP discovery document ({exc})") from exc
+    except Exception as exc:
+        raise UcpUnavailableError(f"{domain}: no UCP discovery document ({exc})") from exc
 
     block = payload.get("ucp") if isinstance(payload, dict) else None
     if not isinstance(block, dict) or not block.get("version"):
-        raise UcpUnavailable(f"{domain}: discovery document states no UCP version")
+        raise UcpUnavailableError(f"{domain}: discovery document states no UCP version")
 
     discovery = UcpDiscovery(
         domain=domain,
@@ -155,6 +155,6 @@ def route_for(fetcher: JsonFetcher, domain: str) -> str:
     """
     try:
         discovery = discover(fetcher, domain)
-    except UcpUnavailable:
+    except UcpUnavailableError:
         return "public_feed"
     return "ucp" if discovery.offers_catalog else "public_feed"

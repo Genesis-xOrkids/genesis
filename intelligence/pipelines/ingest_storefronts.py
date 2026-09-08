@@ -39,11 +39,16 @@ from intelligence.catalog.connectors.shopify_public import (
     fetch_storefront_profile,
     iter_storefront_products,
 )
-from intelligence.catalog.fetching import Blocked, DisallowedByRobots, FetchError, PoliteFetcher
+from intelligence.catalog.fetching import (
+    BlockedError,
+    DisallowedByRobotsError,
+    FetchError,
+    PoliteFetcher,
+)
 from intelligence.catalog.ingest import IngestReport, ingest
 from intelligence.catalog.money import FxRates
 from intelligence.catalog.normalized import NormalizationResult
-from intelligence.catalog.ucp import UcpUnavailable, discover
+from intelligence.catalog.ucp import UcpUnavailableError, discover
 
 log = structlog.get_logger(__name__)
 
@@ -167,7 +172,7 @@ def resolve_route(fetcher: PoliteFetcher, domain: str) -> StorefrontRoute:
     """
     try:
         discovery = discover(fetcher, domain)
-    except (UcpUnavailable, FetchError):
+    except (UcpUnavailableError, FetchError):
         return StorefrontRoute.public_feed
     return StorefrontRoute.ucp if discovery.offers_catalog else StorefrontRoute.public_feed
 
@@ -210,9 +215,9 @@ def fetch_storefront(
         records = list(
             iter_storefront_products(fetcher, profile, page_size=page_size, max_pages=max_pages)
         )
-    except DisallowedByRobots as exc:
+    except DisallowedByRobotsError as exc:
         return Fetched(route=route, status=IngestionRunStatus.disallowed, error=str(exc)[:500])
-    except Blocked as exc:
+    except BlockedError as exc:
         return Fetched(route=route, status=IngestionRunStatus.blocked, error=str(exc)[:500])
     except (FetchError, ValueError) as exc:
         return Fetched(

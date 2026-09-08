@@ -8,11 +8,13 @@ atomic fact, or it fails loudly, but it never becomes a confident wrong answer.
 from __future__ import annotations
 
 import datetime
+import pathlib
 from decimal import Decimal
 
 import pytest
 
-from api.genesis_api.models.enums import ColorFamily, SizeSystem
+from api.genesis_api.models.enums import Category, ColorFamily, Fit, Rise, SizeSystem
+from intelligence.catalog import vocabulary
 from intelligence.catalog.color import ColorError, family_for_hex, family_for_name, parse_hex
 from intelligence.catalog.money import (
     CurrencyError,
@@ -21,6 +23,7 @@ from intelligence.catalog.money import (
     from_minor_units,
     to_minor_units,
     to_usd_cents,
+    to_usd_cents_as_of,
 )
 from intelligence.catalog.sizes import parse_size
 
@@ -79,6 +82,51 @@ def test_negative_amounts_are_refused() -> None:
 
 def test_usd_needs_no_rate() -> None:
     assert to_usd_cents(4200, "USD", RATES) == 4200
+
+
+def test_a_converted_price_carries_the_date_of_the_rate_that_made_it() -> None:
+    """The pair is the point. A USD value without the rate's timestamp cannot be
+    audited or recomputed, which is why FxRates is dated at all."""
+    usd_cents, fx_at = to_usd_cents_as_of(10000, "EUR", RATES)
+    assert usd_cents == 10900
+    assert fx_at == RATES.as_of
+
+
+def test_no_rate_leaves_both_the_price_and_its_date_null() -> None:
+    """Not one or the other. A timestamp beside a null price would claim a rate
+    for a conversion that never happened - the drift three hand-written copies
+    of this try/except made possible."""
+    usd_cents, fx_at = to_usd_cents_as_of(1000, "SEK", RATES)
+    assert usd_cents is None
+    assert fx_at is None
+
+
+# --- vocabulary ----------------------------------------------------------
+
+
+def test_every_vocabulary_deriver_is_reached_by_the_bundle() -> None:
+    """Connectors derive attributes only through ``attributes_for``. A new
+    ``*_for`` helper nobody adds to it would be dead on arrival: written,
+    tested, and read by no connector."""
+    derivers = {
+        name
+        for name in dir(vocabulary)
+        if name.endswith("_for") and not name.startswith("_") and name != "attributes_for"
+    }
+    source = pathlib.Path(vocabulary.__file__).read_text()
+    body = source.split("def attributes_for(")[1].split("\ndef ")[0]
+    # gender_for is the documented exception: each connector orders its own
+    # gender signals, so it is called at the call site rather than in here.
+    unreached = {name for name in derivers if f"{name}(" not in body} - {"gender_for"}
+    assert not unreached, f"vocabulary helpers no connector reaches: {sorted(unreached)}"
+
+
+def test_the_bundle_derives_what_the_text_says() -> None:
+    attributes = vocabulary.attributes_for("Black High-Rise Skinny Jeans")
+    assert attributes["category"] is Category.jeans
+    assert attributes["rise"] is Rise.high
+    assert attributes["fit"] is Fit.skinny
+    assert attributes["neckline"] is None
 
 
 # --- color ---------------------------------------------------------------

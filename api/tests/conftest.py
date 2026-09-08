@@ -11,7 +11,6 @@ from collections.abc import Iterator
 
 import pytest
 from sqlalchemy.engine import Connection
-from sqlalchemy.orm import Session
 
 from api.genesis_api.db import engine
 
@@ -20,17 +19,3 @@ from api.genesis_api.db import engine
 def connection() -> Iterator[Connection]:
     with engine().connect() as conn:
         yield conn
-
-
-@pytest.fixture
-def session() -> Iterator[Session]:
-    """A session rolled back after each test, so tests never see each other."""
-    connection = engine().connect()
-    transaction = connection.begin()
-    sess = Session(bind=connection, expire_on_commit=False)
-    try:
-        yield sess
-    finally:
-        sess.close()
-        transaction.rollback()
-        connection.close()

@@ -8,14 +8,11 @@ and nulls that survive as unknown rather than becoming zeros.
 from __future__ import annotations
 
 import datetime
-from collections.abc import Iterator
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.genesis_api.db import engine
 from api.genesis_api.models import Brand, IngestionFailure, Offer, OfferSize, Product
 from api.genesis_api.models.enums import Category, ColorFamily, SizeSystem
 from intelligence.catalog.connectors.affiliate_feed import (
@@ -30,19 +27,6 @@ RATES = FxRates(
     as_of=datetime.datetime(2026, 9, 3, tzinfo=datetime.UTC),
     usd_per_unit={"EUR": Decimal("1.09"), "GBP": Decimal("1.27")},
 )
-
-
-@pytest.fixture
-def session() -> Iterator[Session]:
-    connection = engine().connect()
-    transaction = connection.begin()
-    sess = Session(bind=connection, expire_on_commit=False)
-    try:
-        yield sess
-    finally:
-        sess.close()
-        transaction.rollback()
-        connection.close()
 
 
 SHOPIFY_RECORDS = [

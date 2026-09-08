@@ -218,7 +218,8 @@ def test_results_are_compact_and_carry_no_description(catalog: Session) -> None:
     results, _ = search_catalog(catalog.connection(), query="dress")
     assert results
     assert not hasattr(results[0], "description")
-    assert results[0].url and results[0].image_url
+    assert results[0].url
+    assert results[0].image_url
 
 
 def test_limit_is_respected(catalog: Session) -> None:

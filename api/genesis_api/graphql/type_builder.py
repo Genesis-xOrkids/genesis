@@ -125,8 +125,7 @@ def build_types() -> dict[str, Any]:
         cls.__annotations__ = annotations
         cls.__module__ = __name__
 
-    for name, cls in raw.items():
-        _TYPE_NAMESPACE[name] = cls
+    _TYPE_NAMESPACE.update(raw)
 
     # Strawberry resolves string annotations against the defining module's
     # globals, so the namespace has to be visible here before decoration.

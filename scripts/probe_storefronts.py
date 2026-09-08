@@ -23,9 +23,14 @@ from intelligence.catalog.connectors.shopify_public import (
     fetch_storefront_profile,
     iter_storefront_products,
 )
-from intelligence.catalog.fetching import Blocked, DisallowedByRobots, FetchError, PoliteFetcher
+from intelligence.catalog.fetching import (
+    BlockedError,
+    DisallowedByRobotsError,
+    FetchError,
+    PoliteFetcher,
+)
 from intelligence.catalog.money import FxRates
-from intelligence.catalog.ucp import UcpUnavailable, discover
+from intelligence.catalog.ucp import UcpUnavailableError, discover
 
 
 @dataclass
@@ -47,14 +52,14 @@ def probe(fetcher: PoliteFetcher, domain: str, *, sample: int = 12) -> Probe:
     ucp = False
     try:
         ucp = discover(fetcher, domain).offers_catalog
-    except (UcpUnavailable, FetchError):
+    except (UcpUnavailableError, FetchError):
         ucp = False
 
     try:
         profile = fetch_storefront_profile(fetcher, domain)
-    except DisallowedByRobots as exc:
+    except DisallowedByRobotsError as exc:
         return Probe(domain, "disallowed", ucp=ucp, note=str(exc)[:60])
-    except Blocked:
+    except BlockedError:
         return Probe(domain, "blocked", ucp=ucp, note="bot management (403)")
     except (FetchError, ValueError) as exc:
         return Probe(domain, "no-metadata", ucp=ucp, note=f"{type(exc).__name__}: {str(exc)[:50]}")
@@ -63,7 +68,7 @@ def probe(fetcher: PoliteFetcher, domain: str, *, sample: int = 12) -> Probe:
         records = list(
             itertools.islice(iter_storefront_products(fetcher, profile, page_size=sample), sample)
         )
-    except Blocked:
+    except BlockedError:
         return Probe(domain, "blocked", ucp=ucp, currency=profile.currency, note="feed 403")
     except (FetchError, ValueError) as exc:
         return Probe(

@@ -22,11 +22,10 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.genesis_api.db import engine
 from api.genesis_api.models import IngestionRun, Offer, Product, Storefront
 from api.genesis_api.models.enums import IngestionRunStatus, SizeSystem, StorefrontRoute
 from api.genesis_api.writer import WriteSpec, write
-from intelligence.catalog.fetching import Blocked, DisallowedByRobots, FetchError
+from intelligence.catalog.fetching import BlockedError, DisallowedByRobotsError, FetchError
 from intelligence.catalog.money import FxRates
 from intelligence.pipelines.ingest_storefronts import (
     ROUTE_TTL,
@@ -75,19 +74,6 @@ class FakeFetcher:
         if "products.json" in url:
             return json.loads((FIXTURES / "everlane_products.json").read_text())
         raise AssertionError(f"unexpected request {url}")
-
-
-@pytest.fixture
-def session() -> Iterator[Session]:
-    connection = engine().connect()
-    transaction = connection.begin()
-    sess = Session(bind=connection, expire_on_commit=False)
-    try:
-        yield sess
-    finally:
-        sess.close()
-        transaction.rollback()
-        connection.close()
 
 
 @pytest.fixture
@@ -182,7 +168,7 @@ def test_a_refusal_is_recorded_as_blocked_not_failed(
 ) -> None:
     """A site refusing us is a fact about that source. Filing it as a failure
     would make a rising failure rate unreadable."""
-    fetched = fetch_storefront(FakeFetcher(refuse=Blocked("403")), storefront, RATES, now=NOW)
+    fetched = fetch_storefront(FakeFetcher(refuse=BlockedError("403")), storefront, RATES, now=NOW)
     outcome = persist(session, storefront, fetched, NOW)
     assert outcome.status is IngestionRunStatus.blocked
     assert outcome.report is None
@@ -193,7 +179,7 @@ def test_robots_disallow_is_recorded_distinctly(
     session: Session, storefront: StorefrontTarget
 ) -> None:
     fetched = fetch_storefront(
-        FakeFetcher(refuse=DisallowedByRobots("nope")), storefront, RATES, now=NOW
+        FakeFetcher(refuse=DisallowedByRobotsError("nope")), storefront, RATES, now=NOW
     )
     assert fetched.status is IngestionRunStatus.disallowed
 
@@ -216,7 +202,7 @@ def test_a_failed_storefront_does_not_lose_a_successful_one(
     persist(session, storefront, good, NOW)
     written = session.execute(select(func.count()).select_from(Product.__table__)).scalar_one()
 
-    bad = fetch_storefront(FakeFetcher(refuse=Blocked("403")), storefront, RATES, now=NOW)
+    bad = fetch_storefront(FakeFetcher(refuse=BlockedError("403")), storefront, RATES, now=NOW)
     persist(session, storefront, bad, NOW)
     after = session.execute(select(func.count()).select_from(Product.__table__)).scalar_one()
 

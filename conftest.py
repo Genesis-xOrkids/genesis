@@ -10,10 +10,14 @@ file cannot opt out by accident.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from api.genesis_api import db
+from api.genesis_api.db import engine
 from api.genesis_api.settings import settings
 
 
@@ -24,5 +28,27 @@ def _bind_test_database() -> None:
     try:
         with db._engine.connect() as connection:  # noqa: SLF001
             connection.execute(text("select 1"))
-    except Exception as exc:  # pragma: no cover - environment guard
+    # Blind on purpose: any failure to reach the database means the same thing
+    # here, and naming the driver's exception types would couple this guard to
+    # the driver.
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover
         pytest.skip(f"test database unavailable at {settings.test_database_url}: {exc}")
+
+
+@pytest.fixture
+def session() -> Iterator[Session]:
+    """A session rolled back after each test, so tests never see each other.
+
+    It lives here rather than in a package's own conftest because both test
+    packages need exactly this, and three copies of a rollback fixture is three
+    chances for one of them to start committing.
+    """
+    connection = engine().connect()
+    transaction = connection.begin()
+    sess = Session(bind=connection, expire_on_commit=False)
+    try:
+        yield sess
+    finally:
+        sess.close()
+        transaction.rollback()
+        connection.close()

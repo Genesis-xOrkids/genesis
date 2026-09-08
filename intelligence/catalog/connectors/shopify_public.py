@@ -28,7 +28,12 @@ from typing import Any
 from api.genesis_api.models.enums import ColorFamily, SizeSystem
 from intelligence.catalog import vocabulary
 from intelligence.catalog.color import ColorError, family_for_hex, family_for_name, parse_hex
-from intelligence.catalog.money import CurrencyError, FxRates, to_minor_units, to_usd_cents
+from intelligence.catalog.money import (
+    CurrencyError,
+    FxRates,
+    to_minor_units,
+    to_usd_cents_as_of,
+)
 from intelligence.catalog.normalized import (
     NormalizationResult,
     NormalizedImage,
@@ -299,7 +304,7 @@ class ShopifyPublicConnector:
         family = (
             family_for_name(colour_override)
             if colour_override
-            else self._colour_family(record, title, tags, colour, colour_hex)
+            else self._colour_family(title, tags, colour, colour_hex)
         )
 
         product = NormalizedProduct(
@@ -308,16 +313,8 @@ class ShopifyPublicConnector:
             title=title,
             brand_name=record.get("vendor") or self._profile.brand_name,
             description=description,
-            category=vocabulary.category_for(*texts),
             gender=vocabulary.gender_for(tag_text, product_type, title),
-            silhouette=vocabulary.silhouette_for(*texts),
-            neckline=vocabulary.neckline_for(*texts),
-            sleeve_length=vocabulary.sleeve_length_for(*texts),
-            sleeve_style=vocabulary.sleeve_style_for(*texts),
-            garment_length=vocabulary.length_for(*texts),
-            rise=vocabulary.rise_for(*texts),
-            fit=vocabulary.fit_for(*texts),
-            pattern=vocabulary.pattern_for(*texts),
+            **vocabulary.attributes_for(*texts),
             color_hex=colour_hex,
             color_family=family,
             images=tuple(
@@ -331,11 +328,10 @@ class ShopifyPublicConnector:
                 if image.get("src")
             ),
         )
-        return product, self._offer(record, source_id, title)
+        return product, self._offer(record, source_id)
 
     def _colour_family(
         self,
-        record: dict[str, Any],
         title: str,
         tags: list[Any],
         colour_options: list[str],
@@ -399,7 +395,7 @@ class ShopifyPublicConnector:
                 return [str(value) for value in option.get("values") or []]
         return []
 
-    def _offer(self, record: dict[str, Any], source_id: str, title: str) -> NormalizedOffer | None:
+    def _offer(self, record: dict[str, Any], source_id: str) -> NormalizedOffer | None:
         variants = record.get("variants") or []
         if not variants:
             return None
@@ -427,13 +423,7 @@ class ShopifyPublicConnector:
             if was > minor:
                 sale_minor, minor = minor, was
 
-        usd_cents: int | None = None
-        fx_at = None
-        try:
-            usd_cents = to_usd_cents(minor, currency, self._rates)
-            fx_at = self._rates.as_of
-        except CurrencyError:
-            usd_cents = None
+        usd_cents, fx_at = to_usd_cents_as_of(minor, currency, self._rates)
 
         size_index = self._size_option_index(record)
         sizes: list[NormalizedSize] = []

@@ -81,12 +81,12 @@ def validate_model_graph() -> None:
         if len(pk) != 1 or pk[0].name != "id" or pk[0].type.python_type is not int:
             problems.append(f"{mapper.class_.__name__}: needs a single integer 'id' primary key")
 
-        for fk in table.foreign_keys:
-            if fk.column.name != "id":
-                problems.append(
-                    f"{mapper.class_.__name__}.{fk.parent.name}: foreign key targets "
-                    f"{fk.target_fullname}, but the loader resolves parents by id"
-                )
+        problems.extend(
+            f"{mapper.class_.__name__}.{fk.parent.name}: foreign key targets "
+            f"{fk.target_fullname}, but the loader resolves parents by id"
+            for fk in table.foreign_keys
+            if fk.column.name != "id"
+        )
 
         for relationship in sa_inspect(mapper.class_).relationships:
             try:
