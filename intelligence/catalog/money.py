@@ -141,3 +141,25 @@ def to_usd_cents(minor: int, currency: str, rates: FxRates) -> int:
     amount = from_minor_units(minor, currency)
     usd = amount * rates.rate(currency)
     return int(usd.scaleb(2).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def to_usd_cents_as_of(
+    minor: int, currency: str, rates: FxRates
+) -> tuple[int | None, datetime.datetime | None]:
+    """The USD value and the moment its rate was taken, or two nulls.
+
+    Every connector needs the same thing from a price it cannot convert: the
+    listed amount and currency still stand, so ``price_usd_cents`` stays null
+    rather than becoming a guess, and the rate timestamp stays null with it.
+    Each one used to write that try/except itself, and the two values could
+    drift apart - a timestamp set outside the ``try`` would claim a rate for a
+    conversion that never happened.
+
+    Returning them together is what makes that impossible. They are one fact:
+    a derived value and the input that produced it, which is why :class:`FxRates`
+    is dated at all.
+    """
+    try:
+        return to_usd_cents(minor, currency, rates), rates.as_of
+    except CurrencyError:
+        return None, None

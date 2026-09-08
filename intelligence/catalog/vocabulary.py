@@ -13,6 +13,7 @@ shorter pattern that fires first would get it wrong every time.
 from __future__ import annotations
 
 import re
+from typing import TypedDict
 
 from api.genesis_api.models.enums import (
     Category,
@@ -315,6 +316,53 @@ def _inflections(phrase: str) -> tuple[str, ...]:
     if phrase.endswith("s") and len(phrase) > 2:
         forms.add(phrase[:-1])
     return tuple(forms)
+
+
+class GarmentAttributes(TypedDict):
+    """Every attribute derivable from a garment's own descriptive text.
+
+    Unpacked straight into ``NormalizedProduct(**attributes_for(*texts))``, so
+    the keys are the model's field names rather than the helpers' names. It is a
+    ``TypedDict`` and not a dataclass for exactly that reason: mypy checks the
+    unpacking key by key, so a key that stops matching a ``NormalizedProduct``
+    field is a type error rather than a silent runtime one.
+    """
+
+    category: Category | None
+    silhouette: Silhouette | None
+    neckline: Neckline | None
+    sleeve_length: SleeveLength | None
+    sleeve_style: SleeveStyle | None
+    garment_length: GarmentLength | None
+    rise: Rise | None
+    fit: Fit | None
+    pattern: Pattern | None
+
+
+def attributes_for(*texts: str | None) -> GarmentAttributes:
+    """Derive every text-derived attribute at once, in trustworthiness order.
+
+    Connectors differ in where a garment's descriptive text comes from - a
+    Shopify product type, an affiliate feed's category column - but not in what
+    is derived from it once they have it. Keeping that list here means a tenth
+    attribute is added in one place rather than in every connector, and no
+    connector can quietly derive eight of the nine.
+
+    Gender is deliberately absent: it is almost never in a title and almost
+    always in a tag, so each connector passes its own ordering to
+    :func:`gender_for`. That difference is real, not duplication.
+    """
+    return GarmentAttributes(
+        category=category_for(*texts),
+        silhouette=silhouette_for(*texts),
+        neckline=neckline_for(*texts),
+        sleeve_length=sleeve_length_for(*texts),
+        sleeve_style=sleeve_style_for(*texts),
+        garment_length=length_for(*texts),
+        rise=rise_for(*texts),
+        fit=fit_for(*texts),
+        pattern=pattern_for(*texts),
+    )
 
 
 def category_for(*texts: str | None) -> Category | None:

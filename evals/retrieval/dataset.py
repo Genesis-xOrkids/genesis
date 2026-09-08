@@ -29,7 +29,7 @@ from sqlalchemy.engine import Connection
 from api.genesis_api.models import Brand, Product
 from api.genesis_api.models.enums import Category, ColorFamily
 
-_SEPARATOR = re.compile(r"\s+[|–—-]\s+|\|")
+_SEPARATOR = re.compile(r"\s+[|–—-]\s+|\|")  # noqa: RUF001 - en/em dashes are the separators
 _NOISE = re.compile(r"[^a-z0-9\s]")
 # Words that identify a merchant rather than a garment. Leaving them in turns a
 # retrieval test into a brand-name lookup, which every ranker passes.

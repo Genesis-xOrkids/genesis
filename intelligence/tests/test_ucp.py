@@ -16,7 +16,7 @@ import pytest
 from intelligence.catalog.ucp import (
     CATALOG_TOOLS,
     SHOPPING_SERVICE,
-    UcpUnavailable,
+    UcpUnavailableError,
     discover,
     route_for,
 )
@@ -68,18 +68,18 @@ def test_a_storefront_without_ucp_is_routed_to_the_public_feed() -> None:
     """Not an error: most storefronts do not implement UCP, and this is a
     routing decision."""
     fetcher = FakeFetcher(error=RuntimeError("404 not found"))
-    with pytest.raises(UcpUnavailable):
+    with pytest.raises(UcpUnavailableError):
         discover(fetcher, "shop.test")
     assert route_for(fetcher, "shop.test") == "public_feed"
 
 
 def test_a_document_without_a_version_is_not_ucp() -> None:
-    with pytest.raises(UcpUnavailable, match="states no UCP version"):
+    with pytest.raises(UcpUnavailableError, match="states no UCP version"):
         discover(FakeFetcher({"ucp": {}}), "shop.test")
 
 
 def test_a_non_json_object_is_not_ucp() -> None:
-    with pytest.raises(UcpUnavailable):
+    with pytest.raises(UcpUnavailableError):
         discover(FakeFetcher(["not", "a", "document"]), "shop.test")
 
 

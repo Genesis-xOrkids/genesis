@@ -256,11 +256,11 @@ def _extract_usage(response: Any) -> Usage:
 
 
 def _extract_text(response: Any) -> str:
-    parts: list[str] = []
-    for block in getattr(response, "content", []) or []:
-        if getattr(block, "type", None) == "text":
-            parts.append(getattr(block, "text", ""))
-    return "".join(parts)
+    return "".join(
+        getattr(block, "text", "")
+        for block in getattr(response, "content", []) or []
+        if getattr(block, "type", None) == "text"
+    )
 
 
 class ModelGateway:

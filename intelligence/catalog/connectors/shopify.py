@@ -18,7 +18,12 @@ from typing import Any
 from api.genesis_api.models.enums import SizeSystem
 from intelligence.catalog import vocabulary
 from intelligence.catalog.color import ColorError, family_for_hex, family_for_name, parse_hex
-from intelligence.catalog.money import CurrencyError, FxRates, to_minor_units, to_usd_cents
+from intelligence.catalog.money import (
+    CurrencyError,
+    FxRates,
+    to_minor_units,
+    to_usd_cents_as_of,
+)
 from intelligence.catalog.normalized import (
     NormalizationResult,
     NormalizedImage,
@@ -85,16 +90,8 @@ class ShopifyConnector:
             title=title,
             brand_name=(record.get("vendor") or None),
             description=description,
-            category=vocabulary.category_for(*texts),
             gender=vocabulary.gender_for(tags, product_type, title),
-            silhouette=vocabulary.silhouette_for(*texts),
-            neckline=vocabulary.neckline_for(*texts),
-            sleeve_length=vocabulary.sleeve_length_for(*texts),
-            sleeve_style=vocabulary.sleeve_style_for(*texts),
-            garment_length=vocabulary.length_for(*texts),
-            rise=vocabulary.rise_for(*texts),
-            fit=vocabulary.fit_for(*texts),
-            pattern=vocabulary.pattern_for(*texts),
+            **vocabulary.attributes_for(*texts),
             color_hex=color_hex,
             color_family=color_family,
             images=tuple(
@@ -139,15 +136,7 @@ class ShopifyConnector:
             sale_minor = minor
             minor = to_minor_units(str(compare_at), currency)
 
-        usd_cents: int | None = None
-        fx_at = None
-        try:
-            usd_cents = to_usd_cents(minor, currency, self._rates)
-            fx_at = self._rates.as_of
-        except CurrencyError:
-            # No rate today. The listed amount and currency still stand; the
-            # derived value stays null rather than becoming a guess.
-            usd_cents = None
+        usd_cents, fx_at = to_usd_cents_as_of(minor, currency, self._rates)
 
         sizes: list[NormalizedSize] = []
         for variant in variants:
