@@ -41,7 +41,7 @@ class FetchError(RuntimeError):
     """A request that cannot be completed as asked."""
 
 
-class DisallowedByRobots(FetchError):
+class DisallowedByRobotsError(FetchError):
     """The host's robots.txt refuses this path.
 
     A distinct type because it is not a failure to retry or report as an outage:
@@ -49,7 +49,7 @@ class DisallowedByRobots(FetchError):
     """
 
 
-class Blocked(FetchError):
+class BlockedError(FetchError):
     """The host refused us (403).
 
     Also not retried. Some storefronts sit behind bot management; the honest
@@ -119,9 +119,11 @@ class PoliteFetcher:
         the same as refusing: absence is treated as permission, the same way a
         browser treats it.
         """
+        if self._client is None:
+            raise FetchError("use PoliteFetcher as a context manager")
+
         robots_url = urljoin(url, "/robots.txt")
         try:
-            assert self._client is not None
             response = self._client.get(robots_url)
         except httpx2.HTTPError:
             state.unrestricted = True
@@ -161,7 +163,7 @@ class PoliteFetcher:
             raise FetchError("use PoliteFetcher as a context manager")
         if not self.allowed(url):
             self.stats.disallowed += 1
-            raise DisallowedByRobots(f"robots.txt disallows {url}")
+            raise DisallowedByRobotsError(f"robots.txt disallows {url}")
 
         state = self._state(url)
         backoff = state.delay_seconds
@@ -181,7 +183,7 @@ class PoliteFetcher:
 
             if response.status_code == 403:
                 self.stats.blocked += 1
-                raise Blocked(f"{url}: host refused (403)")
+                raise BlockedError(f"{url}: host refused (403)")
             if response.status_code == 404:
                 raise FetchError(f"{url}: not found (404)")
             if response.status_code == 429 or response.status_code >= 500:

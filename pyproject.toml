@@ -41,8 +41,54 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "TID"]
+# The families past the original seven each enforce something the constitution
+# already states but nothing checked. ERA, FIX and TD are "no transitional
+# code: no TODOs, no disabled blocks". ARG and RET are "nothing without a
+# purpose". DTZ keeps every `_at` value timezone-aware. SLF and BLE were
+# already being suppressed by hand - twelve `# noqa: SLF001` and two
+# `# noqa: BLE001` directives were in the tree for rules that were never
+# switched on, so RUF100 read them as dead. Turning the rules on is what the
+# author of those directives meant.
+#
+# S (bandit) is deliberately absent. 294 of its 295 findings here are `assert`
+# in tests, which is how pytest is written; the remainder are a type-narrowing
+# assert and a non-cryptographic sampler. Buying two findings with a
+# per-file-ignore and two suppressions is not worth it, and gitleaks already
+# covers the case that matters.
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "TID",
+    "ARG",
+    "BLE",
+    "C4",
+    "DTZ",
+    "ERA",
+    "FIX",
+    "N",
+    "PERF",
+    "PIE",
+    "PT",
+    "RET",
+    "RUF",
+    "SLF",
+    "TD",
+]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic fixes the signature of its include_object callback; the parameters it
+# does not consult still have to be declared.
+"api/alembic/env.py" = ["ARG001"]
+# A pytest fixture requested for its side effect is used by being requested.
+# The test body never names `seeded` or `storefront`, and naming them to satisfy
+# a linter would be worse than the warning.
+"api/tests/*.py" = ["ARG001", "ARG002"]
+"intelligence/tests/*.py" = ["ARG001", "ARG002"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

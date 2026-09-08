@@ -130,7 +130,7 @@ def test_money_columns_carry_a_unit_suffix() -> None:
         for column in table.columns:
             name = column.name
             if any(token in name for token in ("price", "budget", "amount")) and not (
-                name.endswith("_usd_cents") or name.endswith("_amount_minor") or name == "amount"
+                name.endswith(("_usd_cents", "_amount_minor")) or name == "amount"
             ):
                 if name in {"price_tier"}:
                     continue
@@ -168,9 +168,11 @@ def test_identifiers_fit_within_the_postgres_limit(table) -> None:
     too_long: list[str] = []
     if len(table.name) > POSTGRES_IDENTIFIER_LIMIT:
         too_long.append(f"table {table.name} ({len(table.name)})")
-    for column in table.columns:
-        if len(column.name) > POSTGRES_IDENTIFIER_LIMIT:
-            too_long.append(f"column {column.name} ({len(column.name)})")
+    too_long.extend(
+        f"column {column.name} ({len(column.name)})"
+        for column in table.columns
+        if len(column.name) > POSTGRES_IDENTIFIER_LIMIT
+    )
     for constraint in table.constraints:
         rendered = constraint.name
         if rendered is None:
@@ -180,9 +182,11 @@ def test_identifiers_fit_within_the_postgres_limit(table) -> None:
             continue
         if len(rendered) > POSTGRES_IDENTIFIER_LIMIT:
             too_long.append(f"constraint {rendered} ({len(rendered)})")
-    for index in table.indexes:
-        if index.name and len(index.name) > POSTGRES_IDENTIFIER_LIMIT:
-            too_long.append(f"index {index.name} ({len(index.name)})")
+    too_long.extend(
+        f"index {index.name} ({len(index.name)})"
+        for index in table.indexes
+        if index.name and len(index.name) > POSTGRES_IDENTIFIER_LIMIT
+    )
     assert not too_long, (
         f"{table.name}: identifiers exceed {POSTGRES_IDENTIFIER_LIMIT} chars: {too_long}"
     )

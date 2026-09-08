@@ -20,7 +20,12 @@ from typing import Any
 from api.genesis_api.models.enums import SizeSystem
 from intelligence.catalog import vocabulary
 from intelligence.catalog.color import ColorError, family_for_hex, family_for_name, parse_hex
-from intelligence.catalog.money import CurrencyError, FxRates, to_minor_units, to_usd_cents
+from intelligence.catalog.money import (
+    CurrencyError,
+    FxRates,
+    to_minor_units,
+    to_usd_cents_as_of,
+)
 from intelligence.catalog.normalized import (
     NormalizationResult,
     NormalizedImage,
@@ -153,16 +158,8 @@ class AffiliateFeedConnector:
             title=title,
             brand_name=_text(row.get(columns.brand)),
             description=description,
-            category=vocabulary.category_for(*texts),
             gender=vocabulary.gender_for(category_text, title),
-            silhouette=vocabulary.silhouette_for(*texts),
-            neckline=vocabulary.neckline_for(*texts),
-            sleeve_length=vocabulary.sleeve_length_for(*texts),
-            sleeve_style=vocabulary.sleeve_style_for(*texts),
-            garment_length=vocabulary.length_for(*texts),
-            rise=vocabulary.rise_for(*texts),
-            fit=vocabulary.fit_for(*texts),
-            pattern=vocabulary.pattern_for(*texts),
+            **vocabulary.attributes_for(*texts),
             color_hex=color_hex,
             color_family=family,
             images=((NormalizedImage(source_url=image_url, position=0),) if image_url else ()),
@@ -184,13 +181,7 @@ class AffiliateFeedConnector:
             if candidate < minor:
                 sale_minor = candidate
 
-        usd_cents = None
-        fx_at = None
-        try:
-            usd_cents = to_usd_cents(minor, currency, self._rates)
-            fx_at = self._rates.as_of
-        except CurrencyError:
-            usd_cents = None
+        usd_cents, fx_at = to_usd_cents_as_of(minor, currency, self._rates)
 
         sizes = tuple(
             NormalizedSize(system=parsed.system, value=parsed.value)

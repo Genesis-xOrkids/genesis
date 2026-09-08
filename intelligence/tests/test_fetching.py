@@ -14,8 +14,8 @@ import pytest
 
 from intelligence.catalog.fetching import (
     USER_AGENT,
-    Blocked,
-    DisallowedByRobots,
+    BlockedError,
+    DisallowedByRobotsError,
     FetchError,
     PoliteFetcher,
 )
@@ -75,7 +75,7 @@ def test_a_disallowed_path_is_refused_before_any_request() -> None:
     """The check happens before the fetch, so a disallowed URL costs the host
     nothing."""
     fetcher = _fetcher({"robots.txt": [FakeResponse(200, text=SHOPIFY_ROBOTS)]})
-    with pytest.raises(DisallowedByRobots):
+    with pytest.raises(DisallowedByRobotsError):
         fetcher.get_json("https://shop.test/recommendations/products")
     assert all("robots.txt" in url for url in fetcher._client.requests)  # noqa: SLF001
 
@@ -130,7 +130,7 @@ def test_a_403_is_a_refusal_and_is_not_retried() -> None:
         {"robots.txt": [FakeResponse(404)], "products.json": [FakeResponse(403)]},
         max_retries=3,
     )
-    with pytest.raises(Blocked):
+    with pytest.raises(BlockedError):
         fetcher.get_json("https://shop.test/products.json")
     attempts = [u for u in fetcher._client.requests if "products.json" in u]  # noqa: SLF001
     assert len(attempts) == 1
