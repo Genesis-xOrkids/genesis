@@ -196,6 +196,37 @@ def read_log_entries() -> list[dict]:
     return entries
 
 
+def read_runs() -> list[dict]:
+    """The agent run ledger: runs that leave no commit behind.
+
+    A read-only agent cannot commit and cannot write, so nothing in git or the
+    wiki records that it ran. `scripts/log_agent_run.py` is the one writer of
+    this file; see its docstring for why the record lives here and not in the
+    wiki's activity log.
+    """
+    path = REPO / ".claude/runs.tsv"
+    if not path.exists():
+        return []
+    runs = []
+    for number, line in enumerate(path.read_text().splitlines()[1:], start=2):
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        if len(fields) != 4:
+            raise SystemExit(
+                f"{path}:{number}: expected 4 tab-separated fields, got {len(fields)}"
+            )
+        run_at, agent, target, outcome = fields
+        runs.append({
+            "date": run_at[:10],
+            "agent": agent,
+            "what": f"{target} — {outcome}",
+            "ref": "",
+            "via": "run",
+        })
+    return runs
+
+
 def read_employees(excluded: set[str]) -> list[dict]:
     """The roster, generated from the files that define each employee.
 
@@ -210,6 +241,7 @@ def read_employees(excluded: set[str]) -> list[dict]:
     commits = read_commits("main")
     ahead = read_commits("main..HEAD")
     entries = [] if "log" in excluded else read_log_entries()
+    ledger = read_runs()
     humans = {c["human"] for c in commits if c["actor"] == c["human"] and not c["human"].endswith("[bot]")}
 
     staff: list[dict] = []
@@ -276,6 +308,8 @@ def read_employees(excluded: set[str]) -> list[dict]:
             {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
             for c in commits if c["actor"] == member["id"]
         ] + [
+            run for run in ledger if run["agent"] == member["id"]
+        ] + [
             {"date": e["date"], "what": e["title"], "ref": "", "via": "log"}
             for e in entries if token in e["body"] or member["id"] in e["body"]
         ]
@@ -285,6 +319,15 @@ def read_employees(excluded: set[str]) -> list[dict]:
             for c in ahead if c["actor"] == member["id"]
         ]
         member["last"] = member["done"][0]["date"] if member["done"] else ""
+
+    # The ledger names an employee by id but cannot check the name, because the
+    # rule that derives an id from a definition file lives here. A row naming
+    # nobody is a typo or a deleted definition, and either way its runs are
+    # invisible on the page - so the build says so rather than dropping them
+    # quietly.
+    unknown = sorted({run["agent"] for run in ledger} - {m["id"] for m in staff})
+    if unknown:
+        print(f"  warning: .claude/runs.tsv names employees that do not exist: {unknown}")
 
     staff.sort(key=lambda m: (KIND_ORDER[m["kind"]], -len(m["done"]), m["id"]))
     return staff

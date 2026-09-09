@@ -265,18 +265,19 @@ function renderStaff() {
       why.innerHTML = "<span></span>";
       why.children[0].textContent = !m.defined ? "No signed commits."
         : BRAIN.logHeld ? "Its record is in the activity log, which this build holds back."
-        : "Defined, but nothing in git or the log records it running yet.";
+        : "Defined, but no run recorded against it yet.";
       runs.appendChild(why);
     }
 
-    // A commit is proof the employee ran. A log entry that names it is only
-    // evidence it was involved — the entry that records building the brain
-    // commands names all four of them. Counting the two together would read
-    // as four runs that never happened, so the tally keeps them apart.
+    // A commit and a ledger row each prove the employee ran. A log entry that
+    // names it is only evidence it was involved — the entry recording that the
+    // brain commands were built names all four of them. Counting those with
+    // the rest would read as four runs that never happened, so the tally keeps
+    // the three sources apart.
     const foot = document.createElement("footer");
-    const tally = [["commit", "commits"], ["log mention", "log mentions"]]
+    const tally = [["run", "runs"], ["commit", "commits"], ["log mention", "log mentions"]]
       .map(([one, many], i) => {
-        const n = m.done.filter(r => r.via === (i ? "log" : "commit")).length;
+        const n = m.done.filter(r => r.via === ["run", "commit", "log"][i]).length;
         return n ? n + " " + (n === 1 ? one : many) : "";
       })
       .filter(Boolean);
@@ -291,15 +292,17 @@ function renderStaff() {
 
   const never = BRAIN.employees.filter(m => !m.done.length && !m.doing.length && m.defined);
   $("#staffNote").textContent =
-    "Roles come from the definition files under .claude/. Work comes from two places: commits " +
-    "on main, which attribute a bot by its author and Claude by its Co-Authored-By trailer, and " +
+    "Roles come from the definition files under .claude/. Work comes from three places: commits " +
+    "on main, which attribute a bot by its author and Claude by its Co-Authored-By trailer; the " +
+    "run ledger at .claude/runs.tsv, written by whatever invoked an agent that cannot write for " +
+    "itself; and " +
     (BRAIN.logHeld
       ? "the wiki's activity log, which this build holds back — so anything whose only trace is a " +
         "log entry reads as never run here."
       : "dated entries in the wiki's activity log, which name an employee without proving it ran.") +
     (never.length && !BRAIN.logHeld
-      ? " " + never.map(m => m.invoke).join(" and ") + " show nothing because a run leaves no " +
-        "trace unless it commits or writes to the log."
+      ? " " + never.map(m => m.invoke).join(" and ") + " show nothing because no run has been " +
+        "recorded against them yet."
       : "");
 }
 
