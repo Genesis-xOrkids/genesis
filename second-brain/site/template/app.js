@@ -2,7 +2,7 @@ const $ = s => document.querySelector(s);
 const byId = Object.fromEntries(BRAIN.pages.map(p => [p.slug, p]));
 const FOLDERS = ["sources", "projects", "decisions", "concepts", "root"];
 const FLABEL = { sources: "Sources", projects: "Projects", decisions: "Decisions", concepts: "Concepts", root: "Wiki root" };
-const FVAR = { sources: "--g-sources", projects: "--g-projects", decisions: "--g-decisions", concepts: "--g-concepts", root: "--g-root" };
+const FVAR = { sources: "--cat-1", projects: "--cat-4", decisions: "--cat-3", concepts: "--cat-2", root: "--cat-other" };
 let cfg = JSON.parse(JSON.stringify(BRAIN.config));
 let db = null, sample = null, downloads = null, current = null, query = "";
 
@@ -53,9 +53,9 @@ function paintFigure() {
   let g = "";
   docs.forEach((d, i) => {
     const y = 26 + i * 40;
-    g += '<rect x="8" y="' + y + '" width="132" height="30" rx="6" fill="' + c("--card") + '" stroke="' + c("--line") + '"/>' +
-      '<text x="22" y="' + (y + 19) + '" font-family="JetBrains Mono,monospace" font-size="11.5" fill="' + c("--text") + '">' + d[0] + "</text>" +
-      '<text x="126" y="' + (y + 19) + '" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="9.5" fill="' + c("--faint") + '">' + d[1] + "K</text>";
+    g += '<rect x="8" y="' + y + '" width="132" height="30" rx="6" fill="' + c("--surface") + '" stroke="' + c("--line") + '"/>' +
+      '<text x="22" y="' + (y + 19) + '" font-family="Noto Sans Mono,monospace" font-size="11.5" fill="' + c("--text") + '">' + d[0] + "</text>" +
+      '<text x="126" y="' + (y + 19) + '" text-anchor="end" font-family="Noto Sans Mono,monospace" font-size="9.5" fill="' + c("--text-faint") + '">' + d[1] + "K</text>";
   });
   $("#figDocs").innerHTML = g;
 
@@ -68,13 +68,13 @@ function paintFigure() {
   $("#figFlow").innerHTML = f;
 
   $("#figHub").innerHTML =
-    '<circle cx="330" cy="100" r="30" fill="' + c("--soft") + '" stroke="' + c("--accent") + '" stroke-width="1.4"/>' +
+    '<circle cx="330" cy="100" r="30" fill="' + c("--accent-soft") + '" stroke="' + c("--accent") + '" stroke-width="1.4"/>' +
     '<text x="330" y="96" text-anchor="middle" font-family="Fraunces,serif" font-size="13" fill="' + c("--accent") + '">ingest</text>' +
-    '<text x="330" y="110" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="' + c("--faint") + '">compile</text>';
+    '<text x="330" y="110" text-anchor="middle" font-family="Noto Sans Mono,monospace" font-size="8" fill="' + c("--text-faint") + '">compile</text>';
 
   const pts = [[470,44],[540,26],[610,52],[680,32],[745,60],[500,96],[575,86],[650,100],[720,92],[790,72],
                [478,148],[548,158],[618,140],[688,156],[756,136],[812,110],[530,124],[608,170],[700,124],[770,168]];
-  const cols = [c("--g-sources"), c("--g-projects"), c("--g-decisions"), c("--g-concepts")];
+  const cols = [c("--cat-1"), c("--cat-4"), c("--cat-3"), c("--cat-2")];
   let w = "";
   for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
     const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1];
@@ -83,8 +83,8 @@ function paintFigure() {
   }
   pts.forEach((p, i) => { w += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (3.4 + (i % 4)) + '" fill="' + cols[i % 4] + '"/>'; });
   w += '<path d="M366 100 L 452 100" fill="none" stroke="' + c("--accent") + '" stroke-width="1.3" opacity=".5" class="dash"/>';
-  w += '<text x="640" y="196" text-anchor="middle" font-family="Archivo,sans-serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--faint") + '">40 CROSS-LINKED PAGES</text>';
-  w += '<text x="74" y="196" text-anchor="middle" font-family="Archivo,sans-serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--faint") + '">YOUR SOURCES</text>';
+  w += '<text x="640" y="196" text-anchor="middle" font-family="Noto Serif,serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--text-faint") + '">40 CROSS-LINKED PAGES</text>';
+  w += '<text x="74" y="196" text-anchor="middle" font-family="Noto Serif,serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--text-faint") + '">YOUR SOURCES</text>';
   $("#figWiki").innerHTML = w;
 }
 
@@ -95,7 +95,7 @@ function inline(s) {
     .replace(/`([^`]+)`/g, (m, c) => "<code>" + c + "</code>")
     .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (m, slug, alias) => {
       const t = (alias || slug).replace(/-/g, " ");
-      return byId[slug] ? '<a class="wl" data-go="' + slug + '">' + t + "</a>" : '<span style="color:var(--faint)">' + t + "</span>";
+      return byId[slug] ? '<a class="wl" data-go="' + slug + '">' + t + "</a>" : '<span style="color:var(--text-faint)">' + t + "</span>";
     })
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
@@ -192,6 +192,38 @@ function renderRows() {
 /* ---------- employees ---------- */
 const SHOWN = 3;
 
+// The mark on each card is a gem: the cut says the kind, and the colour agrees
+// (styles.css owns the colours). Each cut is one outline. The table is that
+// outline shrunk about its centre, and the facets between the two take their
+// tone from how squarely they face a light at the top-left.
+const CUTS = {
+  agent: Array.from({ length: 8 }, (_, i) => {
+    const a = Math.PI * (i / 4 + 1 / 8);
+    return [20 + 17.5 * Math.cos(a), 20 + 17.5 * Math.sin(a)];
+  }),
+  command: [[11, 3], [29, 3], [35, 9], [35, 31], [29, 37], [11, 37], [5, 31], [5, 9]],
+  service: [[17, 4], [23, 4], [37, 29], [34, 35], [6, 35], [3, 29]],
+};
+function gem(kind) {
+  const outer = CUTS[kind];
+  const cx = outer.reduce((s, p) => s + p[0], 0) / outer.length;
+  const cy = outer.reduce((s, p) => s + p[1], 0) / outer.length;
+  const inner = outer.map(([x, y]) => [cx + (x - cx) * .46, cy + (y - cy) * .46]);
+  const poly = (pts, cls) => '<polygon class="' + cls + '" points="' +
+    pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") + '"/>';
+  let s = "";
+  outer.forEach((a, i) => {
+    const b = outer[(i + 1) % outer.length];
+    const nx = (a[0] + b[0]) / 2 - cx, ny = (a[1] + b[1]) / 2 - cy;
+    const lit = -(nx + ny) / Math.hypot(nx, ny) / Math.SQRT2;  // 1 facing the light, -1 facing away
+    s += poly([a, b, inner[(i + 1) % outer.length], inner[i]],
+      lit > .85 ? "f0" : lit > .25 ? "f1" : lit > -.25 ? "f2" : "f3");
+  });
+  return '<svg class="gem" viewBox="0 0 40 40" aria-hidden="true">' + s + poly(inner, "ft") + "</svg>";
+}
+const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.6l3 3 6-6.6"/></svg>';
+const SEAL = '<svg class="ok" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M4.8 8.4l2.2 2.2 4.3-4.6"/></svg>';
+
 function runRow(r, doing) {
   const row = document.createElement("div");
   row.className = "run" + (doing ? " doing" : "");
@@ -206,13 +238,17 @@ function renderStaff() {
   const el = $("#staff");
   el.innerHTML = "";
   for (const m of BRAIN.employees) {
+    const live = m.doing.length > 0;
+    const state = live ? "live" : m.done.length ? "done" : "never";
     const card = document.createElement("div");
-    card.className = "emp";
+    card.className = "emp " + state;
+    card.dataset.kind = m.kind;
     card.innerHTML =
-      '<header><div class="av"></div><div><h3></h3><span class="kind"></span></div></header>' +
+      '<header><div class="av">' + gem(m.kind) + (state === "done" ? SEAL : "") + "</div>" +
+      '<div><h3></h3><span class="kind"></span></div></header>' +
       '<p class="role"></p><div class="chips"></div>' +
-      '<div class="work"><div class="st"><i></i><b></b></div><div class="runs"></div></div>';
-    card.querySelector(".av").textContent = m.icon;
+      '<div class="work"><div class="st">' + (state === "done" ? CHECK : "<i></i>") + "<b></b></div>" +
+      '<div class="runs"></div></div>';
     card.querySelector("h3").textContent = m.invoke;
     card.querySelector(".kind").textContent = m.kind;
 
@@ -235,12 +271,9 @@ function renderStaff() {
     if (m.can.length) add(m.can.length + " tools");
     if (m.cannot.length) add("cannot write", "no");
 
-    const live = m.doing.length > 0;
-    const st = card.querySelector(".st");
-    st.classList.add(live ? "live" : m.done.length ? "idle" : "never");
-    st.querySelector("b").textContent = live
+    card.querySelector(".st b").textContent = live
       ? "Working — " + m.doing.length + " unmerged"
-      : m.done.length ? "Idle" : "Never run";
+      : state === "done" ? "Finished" : "Never run";
 
     const runs = card.querySelector(".runs");
     for (const r of m.doing) runs.appendChild(runRow(r, true));
@@ -329,7 +362,7 @@ let W = 0, H = 0, alpha = 1, hover = null, drag = null, pulses = [], COL = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
   COL = { line: cs.getPropertyValue("--line").trim(), text: cs.getPropertyValue("--text").trim(),
-          dim: cs.getPropertyValue("--dim").trim(), accent: cs.getPropertyValue("--accent").trim() };
+          dim: cs.getPropertyValue("--text-muted").trim(), accent: cs.getPropertyValue("--accent").trim() };
   for (const f of FOLDERS) COL[f] = cs.getPropertyValue(FVAR[f]).trim();
 }
 function resize() {
@@ -397,7 +430,7 @@ function draw() {
     if ((deg[n.id] || 0) >= 6 || (near && near.has(n.id))) {
       ctx.globalAlpha = on ? .92 : .1;
       ctx.fillStyle = near && near.has(n.id) ? COL.text : COL.dim;
-      ctx.font = '500 10px "Archivo",sans-serif'; ctx.textAlign = "center";
+      ctx.font = '500 10px "Noto Serif",Georgia,serif'; ctx.textAlign = "center";
       const t = n.p.title.length > 24 ? n.p.title.slice(0, 22) + "…" : n.p.title;
       ctx.fillText(t, n.x, n.y + n.r + 12);
     }
@@ -423,7 +456,7 @@ cv.addEventListener("mousemove", ev => {
   if (n) {
     tip.style.opacity = "1";
     tip.style.left = Math.min(W - 250, x + 15) + "px"; tip.style.top = (y + 15) + "px";
-    tip.innerHTML = "<strong>" + esc(n.p.title) + "</strong><br><span style='color:var(--faint);font-family:var(--mono);font-size:10.5px'>" +
+    tip.innerHTML = "<strong>" + esc(n.p.title) + "</strong><br><span style='color:var(--text-faint);font-family:var(--font-mono);font-size:10.5px'>" +
       n.p.type + " · " + (deg[n.id] || 0) + " links</span>";
   } else tip.style.opacity = "0";
 });

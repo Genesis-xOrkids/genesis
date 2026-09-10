@@ -100,10 +100,42 @@ framing. `robots.txt` disallows everything. Neither is a control — crawlers
 honour them voluntarily — but behind Access nothing unauthenticated reaches
 either file anyway.
 
+## Brand
+
+Every color, font and type token comes from `template/brand.css`, which is
+**generated** in `Genesis-xOrkids/brand` and vendored here. Do not edit it in
+this repository — refresh it instead, and let that repository's `--check` job be
+the thing that guarantees the values are current:
+
+```sh
+cp ../../../brand/tokens/brand.css template/brand.css   # adjust to your checkout
+./build.py --target static
+```
+
+`styles.css` holds only this site's own rules and is written entirely against
+brand roles (`--surface`, `--text-muted`, `--accent`), never against ramp steps.
+`build.py` concatenates `brand.css` ahead of it, so a missing `brand.css` is a
+broken page rather than a silent fallback to browser defaults.
+
+The graph's node colors, and the gem on each Employees card, are the categorical
+slots `--cat-1` … `--cat-other`, not the brand families. That distinction is deliberate: the brand palette is
+deliberately muted and three of its five hues sit close together, so used as a
+five-way categorical scale it fails colorblind separation outright. The
+categorical set is validated in both themes — see `color.md` in the brand repo
+for the measurements and for why a fifth category must fold into `--cat-other`
+rather than get a new hue.
+
 ## Fonts
 
-The page loads Fraunces, Archivo and JetBrains Mono from Google Fonts, so each
-viewer's browser reaches Google. To remove that, vendor the `woff2` files into
+The page loads Fraunces, Noto Serif and Noto Sans Mono from Google Fonts, so
+each viewer's browser reaches Google. All three are SIL Open Font License 1.1
+and the first two are vendored in the brand repository, so removing the Google
+dependency is a copy rather than a licensing question: put the `woff2` files in
 `template/`, inline an `@font-face` block in `styles.css`, and drop the `<link>`
 tags from `template/head.html`. The CSP in `_headers` already permits only those
 two Google hosts; tighten it to `'none'` once the fonts are local.
+
+Fraunces is loaded with all four of its axes (`opsz`, `wght`, `SOFT`, `WONK`),
+because the kit sets them explicitly through `font-variation-settings` —
+`font-weight` alone leaves `opsz` at its default and discards the point of the
+typeface.
