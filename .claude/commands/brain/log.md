@@ -26,8 +26,10 @@ There are two, because the brain has two front ends, and a note can be waiting
 in either.
 
 **The hosted site.** Run `uv run scripts/brain_inbox.py`. It prints one note per
-line as `id`, capture date, text. Append each to `wiki/log.md` under its own
-capture date — not today's — then mark exactly the ones you filed:
+line as `id`, capture date, text — reaching D1 through `wrangler`, so it needs
+nothing configured beyond the Cloudflare login already on the machine. Append
+each note to `wiki/log.md` under its own capture date — not today's — then mark
+exactly the ones you filed:
 
 ```sh
 uv run scripts/brain_inbox.py --mark 3,4,7
@@ -42,8 +44,8 @@ from that artifact with the Artifact tool (`action: "read_db"`, `db_op: "list"`)
 append every note whose `status` is `pending`, then `write_db` each one back with
 `status: "logged"`.
 
-Report how many you drained from each. If a source is not configured — no Access
-service token, or no `ui.artifactUrl` — say so rather than reporting zero, since
+Report how many you drained from each. If a source cannot be reached — wrangler
+not logged in, or no `ui.artifactUrl` — say so rather than reporting zero, since
 "nothing waiting" and "could not look" are different answers.
 
 Confirm in one line what you appended and which pages you touched.

@@ -4,7 +4,7 @@ type: entity
 sources: []
 related: ["[[index]]"]
 created: 2026-09-07
-last-updated: 2026-09-08
+last-updated: 2026-09-10
 ---
 
 Append-only. Nothing here is edited or deleted.
@@ -83,3 +83,28 @@ rather than displays:
   execute locally, and the panel says so rather than implying otherwise.
 
 `ui.artifactUrl` in `brain.config.json` is how the commands find the inbox.
+
+## 2026-09-10 — hosted site gains real storage, and the first note drains
+
+The second brain now has a second front end: `genesis-brain.pages.dev`, behind
+Cloudflare Access, with Ask, Capture and Settings working rather than dropped.
+Capture and Settings had shipped on `localStorage`, which was a workaround for a
+static file having nowhere to write — a note lived in one browser and never
+reached the vault. Both now go to a D1 database behind the Pages worker, so the
+inbox is shared across devices and durable. Ask calls Claude from the edge with a
+key held as a Cloudflare secret; every endpoint refuses without an Access
+assertion, which makes "the site must not go up without Access" enforced rather
+than written down.
+
+**Captured note, filed from the hosted inbox:** ten more registered storefronts
+should clear every C2 target — twelve of twenty candidates probed ingestible.
+This is the first note to travel the full path: typed on the website, stored in
+D1, read by `scripts/brain_inbox.py`, and written here. It restates what
+[[catalog-supply]] already records as the C2 shortfall (21,055 of 25,000
+products, 34 of 50 brands, measured 2026-09-05) and adds the estimate that ten
+more storefronts closes it.
+
+The drain reaches D1 through `wrangler`, not through the site's own HTTPS
+endpoint. Going over HTTPS would have meant an Access service token created,
+added to the site's policy, and kept in three environment variables; wrangler
+uses the Cloudflare login already on the machine and needs none of it.
