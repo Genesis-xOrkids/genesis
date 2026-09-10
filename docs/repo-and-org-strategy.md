@@ -27,6 +27,13 @@ file into the repository it would land in after a split:
 | Two or more | 12 | 67% |
 | `api` **and** `intelligence` together | 8 | 44% |
 
+Re-measured 2026-09-10 at `7fcec66`, 22 commits: 9 single (41%), 13 multi (59%),
+`api`+`intelligence` together 9 (41%). The whole move is four new agent-config
+commits, each touching that area alone, which is what a genuinely independent
+piece looks like early. It does not reach trigger 1 — that fires below 10%
+co-change, and 41% is four times it — and §5.3 records why the `.github`
+repository those commits argue for is still not worth cutting yet.
+
 Re-run it with:
 
 ```sh
@@ -69,7 +76,7 @@ permission, and that is the one thing a monorepo genuinely cannot express.
 
 | # | Trigger | Test | Reading at decision time |
 |---|---|---|---|
-| 1 | A piece stops changing with the rest | appears in <10% of multi-area commits for ~3 months | no — 44% co-change |
+| 1 | A piece stops changing with the rest | appears in <10% of multi-area commits for ~3 months | no — 44% co-change, 41% on 2026-09-10 |
 | 2 | Someone else owns it and should not see the rest | such a person exists | no — 1 org member |
 | 3 | Independent cadence **and** a versioned contract | it consumes a published artifact, not source | no — `apps/web` does not exist |
 | 4 | CI is the bottleneck | full run >15 min with path filters exhausted | no — 1 minute |
@@ -101,7 +108,8 @@ Not repository count. Everything below works with exactly one repository:
 - **Organization-level secrets and variables**, so `ANTHROPIC_API_KEY` and the
   AWS OIDC role are configured once rather than per repository.
 - **A `.github` repository** carrying organization-wide agent definitions,
-  Copilot instructions and reusable workflows.
+  reusable workflows and default community health files. Not Copilot
+  instructions — see the correction in §5.3.
 - **One GitHub App installation covering every repository.**
 - **An audit log**, which personal accounts do not have.
 - **Procurement paths later** — Marketplace listings, SOC 2 attestations and
@@ -134,25 +142,69 @@ session or a billing decision.
 
 1. **human** — Resolve protection. Upgrade `Genesis-xOrkids` to GitHub Team, or
    make the repository public, or decide explicitly to run without protection.
-2. Once the plan allows it: restore protection on `main` with the eight CI gates
-   as required status checks, conversation resolution required, and branches
+2. Once the plan allows it: restore protection on `main` with every CI gate
+   as a required status check, conversation resolution required, and branches
    required to be up to date. Verify with
    `gh api /repos/Genesis-xOrkids/genesis/branches/main/protection`.
-3. Create `Genesis-xOrkids/.github`. This is the first legitimate second
-   repository and it is not a split — it is organization configuration. Move
-   `.github/copilot-instructions.md` into it so it applies to every future
-   repository, and add reusable workflow templates there.
-4. Generate `.github/agents/*.agent.md` from `.claude/agents/*.md` rather than
-   maintaining both by hand. Their bodies already delegate correctly, but the
-   frontmatter — `tools`, `model`, `effort`, `disallowedTools`, and two separate
-   `description` fields — is maintained twice and has already diverged. Add a CI
-   drift check in the shape of the existing model/migration drift gate.
+3. **human** (blocked, and half of it was wrong) — Create `Genesis-xOrkids/.github`.
+   Still the first legitimate second repository, and still not a split. But the
+   stated reason for it does not hold, checked 2026-09-10 against GitHub's own
+   docs:
+
+   - `copilot-instructions.md` is **not** an inheritable file. The files an org
+     `.github` repository propagates are CODE_OF_CONDUCT, CONTRIBUTING,
+     SECURITY, SUPPORT, FUNDING, issue/PR templates and discussion forms —
+     that list, and no more. Moving `.github/copilot-instructions.md` out of
+     this repository would stop it applying here and start it applying nowhere.
+     Copilot's own org-wide instructions are a settings-UI feature requiring
+     **Copilot Business or Enterprise**, which is a second paid plan on top of
+     the Team seat §4 already needs.
+   - What *does* inherit is the thing worth having: **custom agent definitions**
+     resolve from the org's `.github` (or `.github-private`) repository, with
+     repository-level files overriding org-level ones by filename. So
+     `genesis-reviewer.agent.md` could live there once a second repository
+     exists to use it.
+   - A `.github` repository must be **public** to serve community health
+     defaults. `.github-private` is the private-visible variant, and it carries
+     agents but not those defaults.
+
+   Marked **human** because it creates a repository under the organization and
+   the public/private choice is yours. It is also premature: with one
+   repository, an org-level agent definition has nothing to inherit it, and
+   §5.4 now keeps the one that exists generated and gated. Do it when the
+   second repository appears.
+
+   ```sh
+   gh api /repos/Genesis-xOrkids/genesis/contents/.github/copilot-instructions.md --jq '.path'
+   ```
+4. ~~Generate `.github/agents/*.agent.md` from `.claude/agents/*.md`~~ — **done.**
+   `scripts/agent_definitions.py` holds the translation and
+   `scripts/generate_github_agents.py` applies it; CI runs it with `--check`.
+   The tool mapping regenerated the committed list byte-for-byte, which is the
+   evidence it is a translation and not a rewrite; only the description had
+   actually diverged. `model`, `effort`, `maxTurns`, `color` and `hooks` are
+   dropped rather than translated — GitHub reads none of them. Two notes:
+
+   - The GitHub body is *not* generated. "No guard hook runs here", "you post
+     the report yourself" describe that runtime and nothing else, so they are
+     written by hand and preserved across a regeneration. A new Claude agent
+     with no GitHub counterpart fails the check rather than getting an invented
+     body.
+   - The generated description is now the Claude one verbatim, so it names
+     `/brain:lint` and the built-in code-review skill, neither of which exists
+     in GitHub's runtime. Single source of truth was the point, so the fix if
+     that reads badly is to reword the source description to be true in both
+     runtimes — not to reintroduce a second copy.
+
 5. **human** — Move `ANTHROPIC_API_KEY` to organization-level secrets, alongside
    the Cloudflare Pages secret of the same name.
-6. Add `second-brain/site/build.py` to the CI lint paths. It became tracked code
-   in `e163a78` and nothing checks it; it carries six pre-existing findings (an
-   unused `sys` import, two ambiguous `l` variables, a lambda assigned to a name,
-   a loop-variable capture, and a `list.extend` simplification).
+6. ~~Add `second-brain/site/build.py` to the CI lint paths~~ — **done.** All six
+   findings fixed. Two extras the item did not anticipate: the file had never
+   been through `ruff format`, so it is in the Format path too and was
+   reformatted; and its `split_frontmatter` is now imported from
+   `scripts/agent_definitions.py` rather than duplicated, because §5.4 needed
+   the same parser and `check_duplication.py` would have failed on a second
+   copy. Verified by building the site before and after and diffing: byte-identical.
 
 ## 6. Non-goals
 

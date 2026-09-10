@@ -45,11 +45,14 @@ jobs:
 
       - run: uv sync --extra dev
 
+      # second-brain/site/build.py is listed by name rather than by directory:
+      # it is the only Python in the vault, and the rest of second-brain/ is
+      # prose that ruff has no business walking.
       - name: Lint
-        run: uv run ruff check api/ intelligence/ services/ scripts/ evals/ conftest.py
+        run: uv run ruff check api/ intelligence/ services/ scripts/ evals/ conftest.py second-brain/site/build.py
 
       - name: Format
-        run: uv run ruff format --check api/ intelligence/ services/ scripts/ evals/ conftest.py
+        run: uv run ruff format --check api/ intelligence/ services/ scripts/ evals/ conftest.py second-brain/site/build.py
 
       - name: Types
         run: uv run mypy api/genesis_api intelligence services evals
@@ -86,6 +89,12 @@ jobs:
 
       - name: No block of code is written twice
         run: uv run python scripts/check_duplication.py
+
+      - name: No agent definition drift
+        # Same shape as the migration drift gate above: run the generator and
+        # fail if it would have changed anything. Run as a module so that the
+        # repository root is on sys.path.
+        run: uv run python -m scripts.generate_github_agents --check
 
       - name: Secrets
         # Free stand-in for GitHub's push protection, which costs money on
