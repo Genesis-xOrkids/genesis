@@ -127,13 +127,10 @@
     <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes wait in an inbox until <code>/brain:log</code> files them into the activity log and folds them into any page they name.</p>
 <!--ENDIF-->
 <!--IF:static-->
-    <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes are kept in this browser only: nothing here can reach the vault, so copy them out and hand them to <code>/brain:log</code>, which files them and folds them into any page they name.</p>
+    <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes wait in an inbox until <code>/brain:log</code> files them into the activity log and folds them into any page they name. The inbox is shared, so a note captured on a phone is there when you next run the command.</p>
 <!--ENDIF-->
     <textarea id="noteIn" placeholder="Ten more registered storefronts should clear every C2 target — twelve of twenty candidates probed ingestible."></textarea>
     <div class="acts"><button class="btn" id="noteBtn">Capture</button>
-<!--IF:static-->
-      <button class="btn gh" id="exportNotes">Copy all for /brain:log</button>
-<!--ENDIF-->
       <span class="meta" id="noteHint"></span></div>
     <div class="recent" id="noteWrap"></div>
   </div></section>
@@ -182,7 +179,7 @@
     <div class="note">Saved settings live with this page. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands, or ask Claude Code to pull them.</div>
 <!--ENDIF-->
 <!--IF:static-->
-    <div class="note">Saving keeps these in this browser, which is enough to carry them between visits but nothing the commands can read. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands.</div>
+    <div class="note">Saved settings live with the site and follow you between devices. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands, which read the file rather than this.</div>
 <!--ENDIF-->
   </div></section>
 </main>

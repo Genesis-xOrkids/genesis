@@ -1,0 +1,25 @@
+# Cloudflare Pages configuration for the hosted second brain.
+#
+# `dist/` is generated, so this file lives beside the build script rather than
+# inside its output. Deploy from this directory:
+#
+#     cd second-brain/site && npx wrangler pages deploy
+#
+# Both environments point at the same D1 database on purpose: the inbox is a
+# queue drained into the vault, and a note captured from the preview host should
+# not be stranded where /brain:log never looks for it.
+
+name = "genesis-brain"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "BRAIN_DB"
+database_name = "genesis-brain"
+database_id = "PUT_THE_DATABASE_ID_HERE"
+
+[env.preview]
+[[env.preview.d1_databases]]
+binding = "BRAIN_DB"
+database_name = "genesis-brain"
+database_id = "PUT_THE_DATABASE_ID_HERE"

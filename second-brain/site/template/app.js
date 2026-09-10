@@ -480,22 +480,25 @@ const NOTE_HINT = "Notes wait in the inbox until /brain:log files them.";
 /*ENDIF*/
 
 /*IF:static*/
-// localStorage is per-browser and never reaches Claude, so a note captured
-// here is a draft the reader carries to /brain:log themselves — which is why
-// the Capture panel offers an export and says so, rather than implying the
-// note has been filed.
-const STORE = "genesis-brain:";
-function readLocal(key, fallback) {
-  try { const raw = localStorage.getItem(STORE + key); return raw ? JSON.parse(raw) : fallback; }
-  catch { return fallback; }
-}
-function writeLocal(key, value) {
-  try { localStorage.setItem(STORE + key, JSON.stringify(value)); }
-  catch { throw new Error("This browser is blocking site data, so nothing can be kept here"); }
+// Everything the hosted site keeps goes to D1 behind the worker, not to the
+// browser: a note captured on a phone has to be there when /brain:log drains
+// the inbox from a laptop, and a setting has to outlive cleared site data.
+// Cloudflare Access is the authentication - the endpoints refuse without it -
+// so there is no token or session for this code to hold.
+async function api(path, init) {
+  const res = await fetch(path, {
+    ...init,
+    headers: init?.body ? { "content-type": "application/json" } : undefined,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "The site could not reach its own storage.");
+  }
+  return res.json();
 }
 async function saveConfig(next) {
-  writeLocal("config", next);
-  return "Saved in this browser — download the file to put it in front of the commands";
+  const { saved } = await api("/api/config", { method: "PUT", body: JSON.stringify({ config: next }) });
+  return `Saved ${saved} settings \u2014 download the file to put them in front of the commands`;
 }
 async function saveFile(name, data) {
   const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
@@ -506,20 +509,18 @@ async function saveFile(name, data) {
   return "Downloaded " + name;
 }
 async function captureNote(text) {
-  const notes = readLocal("notes", []);
-  notes.unshift({ text, created: new Date().toISOString(), status: "this browser" });
-  writeLocal("notes", notes.slice(0, 50));
-  return "Captured in this browser — export it into /brain:log";
+  await api("/api/notes", { method: "POST", body: JSON.stringify({ text }) });
+  return "Captured \u2014 /brain:log will file it";
 }
-function watchNotes(render) { render(readLocal("notes", [])); }
-function refreshNotes() { renderNotes(readLocal("notes", [])); }
-async function exportNotes() {
-  const notes = readLocal("notes", []);
-  if (!notes.length) return toast("Nothing captured yet");
-  const body = notes.map(n => "- " + n.created.slice(0, 10) + " \u2014 " + n.text).join("\n") + "\n";
-  try { await navigator.clipboard.writeText(body); toast("Copied " + notes.length + " note(s) \u2014 paste into /brain:log"); }
-  catch { toast(await saveFile("brain-notes.md", body)); }
+async function watchNotes(render) {
+  try {
+    const { notes } = await api("/api/notes");
+    render(notes.map(n => ({ text: n.text, status: n.filed_at ? "filed" : "pending" })));
+  } catch (e) {
+    $("#noteHint").textContent = e.message;
+  }
 }
+function refreshNotes() { watchNotes(renderNotes); }
 async function askModel(payload, onText) {
   const res = await fetch("/api/ask", {
     method: "POST",
@@ -542,7 +543,7 @@ async function askModel(payload, onText) {
   if (!out.trim()) throw new Error("The model returned nothing. Try asking again.");
   return out;
 }
-const NOTE_HINT = "Notes stay in this browser until you export them into /brain:log.";
+const NOTE_HINT = "Notes wait in the inbox until /brain:log files them.";
 /*ENDIF*/
 
 /* ---------- settings ---------- */
@@ -683,11 +684,14 @@ $("#noteHint").textContent = NOTE_HINT;
 /*ENDIF*/
 
 /*IF:static*/
-// Settings the reader saved in this browser outrank the ones compiled into the
-// page, so a change survives a rebuild until they download the file and put it
-// in front of the commands.
-const saved = readLocal("config", null);
-if (saved) { cfg = Object.assign(cfg, saved); paint(); }
-watchNotes(renderNotes);
-$("#exportNotes").onclick = exportNotes;
+// Stored settings outrank the ones compiled into the page, so a change made
+// here survives a rebuild until the file is downloaded and put in front of the
+// commands. Both of these reach the network, so neither blocks first paint.
+(async () => {
+  try {
+    const { config } = await api("/api/config");
+    if (config && Object.keys(config).length) { cfg = Object.assign(cfg, config); paint(); }
+  } catch (e) { $("#noteHint").textContent = e.message; }
+  await watchNotes(renderNotes);
+})();
 /*ENDIF*/

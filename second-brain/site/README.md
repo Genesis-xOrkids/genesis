@@ -19,15 +19,46 @@ knows which build it is in:
 | | Claude artifact | Hosted site |
 |---|---|---|
 | Ask | `sample()` from the viewer, on your own Claude account | `POST /api/ask`, answered by `_worker.js` with a key held at the edge |
-| Capture | the note inbox, drained by `/brain:log` | `localStorage`, with **Copy all for /brain:log** to get the notes out |
-| Settings | stored with the page | `localStorage`, plus a real file download |
+| Capture | the note inbox, drained by `/brain:log` | the same inbox, in D1 behind `/api/notes` |
+| Settings | stored with the page | stored in D1 behind `/api/config` |
 
-The hosted Capture is a drafting surface, not an inbox: nothing on a static site
-can reach the vault, so the panel says so and hands the notes back rather than
-implying they were filed.
+Both are durable and shared: a note captured on a phone is in the inbox when
+`/brain:log` next drains it from a laptop, and settings follow you between
+devices. `brain.config.json` on disk stays canonical either way, because that is
+the file the commands read — which is why both builds still offer the download.
 
 The static build also applies `exclude.txt`, and emits `_worker.js` and
 `_headers` alongside the page.
+
+## Setting up the hosted storage
+
+One D1 database serves both environments, so a note captured on a preview
+deployment is not stranded where `/brain:log` never looks.
+
+```sh
+cd second-brain/site
+npx wrangler d1 create genesis-brain          # copy the id into wrangler.toml
+npx wrangler d1 execute genesis-brain --remote --file schema.sql
+npx wrangler pages secret put ANTHROPIC_API_KEY
+npx wrangler pages deploy                     # reads wrangler.toml for the binding
+```
+
+### Draining the inbox from Claude Code
+
+Access authenticates the site with browser SSO, which a command line does not
+have. Create an Access **service token** (Zero Trust → Access → Service Auth),
+add it to the site's Access policy as an `Include → Service Auth` rule, and put
+both halves in `.env` at the repository root:
+
+```
+BRAIN_SITE_URL=https://genesis-brain.pages.dev
+BRAIN_ACCESS_CLIENT_ID=....access
+BRAIN_ACCESS_CLIENT_SECRET=....
+```
+
+`/brain:log` with no arguments then drains both inboxes. `scripts/brain_inbox.py`
+reads the queue and `--mark` records what was filed; the two are separate steps
+so a failure between reading and writing leaves notes queued rather than lost.
 
 ## The Ask endpoint
 

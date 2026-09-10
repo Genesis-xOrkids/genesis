@@ -20,3 +20,6 @@ infra/*.d.ts
 
 # generated site build
 second-brain/site/dist/
+
+# wrangler local state
+.wrangler/

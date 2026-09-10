@@ -16,6 +16,7 @@ panels call five adapter functions and never learn which build they are in.
 The static target also applies exclude.txt, which decides what leaves this
 machine, and emits _worker.js and _headers alongside the page.
 """
+
 import argparse
 import json
 import pathlib
@@ -28,6 +29,14 @@ VAULT = ROOT.parent
 REPO = VAULT.parent
 TPL = ROOT / "template"
 DIST = ROOT / "dist"
+
+# The roster reads the same agent frontmatter the GitHub generator translates,
+# and a second copy of that parser here would be the duplication the roster is
+# built to expose. This runs from a hyphenated directory, so the repository root
+# goes on the path before the import rather than through a package name.
+sys.path.insert(0, str(REPO))
+
+from scripts.agent_definitions import split_frontmatter  # noqa: E402, I001
 
 
 SECURITY_HEADERS = {
@@ -73,23 +82,25 @@ def read_pages() -> list[dict]:
         match = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
         if not match:
             raise SystemExit(f"{path}: no frontmatter")
-        fm = dict(
-            line.split(": ", 1) for line in match.group(1).split("\n") if ": " in line
-        )
+        fm = dict(line.split(": ", 1) for line in match.group(1).split("\n") if ": " in line)
         body = match.group(2).strip()
-        pages.append({
-            "slug": path.stem,
-            "title": fm.get("title", path.stem).strip(),
-            "type": fm.get("type", "concept").strip(),
-            "folder": path.parent.name if path.parent.name != "wiki" else "root",
-            "path": str(path.relative_to(VAULT.parent)),
-            "sources": [s.strip() for s in fm.get("sources", "").strip("[]").split(",") if s.strip()],
-            "created": fm.get("created", "").strip(),
-            "updated": fm.get("last-updated", "").strip(),
-            "links": sorted(set(re.findall(r"\[\[([^\]|]+)", body))),
-            "words": len(body.split()),
-            "body": body,
-        })
+        pages.append(
+            {
+                "slug": path.stem,
+                "title": fm.get("title", path.stem).strip(),
+                "type": fm.get("type", "concept").strip(),
+                "folder": path.parent.name if path.parent.name != "wiki" else "root",
+                "path": str(path.relative_to(VAULT.parent)),
+                "sources": [
+                    s.strip() for s in fm.get("sources", "").strip("[]").split(",") if s.strip()
+                ],
+                "created": fm.get("created", "").strip(),
+                "updated": fm.get("last-updated", "").strip(),
+                "links": sorted(set(re.findall(r"\[\[([^\]|]+)", body))),
+                "words": len(body.split()),
+                "body": body,
+            }
+        )
     return pages
 
 
@@ -123,8 +134,8 @@ def residual(pages: list[dict], excluded: set[str]) -> list[tuple[str, str]]:
     """Mentions of held-back pages that survive redaction, for the build report."""
     out = []
     for p in pages:
-        for slug in sorted({l for l in re.findall(r"\[\[([^\]|]+)", p["body"]) if l in excluded}):
-            out.append((p["slug"], slug))
+        held = {link for link in re.findall(r"\[\[([^\]|]+)", p["body"]) if link in excluded}
+        out.extend((p["slug"], slug) for slug in sorted(held))
     return out
 
 
@@ -151,35 +162,15 @@ KIND_ICON = {"agent": "\N{ROBOT FACE}", "command": "\N{GEAR}", "service": "\N{EL
 COMMIT_SEP, FIELD_SEP = "\x1e", "\x1f"
 
 
-def split_frontmatter(text: str) -> dict[str, str]:
-    """Flatten a definition file's frontmatter into string values.
-
-    Agent frontmatter folds long values across indented continuation lines —
-    `description:` in genesis-reviewer.md runs to seven — and nests a block
-    under `hooks:`. The one-line split `read_pages` uses mangles both, so
-    continuations fold into their key and nested blocks are dropped: nothing
-    here reads a hook, and a half-parsed one would be worse than none.
-    """
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    if not match:
-        return {}
-    fields: dict[str, str] = {}
-    key = None
-    for line in match.group(1).split("\n"):
-        if re.match(r"^\s+\S", line):
-            if key and fields[key]:
-                fields[key] += " " + line.strip()
-            continue
-        found = re.match(r"^([\w-]+):\s*(.*)$", line)
-        if found:
-            key = found.group(1)
-            fields[key] = found.group(2).strip()
-    return fields
-
-
 def role_line(description: str) -> str:
     """The one-line role: the description up to its first sentence break."""
     return re.split(r"(?<=[.!?])\s", description.strip(), maxsplit=1)[0] if description else ""
+
+
+def pointer_field(text: str, key: str) -> str:
+    """One `key: value` line from a synced document's header, "" if absent."""
+    found = re.search(rf"^{key}: (.*)$", text, re.M)
+    return found.group(1) if found else ""
 
 
 def git_log(*args: str) -> str:
@@ -204,14 +195,19 @@ def read_commits(revs: str) -> list[dict]:
             continue
         sha, author, date, subject, body = (record.split(FIELD_SEP) + [""] * 5)[:5]
         trailer = re.search(r"^co-authored-by:[ \t]*([^<]+)", body, re.M | re.I)
-        commits.append({
-            "sha": sha,
-            "actor": author if author.endswith("[bot]") else
-                     trailer.group(1).strip() if trailer else author,
-            "human": author,
-            "date": date,
-            "subject": subject.strip(),
-        })
+        commits.append(
+            {
+                "sha": sha,
+                "actor": author
+                if author.endswith("[bot]")
+                else trailer.group(1).strip()
+                if trailer
+                else author,
+                "human": author,
+                "date": date,
+                "subject": subject.strip(),
+            }
+        )
     return commits
 
 
@@ -251,17 +247,17 @@ def read_runs() -> list[dict]:
             continue
         fields = line.split("\t")
         if len(fields) != 4:
-            raise SystemExit(
-                f"{path}:{number}: expected 4 tab-separated fields, got {len(fields)}"
-            )
+            raise SystemExit(f"{path}:{number}: expected 4 tab-separated fields, got {len(fields)}")
         run_at, agent, target, outcome = fields
-        runs.append({
-            "date": run_at[:10],
-            "agent": agent,
-            "what": f"{target} — {outcome}",
-            "ref": "",
-            "via": "run",
-        })
+        runs.append(
+            {
+                "date": run_at[:10],
+                "agent": agent,
+                "what": f"{target} — {outcome}",
+                "ref": "",
+                "via": "run",
+            }
+        )
     return runs
 
 
@@ -280,42 +276,50 @@ def read_employees(excluded: set[str]) -> list[dict]:
     ahead = read_commits("main..HEAD")
     entries = [] if "log" in excluded else read_log_entries()
     ledger = read_runs()
-    humans = {c["human"] for c in commits if c["actor"] == c["human"] and not c["human"].endswith("[bot]")}
+    humans = {
+        c["human"] for c in commits if c["actor"] == c["human"] and not c["human"].endswith("[bot]")
+    }
 
     staff: list[dict] = []
     for path in sorted((REPO / ".claude/agents").glob("*.md")):
         fm = split_frontmatter(path.read_text())
-        staff.append({
-            "id": fm.get("name", path.stem),
-            "kind": "agent",
-            "invoke": fm.get("name", path.stem),
-            "role": role_line(fm.get("description", "")),
-            "detail": fm.get("description", ""),
-            "icon": fm.get("icon", ""),
-            "model": fm.get("model", ""),
-            "effort": fm.get("effort", ""),
-            "can": [t.strip() for t in fm.get("tools", "").split(",") if t.strip()],
-            "cannot": [t.strip() for t in fm.get("disallowedTools", "").split(",") if t.strip()],
-            "defined": path.relative_to(REPO).as_posix(),
-        })
+        staff.append(
+            {
+                "id": fm.get("name", path.stem),
+                "kind": "agent",
+                "invoke": fm.get("name", path.stem),
+                "role": role_line(fm.get("description", "")),
+                "detail": fm.get("description", ""),
+                "icon": fm.get("icon", ""),
+                "model": fm.get("model", ""),
+                "effort": fm.get("effort", ""),
+                "can": [t.strip() for t in fm.get("tools", "").split(",") if t.strip()],
+                "cannot": [
+                    t.strip() for t in fm.get("disallowedTools", "").split(",") if t.strip()
+                ],
+                "defined": path.relative_to(REPO).as_posix(),
+            }
+        )
 
     commands = REPO / ".claude/commands"
     for path in sorted(commands.rglob("*.md")):
         fm = split_frontmatter(path.read_text())
         slug = path.relative_to(commands).with_suffix("").as_posix()
-        staff.append({
-            "id": slug,
-            "kind": "command",
-            "invoke": "/" + slug.replace("/", ":"),
-            "role": role_line(fm.get("description", "")),
-            "detail": fm.get("description", ""),
-            "icon": fm.get("icon", ""),
-            "model": "",
-            "effort": "",
-            "can": [],
-            "cannot": [],
-            "defined": path.relative_to(REPO).as_posix(),
-        })
+        staff.append(
+            {
+                "id": slug,
+                "kind": "command",
+                "invoke": "/" + slug.replace("/", ":"),
+                "role": role_line(fm.get("description", "")),
+                "detail": fm.get("description", ""),
+                "icon": fm.get("icon", ""),
+                "model": "",
+                "effort": "",
+                "can": [],
+                "cannot": [],
+                "defined": path.relative_to(REPO).as_posix(),
+            }
+        )
 
     # Services are not defined in this repo — GitHub owns them. Every actor in
     # the history that is neither a definition above nor the human is one, so
@@ -342,19 +346,24 @@ def read_employees(excluded: set[str]) -> list[dict]:
     for member in staff:
         member["icon"] = member["icon"] or KIND_ICON[member["kind"]]
         token = member["invoke"]
-        done = [
-            {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
-            for c in commits if c["actor"] == member["id"]
-        ] + [
-            run for run in ledger if run["agent"] == member["id"]
-        ] + [
-            {"date": e["date"], "what": e["title"], "ref": "", "via": "log"}
-            for e in entries if token in e["body"] or member["id"] in e["body"]
-        ]
+        done = (
+            [
+                {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
+                for c in commits
+                if c["actor"] == member["id"]
+            ]
+            + [run for run in ledger if run["agent"] == member["id"]]
+            + [
+                {"date": e["date"], "what": e["title"], "ref": "", "via": "log"}
+                for e in entries
+                if token in e["body"] or member["id"] in e["body"]
+            ]
+        )
         member["done"] = sorted(done, key=lambda r: r["date"], reverse=True)
         member["doing"] = [
             {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
-            for c in ahead if c["actor"] == member["id"]
+            for c in ahead
+            if c["actor"] == member["id"]
         ]
         member["last"] = member["done"][0]["date"] if member["done"] else ""
 
@@ -385,19 +394,28 @@ def build(target: str) -> None:
             p["words"] = len(p["body"].split())
 
     kept = {p["slug"] for p in pages}
-    dangling = sum(1 for p in pages for l in p["links"] if l not in kept)
+    dangling = sum(1 for p in pages for link in p["links"] if link not in kept)
     leftover = residual(pages, excluded)
 
-    commit = subprocess.run(
-        ["git", "-C", str(VAULT.parent), "rev-parse", "--short", "HEAD"],
-        capture_output=True, text=True,
-    ).stdout.strip() or "unknown"
+    commit = (
+        subprocess.run(
+            ["git", "-C", str(VAULT.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "unknown"
+    )
 
     pointers = []
     for f in sorted((VAULT / "raw/repo-docs").glob("*.md")):
         t = f.read_text()
-        get = lambda k: (re.search(rf"^{k}: (.*)$", t, re.M) or [None, ""])[1]
-        pointers.append({"doc": get("source-path"), "hash": get("content-hash"), "synced": get("synced")})
+        pointers.append(
+            {
+                "doc": pointer_field(t, "source-path"),
+                "hash": pointer_field(t, "content-hash"),
+                "synced": pointer_field(t, "synced"),
+            }
+        )
 
     employees = read_employees(excluded)
 
@@ -411,16 +429,25 @@ def build(target: str) -> None:
         "target": target,
     }
     keep = "caps" if target == "artifact" else "static"
-    shell = strip_blocks(TPL.joinpath("shell.html").read_text(), keep, "<!--IF:{}-->", "<!--ENDIF-->")
+    shell = strip_blocks(
+        TPL.joinpath("shell.html").read_text(), keep, "<!--IF:{}-->", "<!--ENDIF-->"
+    )
     app = strip_blocks(TPL.joinpath("app.js").read_text(), keep, "/*IF:{}*/", "/*ENDIF*/")
 
-    html = "".join([
-        TPL.joinpath("head.html").read_text(),
-        "<style>\n", TPL.joinpath("styles.css").read_text(), "</style>\n",
-        shell,
-        "<script>\nconst BRAIN = ", json.dumps(data, separators=(",", ":")), ";\n",
-        app, "</script>\n",
-    ])
+    html = "".join(
+        [
+            TPL.joinpath("head.html").read_text(),
+            "<style>\n",
+            TPL.joinpath("styles.css").read_text(),
+            "</style>\n",
+            shell,
+            "<script>\nconst BRAIN = ",
+            json.dumps(data, separators=(",", ":")),
+            ";\n",
+            app,
+            "</script>\n",
+        ]
+    )
 
     DIST.mkdir(exist_ok=True)
     out = DIST / ("index.html" if target == "static" else "artifact.html")
@@ -446,7 +473,9 @@ def build(target: str) -> None:
         )
 
     print(f"  {out.relative_to(ROOT)}  {out.stat().st_size // 1024} KB")
-    print(f"  {len(pages)} pages, {sum(len(p['links']) for p in pages)} links, compiled at {commit}")
+    print(
+        f"  {len(pages)} pages, {sum(len(p['links']) for p in pages)} links, compiled at {commit}"
+    )
     idle = [e["id"] for e in employees if not e["done"]]
     print(f"  {len(employees)} employees, {sum(len(e['done']) for e in employees)} recorded runs")
     if idle:
@@ -457,14 +486,20 @@ def build(target: str) -> None:
         print(f"  {dangling} links point at held-back pages; they render as plain text")
     if leftover:
         pages_touched = sorted({src for src, _ in leftover})
-        print(f"  NOTE: {len(leftover)} prose mentions of held-back pages remain, across "
-              f"{len(pages_touched)} pages: {', '.join(pages_touched)}")
-        print("  Excluding a page does not redact facts quoted elsewhere. Read those pages "
-              "before treating this build as safe for an audience that should not see them.")
+        print(
+            f"  NOTE: {len(leftover)} prose mentions of held-back pages remain, across "
+            f"{len(pages_touched)} pages: {', '.join(pages_touched)}"
+        )
+        print(
+            "  Excluding a page does not redact facts quoted elsewhere. Read those pages "
+            "before treating this build as safe for an audience that should not see them."
+        )
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--target", choices=["static", "artifact"], default="static")
     args = ap.parse_args()
     print(f"building {args.target}")

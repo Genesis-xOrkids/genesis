@@ -21,10 +21,29 @@ Read `second-brain/brain.config.json` for `log.updateLinkedPages` and
 
 ## Notes captured in the UI
 
-If `ui.artifactUrl` is set and no `$ARGUMENTS` were given, drain the UI inbox
-instead: read the `inbox` collection from that artifact with the Artifact tool
-(`action: "read_db"`, `db_op: "list"`), append every note whose `status` is
-`pending` to `wiki/log.md` under its own capture date, then `write_db` each one
-back with `status: "logged"`. Report how many you drained.
+With no `$ARGUMENTS`, drain the inboxes instead of capturing something new.
+There are two, because the brain has two front ends, and a note can be waiting
+in either.
+
+**The hosted site.** Run `uv run scripts/brain_inbox.py`. It prints one note per
+line as `id`, capture date, text. Append each to `wiki/log.md` under its own
+capture date — not today's — then mark exactly the ones you filed:
+
+```sh
+uv run scripts/brain_inbox.py --mark 3,4,7
+```
+
+Mark after writing, never before. The two steps are separate so that a failure
+between them leaves the notes queued rather than lost, and re-running simply
+reads them again.
+
+**The Claude artifact.** If `ui.artifactUrl` is set, read the `inbox` collection
+from that artifact with the Artifact tool (`action: "read_db"`, `db_op: "list"`),
+append every note whose `status` is `pending`, then `write_db` each one back with
+`status: "logged"`.
+
+Report how many you drained from each. If a source is not configured — no Access
+service token, or no `ui.artifactUrl` — say so rather than reporting zero, since
+"nothing waiting" and "could not look" are different answers.
 
 Confirm in one line what you appended and which pages you touched.
