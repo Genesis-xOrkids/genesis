@@ -437,7 +437,114 @@ $("#legend").innerHTML = FOLDERS.map(f => '<span class="lg"><s style="background
 /* ---------- toast ---------- */
 let tt; const toast = m => { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 2800); };
 
+/* ---------- adapters ---------- */
+// The three panels below run in both builds. All that differs is where a
+// setting, a note or a question goes: the Claude viewer hands us db, sample
+// and downloads at runtime, and the hosted site has localStorage, a real file
+// download, and an endpoint at the edge. Everything past this block calls
+// these five functions and never learns which build it is in.
+//
+// Each one either returns the line to show the reader or throws with a message
+// worth reading. Nothing here swallows a failure and reports success.
+
 /*IF:caps*/
+async function saveConfig(next) {
+  if (!db) throw new Error("Settings can't be stored here — download the file instead");
+  await db.doc("config/current").set({ config: next, savedAt: new Date().toISOString() });
+  return "Settings saved";
+}
+async function saveFile(name, data) {
+  if (!downloads) throw new Error("Downloads aren't available in this view");
+  await downloads.save({ filename: name, data });
+  return "Saved " + name;
+}
+async function captureNote(text) {
+  if (!db) throw new Error("Inbox unavailable — paste the note into /brain:log instead");
+  await db.collection("inbox").add({ text, created: new Date().toISOString(), status: "pending" });
+  return "Captured — /brain:log will file it";
+}
+function watchNotes(render) {
+  if (!db) return;
+  db.collection("inbox").orderBy("created", "desc").limit(8)
+    .onSnapshot(s => render(s.docs.map(d => d.data())), () => {});
+}
+function refreshNotes() {}   // the snapshot listener above already redraws
+async function askModel(payload, onText) {
+  if (!sample) throw new Error("Asking Claude isn't available in this view.");
+  const res = await sample(payload.input, {
+    modelTier: "default", onText: ({ text }) => onText(text),
+  });
+  return res.text;
+}
+const NOTE_HINT = "Notes wait in the inbox until /brain:log files them.";
+/*ENDIF*/
+
+/*IF:static*/
+// localStorage is per-browser and never reaches Claude, so a note captured
+// here is a draft the reader carries to /brain:log themselves — which is why
+// the Capture panel offers an export and says so, rather than implying the
+// note has been filed.
+const STORE = "genesis-brain:";
+function readLocal(key, fallback) {
+  try { const raw = localStorage.getItem(STORE + key); return raw ? JSON.parse(raw) : fallback; }
+  catch { return fallback; }
+}
+function writeLocal(key, value) {
+  try { localStorage.setItem(STORE + key, JSON.stringify(value)); }
+  catch { throw new Error("This browser is blocking site data, so nothing can be kept here"); }
+}
+async function saveConfig(next) {
+  writeLocal("config", next);
+  return "Saved in this browser — download the file to put it in front of the commands";
+}
+async function saveFile(name, data) {
+  const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url; link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+  return "Downloaded " + name;
+}
+async function captureNote(text) {
+  const notes = readLocal("notes", []);
+  notes.unshift({ text, created: new Date().toISOString(), status: "this browser" });
+  writeLocal("notes", notes.slice(0, 50));
+  return "Captured in this browser — export it into /brain:log";
+}
+function watchNotes(render) { render(readLocal("notes", [])); }
+function refreshNotes() { renderNotes(readLocal("notes", [])); }
+async function exportNotes() {
+  const notes = readLocal("notes", []);
+  if (!notes.length) return toast("Nothing captured yet");
+  const body = notes.map(n => "- " + n.created.slice(0, 10) + " \u2014 " + n.text).join("\n") + "\n";
+  try { await navigator.clipboard.writeText(body); toast("Copied " + notes.length + " note(s) \u2014 paste into /brain:log"); }
+  catch { toast(await saveFile("brain-notes.md", body)); }
+}
+async function askModel(payload, onText) {
+  const res = await fetch("/api/ask", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question: payload.question, context: payload.context, cite: payload.cite }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "That couldn't be answered here.");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value, { stream: true });
+    onText(out);
+  }
+  if (!out.trim()) throw new Error("The model returned nothing. Try asking again.");
+  return out;
+}
+const NOTE_HINT = "Notes stay in this browser until you export them into /brain:log.";
+/*ENDIF*/
+
 /* ---------- settings ---------- */
 const CHECKS = { brokenLinks: "Broken links", orphans: "Orphan pages", indexDrift: "Index drift",
   frontmatter: "Missing frontmatter", uncitedClaims: "Uncited claims", sourceDrift: "Source drift",
@@ -474,16 +581,14 @@ $("#cWords").oninput = e => cfg.style.maxPageWords = +e.target.value;
 $("#cMaxP").oninput = e => cfg.query.maxPagesRead = +e.target.value;
 paint();
 $("#saveCfg").onclick = async () => {
-  if (!db) return toast("Settings can't be stored here — download the file instead");
-  try { await db.doc("config/current").set({ config: cfg, savedAt: new Date().toISOString() }); toast("Settings saved"); }
+  try { toast(await saveConfig(cfg)); }
   catch (e) { toast(e.code === "invalid_argument"
     ? "You have read access here \u2014 download the file instead"
-    : "Could not save settings"); }
+    : e.message || "Could not save settings"); }
 };
 $("#dlCfg").onclick = async () => {
-  if (!downloads) return toast("Downloads aren't available in this view");
-  try { await downloads.save({ filename: "brain.config.json", data: JSON.stringify(cfg, null, 2) + "\n" }); toast("Saved brain.config.json"); }
-  catch (e) { if (e.code !== "declined") toast("Download failed"); }
+  try { toast(await saveFile("brain.config.json", JSON.stringify(cfg, null, 2) + "\n")); }
+  catch (e) { if (e.code !== "declined") toast(e.message || "Download failed"); }
 };
 
 /* ---------- capture ---------- */
@@ -495,14 +600,13 @@ function renderNotes(docs) {
 }
 $("#noteBtn").onclick = async () => {
   const text = $("#noteIn").value.trim(); if (!text) return;
-  if (!db) return toast("Inbox unavailable — paste the note into /brain:log instead");
   try {
-    await db.collection("inbox").add({ text, created: new Date().toISOString(), status: "pending" });
-    $("#noteIn").value = ""; toast("Captured — /brain:log will file it");
+    const said = await captureNote(text);
+    $("#noteIn").value = ""; toast(said); refreshNotes();
   } catch (e) {
     toast(e.code === "quota_exceeded" ? "Inbox is full \u2014 drain it with /brain:log"
       : e.code === "invalid_argument" ? "You have read access here \u2014 only editors can capture notes"
-      : "Could not capture that note");
+      : e.message || "Could not capture that note");
   }
 };
 
@@ -528,7 +632,6 @@ function context(question) {
 async function ask() {
   const question = $("#askIn").value.trim(); if (!question) return;
   const out = $("#askOut");
-  if (!sample) { out.innerHTML = '<div class="note">Asking Claude isn\'t available in this view. Run <code>/brain:query</code> in Claude Code instead.</div>'; return; }
   const ctxText = context(question);
   if (!ctxText) { out.innerHTML = '<div class="note">Nothing in the wiki matches that. Try different words, or run <code>/brain:ingest</code> if the source is new.</div>'; return; }
   $("#askBtn").disabled = true;
@@ -540,13 +643,14 @@ async function ask() {
     cite + " If pages disagree, present both and name them; never average them into one confident answer. " +
     "Answer in plain prose, at most 200 words, no preamble.\n\n" + ctxText + "\n\nQuestion: " + question;
   try {
-    const res = await sample(input, { modelTier: "default", onText: ({ text }) => {
+    const answer = await askModel({ question, context: ctxText, cite, input }, text => {
       out.innerHTML = '<div class="ans"></div>'; out.firstChild.innerHTML = inline(esc(text));
-    }});
-    out.innerHTML = '<div class="ans"></div>'; out.firstChild.innerHTML = inline(esc(res.text));
+    });
+    out.innerHTML = '<div class="ans"></div>'; out.firstChild.innerHTML = inline(esc(answer));
   } catch (e) {
     out.innerHTML = '<div class="note">' + (e.code === "rate_limited" ? "Rate limited — wait a moment and ask again."
-      : e.code === "not_granted" ? "You declined that request." : "That couldn't be answered here. Try /brain:query in Claude Code.") + "</div>";
+      : e.code === "not_granted" ? "You declined that request."
+      : esc(e.message || "That couldn't be answered here. Try /brain:query in Claude Code.")) + "</div>";
   } finally { $("#askBtn").disabled = false; }
 }
 
@@ -558,6 +662,8 @@ else requestAnimationFrame(frame);
 matchMedia("(prefers-color-scheme:dark)").addEventListener("change", () => { readColors(); paintFigure(); draw(); });
 setTimeout(() => { resize(); draw(); }, 90);
 if (document.fonts) document.fonts.ready.then(() => { resize(); paintFigure(); draw(); });
+
+$("#noteHint").textContent = NOTE_HINT;
 
 /*IF:caps*/
 (async () => {
@@ -572,7 +678,16 @@ if (document.fonts) document.fonts.ready.then(() => { resize(); paintFigure(); d
     const snap = await db.doc("config/current").get();
     if (snap.exists && snap.data().config) { cfg = Object.assign(cfg, snap.data().config); paint(); }
   } catch (e) {}
-  db.collection("inbox").orderBy("created", "desc").limit(8)
-    .onSnapshot(s => renderNotes(s.docs.map(d => d.data())), () => {});
+  watchNotes(renderNotes);
 })();
+/*ENDIF*/
+
+/*IF:static*/
+// Settings the reader saved in this browser outrank the ones compiled into the
+// page, so a change survives a rebuild until they download the file and put it
+// in front of the commands.
+const saved = readLocal("config", null);
+if (saved) { cfg = Object.assign(cfg, saved); paint(); }
+watchNotes(renderNotes);
+$("#exportNotes").onclick = exportNotes;
 /*ENDIF*/

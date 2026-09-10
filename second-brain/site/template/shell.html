@@ -4,11 +4,9 @@
     <button class="nl" data-view="home" aria-current="page">Home</button>
     <button class="nl" data-view="explore">Explore</button>
     <button class="nl" data-view="employees">Employees</button>
-<!--IF:caps-->
     <button class="nl" data-view="ask">Ask</button>
     <button class="nl" data-view="capture">Capture</button>
     <button class="nl" data-view="settings">Settings</button>
-<!--ENDIF-->
   </div>
   <button class="tg" id="themeBtn">Theme</button>
 </nav>
@@ -35,19 +33,16 @@
     <h2 class="sh">Four things you do with it</h2>
     <p class="sub">Each one works here, and each has a command in Claude Code that does the same job with the files open.</p>
     <div class="deck">
-<!--IF:caps-->
       <button class="do" data-view="ask">
         <h3><s>&#9679;</s>Ask a question</h3>
         <p>Get an answer drawn only from the compiled pages, with a citation on every claim. If two pages disagree, it says so instead of picking one.</p>
         <code>/brain:query</code>
       </button>
-<!--ENDIF-->
       <button class="do" data-view="explore">
         <h3><s>&#9673;</s>Follow the links</h3>
         <p>Forty pages and 212 cross-links as a map. Open any page, read it, and step to whatever it connects to.</p>
         <code>second-brain/wiki/</code>
       </button>
-<!--IF:caps-->
       <button class="do" data-view="capture">
         <h3><s>&#43;</s>Capture a note</h3>
         <p>Something you learned that no document records. It lands in an inbox, and the next log run files it and updates any page it names.</p>
@@ -58,19 +53,6 @@
         <p>How many sources per run, how strictly claims are cited, which health checks run. These settings are read by the commands, not just stored here.</p>
         <code>brain.config.json</code>
       </button>
-<!--ENDIF-->
-<!--IF:static-->
-      <button class="do" data-view="explore">
-        <h3><s>&#43;</s>Add to it</h3>
-        <p>New notes and new sources are compiled in Claude Code, against the vault itself. This site is the published result, rebuilt whenever the wiki changes.</p>
-        <code>/brain:log</code>
-      </button>
-      <button class="do" data-view="explore">
-        <h3><s>&#9881;</s>How it is written</h3>
-        <p>Every page is held to one schema: atomic, cross-linked, and cited back to the section of the source document it came from.</p>
-        <code>second-brain/CLAUDE.md</code>
-      </button>
-<!--ENDIF-->
     </div>
 
     <div class="rule">
@@ -124,30 +106,39 @@
   </div></section>
 
   <!-- ASK -->
-<!--IF:caps-->
   <section class="view" id="vAsk"><div class="wrap">
     <h2 class="sh">Ask the brain</h2>
-    <p class="sub">Answered from the forty compiled pages, with citations. Nothing outside the wiki is used, and a question it cannot answer gets told so. Runs on your own Claude account &mdash; it is the only thing here that does.</p>
+<!--IF:caps-->
+    <p class="sub">Answered from the compiled pages, with citations. Nothing outside the wiki is used, and a question it cannot answer gets told so. Runs on your own Claude account &mdash; it is the only thing here that does.</p>
+<!--ENDIF-->
+<!--IF:static-->
+    <p class="sub">Answered from the compiled pages, with citations. Nothing outside the wiki is used, and a question it cannot answer gets told so. The page picks the pages, then an endpoint on this site calls Claude with a key held at the edge &mdash; never in your browser. It only works while the site is behind Access.</p>
+<!--ENDIF-->
     <textarea id="askIn" placeholder="What is blocking the catalog from hitting its targets?"></textarea>
     <div class="acts"><button class="btn" id="askBtn">Ask</button></div>
     <div id="askOut"></div>
     <div class="recent"><h4>Or start here</h4><div class="sugs" id="sugs"></div></div>
   </div></section>
-<!--ENDIF-->
 
   <!-- CAPTURE -->
-<!--IF:caps-->
   <section class="view" id="vCapture"><div class="wrap">
     <h2 class="sh">Capture a note</h2>
+<!--IF:caps-->
     <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes wait in an inbox until <code>/brain:log</code> files them into the activity log and folds them into any page they name.</p>
+<!--ENDIF-->
+<!--IF:static-->
+    <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes are kept in this browser only: nothing here can reach the vault, so copy them out and hand them to <code>/brain:log</code>, which files them and folds them into any page they name.</p>
+<!--ENDIF-->
     <textarea id="noteIn" placeholder="Ten more registered storefronts should clear every C2 target — twelve of twenty candidates probed ingestible."></textarea>
-    <div class="acts"><button class="btn" id="noteBtn">Capture</button><span class="meta" id="noteHint"></span></div>
+    <div class="acts"><button class="btn" id="noteBtn">Capture</button>
+<!--IF:static-->
+      <button class="btn gh" id="exportNotes">Copy all for /brain:log</button>
+<!--ENDIF-->
+      <span class="meta" id="noteHint"></span></div>
     <div class="recent" id="noteWrap"></div>
   </div></section>
-<!--ENDIF-->
 
   <!-- SETTINGS -->
-<!--IF:caps-->
   <section class="view" id="vSettings"><div class="wrap">
     <h2 class="sh">Settings</h2>
     <p class="sub">These write <code>brain.config.json</code>, which all four commands read before they do anything. Nothing here is decorative.</p>
@@ -187,8 +178,12 @@
       <button class="btn" id="saveCfg">Save settings</button>
       <button class="btn gh" id="dlCfg">Download the file</button>
     </div>
+<!--IF:caps-->
     <div class="note">Saved settings live with this page. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands, or ask Claude Code to pull them.</div>
-  </div></section>
 <!--ENDIF-->
+<!--IF:static-->
+    <div class="note">Saving keeps these in this browser, which is enough to carry them between visits but nothing the commands can read. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands.</div>
+<!--ENDIF-->
+  </div></section>
 </main>
 <div class="toast" id="toast"></div>

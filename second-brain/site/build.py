@@ -7,10 +7,14 @@ artifact cannot drift apart:
     ./build.py --target static     dist/index.html, for Cloudflare Pages
     ./build.py --target artifact   dist/artifact.html, to publish as an Artifact
 
-The static target drops Ask, Capture and Settings: all three need runtime
-capabilities that only exist inside the Claude viewer, and a page that
-offers a control it cannot honour is worse than one that omits it. It also
-applies exclude.txt, which decides what leaves this machine.
+Both targets carry every panel. What differs is only where a setting, a note
+or a question goes: the Claude viewer supplies db, sample and downloads at
+runtime, and the hosted site has localStorage, a real file download, and an
+Ask endpoint in _worker.js that calls Claude with a key held at the edge. The
+panels call five adapter functions and never learn which build they are in.
+
+The static target also applies exclude.txt, which decides what leaves this
+machine, and emits _worker.js and _headers alongside the page.
 """
 import argparse
 import json
@@ -24,6 +28,40 @@ VAULT = ROOT.parent
 REPO = VAULT.parent
 TPL = ROOT / "template"
 DIST = ROOT / "dist"
+
+
+SECURITY_HEADERS = {
+    "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "geolocation=(), camera=(), microphone=(), interest-cohort=()",
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; img-src data:; connect-src 'self'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+}
+
+
+def render_worker() -> str:
+    """The static site's worker: security headers, and the Ask endpoint.
+
+    Ask needs a model call, and the browser cannot make one without holding a
+    key. On the artifact the Claude viewer supplies `sample()`; here the call
+    happens at the edge with a key stored as a Cloudflare secret, which is the
+    only place on this path a key can live without shipping to the reader.
+
+    This is a second place that calls a model, which the engineering
+    constitution otherwise routes through `ModelGateway`. That rule cannot
+    reach here - the gateway is Python and this is edge JavaScript - and the
+    reasons behind it (per-tenant routing, cost attribution, guardrails) are
+    about the product, not about a reader asking a question of a wiki. The
+    exception is deliberate and stops at this file.
+    """
+    headers = json.dumps(SECURITY_HEADERS, indent=2)
+    return (TPL / "worker.js").read_text().replace("__SECURITY_HEADERS__", headers)
 
 
 def read_pages() -> list[dict]:
@@ -389,18 +427,19 @@ def build(target: str) -> None:
     out.write_text(html)
 
     if target == "static":
-        # Access gates the site; these headers cover everything Access does not.
+        # Declared once, emitted twice. `_headers` is what Pages applies when
+        # the site is plain files; `_worker.js` sets the same headers itself
+        # because Pages ignores `_headers` for responses a worker returns, and
+        # the worker is what serves the site once Ask needs an endpoint.
+        #
+        # `connect-src 'self'` is what lets the page reach /api/ask. The
+        # previous policy had no connect-src and inherited `default-src 'none'`,
+        # which would have blocked the request with nothing in the UI to
+        # explain why.
         (DIST / "_headers").write_text(
-            "/*\n"
-            "  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet\n"
-            "  Referrer-Policy: no-referrer\n"
-            "  X-Content-Type-Options: nosniff\n"
-            "  X-Frame-Options: DENY\n"
-            "  Permissions-Policy: geolocation=(), camera=(), microphone=(), interest-cohort=()\n"
-            "  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; "
-            "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
-            "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\n"
+            "/*\n" + "".join(f"  {name}: {value}\n" for name, value in SECURITY_HEADERS.items())
         )
+        (DIST / "_worker.js").write_text(render_worker())
         (DIST / "robots.txt").write_text("User-agent: *\nDisallow: /\n")
         (DIST / "404.html").write_text(
             '<title>Not here</title><meta http-equiv="refresh" content="0; url=/">\n'
