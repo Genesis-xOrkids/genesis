@@ -117,8 +117,8 @@ brand roles (`--surface`, `--text-muted`, `--accent`), never against ramp steps.
 `build.py` concatenates `brand.css` ahead of it, so a missing `brand.css` is a
 broken page rather than a silent fallback to browser defaults.
 
-The graph's node colors are the categorical slots `--cat-1` … `--cat-other`, not
-the brand families. That distinction is deliberate: the brand palette is
+The graph's node colors, and the gem on each Employees card, are the categorical
+slots `--cat-1` … `--cat-other`, not the brand families. That distinction is deliberate: the brand palette is
 deliberately muted and three of its five hues sit close together, so used as a
 five-way categorical scale it fails colorblind separation outright. The
 categorical set is validated in both themes — see `color.md` in the brand repo

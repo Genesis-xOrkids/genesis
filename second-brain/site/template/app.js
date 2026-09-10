@@ -192,6 +192,38 @@ function renderRows() {
 /* ---------- employees ---------- */
 const SHOWN = 3;
 
+// The mark on each card is a gem: the cut says the kind, and the colour agrees
+// (styles.css owns the colours). Each cut is one outline. The table is that
+// outline shrunk about its centre, and the facets between the two take their
+// tone from how squarely they face a light at the top-left.
+const CUTS = {
+  agent: Array.from({ length: 8 }, (_, i) => {
+    const a = Math.PI * (i / 4 + 1 / 8);
+    return [20 + 17.5 * Math.cos(a), 20 + 17.5 * Math.sin(a)];
+  }),
+  command: [[11, 3], [29, 3], [35, 9], [35, 31], [29, 37], [11, 37], [5, 31], [5, 9]],
+  service: [[17, 4], [23, 4], [37, 29], [34, 35], [6, 35], [3, 29]],
+};
+function gem(kind) {
+  const outer = CUTS[kind];
+  const cx = outer.reduce((s, p) => s + p[0], 0) / outer.length;
+  const cy = outer.reduce((s, p) => s + p[1], 0) / outer.length;
+  const inner = outer.map(([x, y]) => [cx + (x - cx) * .46, cy + (y - cy) * .46]);
+  const poly = (pts, cls) => '<polygon class="' + cls + '" points="' +
+    pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") + '"/>';
+  let s = "";
+  outer.forEach((a, i) => {
+    const b = outer[(i + 1) % outer.length];
+    const nx = (a[0] + b[0]) / 2 - cx, ny = (a[1] + b[1]) / 2 - cy;
+    const lit = -(nx + ny) / Math.hypot(nx, ny) / Math.SQRT2;  // 1 facing the light, -1 facing away
+    s += poly([a, b, inner[(i + 1) % outer.length], inner[i]],
+      lit > .85 ? "f0" : lit > .25 ? "f1" : lit > -.25 ? "f2" : "f3");
+  });
+  return '<svg class="gem" viewBox="0 0 40 40" aria-hidden="true">' + s + poly(inner, "ft") + "</svg>";
+}
+const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.6l3 3 6-6.6"/></svg>';
+const SEAL = '<svg class="ok" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M4.8 8.4l2.2 2.2 4.3-4.6"/></svg>';
+
 function runRow(r, doing) {
   const row = document.createElement("div");
   row.className = "run" + (doing ? " doing" : "");
@@ -206,13 +238,17 @@ function renderStaff() {
   const el = $("#staff");
   el.innerHTML = "";
   for (const m of BRAIN.employees) {
+    const live = m.doing.length > 0;
+    const state = live ? "live" : m.done.length ? "done" : "never";
     const card = document.createElement("div");
-    card.className = "emp";
+    card.className = "emp " + state;
+    card.dataset.kind = m.kind;
     card.innerHTML =
-      '<header><div class="av"></div><div><h3></h3><span class="kind"></span></div></header>' +
+      '<header><div class="av">' + gem(m.kind) + (state === "done" ? SEAL : "") + "</div>" +
+      '<div><h3></h3><span class="kind"></span></div></header>' +
       '<p class="role"></p><div class="chips"></div>' +
-      '<div class="work"><div class="st"><i></i><b></b></div><div class="runs"></div></div>';
-    card.querySelector(".av").textContent = m.icon;
+      '<div class="work"><div class="st">' + (state === "done" ? CHECK : "<i></i>") + "<b></b></div>" +
+      '<div class="runs"></div></div>';
     card.querySelector("h3").textContent = m.invoke;
     card.querySelector(".kind").textContent = m.kind;
 
@@ -235,12 +271,9 @@ function renderStaff() {
     if (m.can.length) add(m.can.length + " tools");
     if (m.cannot.length) add("cannot write", "no");
 
-    const live = m.doing.length > 0;
-    const st = card.querySelector(".st");
-    st.classList.add(live ? "live" : m.done.length ? "idle" : "never");
-    st.querySelector("b").textContent = live
+    card.querySelector(".st b").textContent = live
       ? "Working — " + m.doing.length + " unmerged"
-      : m.done.length ? "Idle" : "Never run";
+      : state === "done" ? "Finished" : "Never run";
 
     const runs = card.querySelector(".runs");
     for (const r of m.doing) runs.appendChild(runRow(r, true));
