@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Least privilege by default: no job needs to write to the repository, and a
 # token that cannot write cannot be turned against the repo by a dependency.
@@ -96,6 +97,26 @@ jobs:
         # repository root is on sys.path.
         run: uv run python -m scripts.generate_github_agents --check
 
+      - name: No change to what the site publishes
+        # Same shape as the drift gates above. `exclude.txt` holds pages back,
+        # but exclusion is not redaction: the facts they concentrate stay quoted
+        # across pages that do ship. The build records which published pages
+        # still name a held-back one, and a change here means a person reads the
+        # diff before the site deploys.
+        #
+        # It cannot catch a published page carrying a held-back fact without
+        # linking to it. Nothing mechanical can. This narrows the surface.
+        run: |
+          python3 second-brain/site/build.py --target static >/dev/null
+          git diff --exit-code -- second-brain/site/publication-report.txt || {
+            echo
+            echo "What this site publishes changed. Read the diff above:"
+            echo "  a new line means a page now names something exclude.txt holds back;"
+            echo "  a removed line means a page stopped naming one, or stopped shipping."
+            echo "Then commit the regenerated report to accept it."
+            exit 1
+          }
+
       - name: Secrets
         # Free stand-in for GitHub's push protection, which costs money on
         # private repos. The binary is run directly rather than through
@@ -117,3 +138,38 @@ jobs:
         # No network. The storefront connector runs against a captured payload,
         # so a third party's uptime can never fail this build.
         run: uv run pytest -q
+
+  deploy:
+    # Publication is downstream of every gate, so a red build cannot ship. Only
+    # main, and only for real pushes - a pull request from a fork must never
+    # reach the deploy credentials.
+    needs: checks
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The Employees roster is derived from `git log`, so a shallow clone
+          # does not fail - it publishes a page with almost no work history and
+          # wrong run counts. Full history is a correctness requirement here,
+          # not a convenience.
+          fetch-depth: 0
+
+      # No uv here: build.py imports only the standard library, so the runner's
+      # own python3 is enough and Node comes preinstalled for wrangler.
+      - name: Build both targets
+        # The artifact target is built too, so a failure in it surfaces here
+        # rather than the next time someone publishes by hand.
+        run: |
+          python3 second-brain/site/build.py --target static
+          python3 second-brain/site/build.py --target artifact
+
+      - name: Deploy to Cloudflare Pages
+        working-directory: second-brain/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        # `--branch main` is explicit rather than inferred: wrangler reads the
+        # branch from git, and anything other than the production branch lands on
+        # a preview host instead of the site.
+        run: npx --yes wrangler pages deploy --branch main --commit-dirty=true
