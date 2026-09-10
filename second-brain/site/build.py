@@ -466,6 +466,9 @@ def build(target: str) -> None:
         [
             TPL.joinpath("head.html").read_text(),
             "<style>\n",
+            # Brand tokens first: styles.css is written against the roles they
+            # define, so a missing brand.css is a broken page, not a fallback.
+            TPL.joinpath("brand.css").read_text(),
             TPL.joinpath("styles.css").read_text(),
             "</style>\n",
             shell,

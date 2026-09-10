@@ -2,7 +2,7 @@ const $ = s => document.querySelector(s);
 const byId = Object.fromEntries(BRAIN.pages.map(p => [p.slug, p]));
 const FOLDERS = ["sources", "projects", "decisions", "concepts", "root"];
 const FLABEL = { sources: "Sources", projects: "Projects", decisions: "Decisions", concepts: "Concepts", root: "Wiki root" };
-const FVAR = { sources: "--g-sources", projects: "--g-projects", decisions: "--g-decisions", concepts: "--g-concepts", root: "--g-root" };
+const FVAR = { sources: "--cat-1", projects: "--cat-4", decisions: "--cat-3", concepts: "--cat-2", root: "--cat-other" };
 let cfg = JSON.parse(JSON.stringify(BRAIN.config));
 let db = null, sample = null, downloads = null, current = null, query = "";
 
@@ -53,9 +53,9 @@ function paintFigure() {
   let g = "";
   docs.forEach((d, i) => {
     const y = 26 + i * 40;
-    g += '<rect x="8" y="' + y + '" width="132" height="30" rx="6" fill="' + c("--card") + '" stroke="' + c("--line") + '"/>' +
-      '<text x="22" y="' + (y + 19) + '" font-family="JetBrains Mono,monospace" font-size="11.5" fill="' + c("--text") + '">' + d[0] + "</text>" +
-      '<text x="126" y="' + (y + 19) + '" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="9.5" fill="' + c("--faint") + '">' + d[1] + "K</text>";
+    g += '<rect x="8" y="' + y + '" width="132" height="30" rx="6" fill="' + c("--surface") + '" stroke="' + c("--line") + '"/>' +
+      '<text x="22" y="' + (y + 19) + '" font-family="Noto Sans Mono,monospace" font-size="11.5" fill="' + c("--text") + '">' + d[0] + "</text>" +
+      '<text x="126" y="' + (y + 19) + '" text-anchor="end" font-family="Noto Sans Mono,monospace" font-size="9.5" fill="' + c("--text-faint") + '">' + d[1] + "K</text>";
   });
   $("#figDocs").innerHTML = g;
 
@@ -68,13 +68,13 @@ function paintFigure() {
   $("#figFlow").innerHTML = f;
 
   $("#figHub").innerHTML =
-    '<circle cx="330" cy="100" r="30" fill="' + c("--soft") + '" stroke="' + c("--accent") + '" stroke-width="1.4"/>' +
+    '<circle cx="330" cy="100" r="30" fill="' + c("--accent-soft") + '" stroke="' + c("--accent") + '" stroke-width="1.4"/>' +
     '<text x="330" y="96" text-anchor="middle" font-family="Fraunces,serif" font-size="13" fill="' + c("--accent") + '">ingest</text>' +
-    '<text x="330" y="110" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="' + c("--faint") + '">compile</text>';
+    '<text x="330" y="110" text-anchor="middle" font-family="Noto Sans Mono,monospace" font-size="8" fill="' + c("--text-faint") + '">compile</text>';
 
   const pts = [[470,44],[540,26],[610,52],[680,32],[745,60],[500,96],[575,86],[650,100],[720,92],[790,72],
                [478,148],[548,158],[618,140],[688,156],[756,136],[812,110],[530,124],[608,170],[700,124],[770,168]];
-  const cols = [c("--g-sources"), c("--g-projects"), c("--g-decisions"), c("--g-concepts")];
+  const cols = [c("--cat-1"), c("--cat-4"), c("--cat-3"), c("--cat-2")];
   let w = "";
   for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
     const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1];
@@ -83,8 +83,8 @@ function paintFigure() {
   }
   pts.forEach((p, i) => { w += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (3.4 + (i % 4)) + '" fill="' + cols[i % 4] + '"/>'; });
   w += '<path d="M366 100 L 452 100" fill="none" stroke="' + c("--accent") + '" stroke-width="1.3" opacity=".5" class="dash"/>';
-  w += '<text x="640" y="196" text-anchor="middle" font-family="Archivo,sans-serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--faint") + '">40 CROSS-LINKED PAGES</text>';
-  w += '<text x="74" y="196" text-anchor="middle" font-family="Archivo,sans-serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--faint") + '">YOUR SOURCES</text>';
+  w += '<text x="640" y="196" text-anchor="middle" font-family="Noto Serif,serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--text-faint") + '">40 CROSS-LINKED PAGES</text>';
+  w += '<text x="74" y="196" text-anchor="middle" font-family="Noto Serif,serif" font-size="10.5" letter-spacing="1.6" fill="' + c("--text-faint") + '">YOUR SOURCES</text>';
   $("#figWiki").innerHTML = w;
 }
 
@@ -95,7 +95,7 @@ function inline(s) {
     .replace(/`([^`]+)`/g, (m, c) => "<code>" + c + "</code>")
     .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (m, slug, alias) => {
       const t = (alias || slug).replace(/-/g, " ");
-      return byId[slug] ? '<a class="wl" data-go="' + slug + '">' + t + "</a>" : '<span style="color:var(--faint)">' + t + "</span>";
+      return byId[slug] ? '<a class="wl" data-go="' + slug + '">' + t + "</a>" : '<span style="color:var(--text-faint)">' + t + "</span>";
     })
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
@@ -329,7 +329,7 @@ let W = 0, H = 0, alpha = 1, hover = null, drag = null, pulses = [], COL = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
   COL = { line: cs.getPropertyValue("--line").trim(), text: cs.getPropertyValue("--text").trim(),
-          dim: cs.getPropertyValue("--dim").trim(), accent: cs.getPropertyValue("--accent").trim() };
+          dim: cs.getPropertyValue("--text-muted").trim(), accent: cs.getPropertyValue("--accent").trim() };
   for (const f of FOLDERS) COL[f] = cs.getPropertyValue(FVAR[f]).trim();
 }
 function resize() {
@@ -397,7 +397,7 @@ function draw() {
     if ((deg[n.id] || 0) >= 6 || (near && near.has(n.id))) {
       ctx.globalAlpha = on ? .92 : .1;
       ctx.fillStyle = near && near.has(n.id) ? COL.text : COL.dim;
-      ctx.font = '500 10px "Archivo",sans-serif'; ctx.textAlign = "center";
+      ctx.font = '500 10px "Noto Serif",Georgia,serif'; ctx.textAlign = "center";
       const t = n.p.title.length > 24 ? n.p.title.slice(0, 22) + "…" : n.p.title;
       ctx.fillText(t, n.x, n.y + n.r + 12);
     }
@@ -423,7 +423,7 @@ cv.addEventListener("mousemove", ev => {
   if (n) {
     tip.style.opacity = "1";
     tip.style.left = Math.min(W - 250, x + 15) + "px"; tip.style.top = (y + 15) + "px";
-    tip.innerHTML = "<strong>" + esc(n.p.title) + "</strong><br><span style='color:var(--faint);font-family:var(--mono);font-size:10.5px'>" +
+    tip.innerHTML = "<strong>" + esc(n.p.title) + "</strong><br><span style='color:var(--text-faint);font-family:var(--font-mono);font-size:10.5px'>" +
       n.p.type + " · " + (deg[n.id] || 0) + " links</span>";
   } else tip.style.opacity = "0";
 });
