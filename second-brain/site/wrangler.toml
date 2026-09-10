@@ -16,10 +16,10 @@ compatibility_date = "2026-09-01"
 [[d1_databases]]
 binding = "BRAIN_DB"
 database_name = "genesis-brain"
-database_id = "PUT_THE_DATABASE_ID_HERE"
+database_id = "7a7c4cd5-3458-45eb-917c-daa410b0dc41"
 
 [env.preview]
 [[env.preview.d1_databases]]
 binding = "BRAIN_DB"
 database_name = "genesis-brain"
-database_id = "PUT_THE_DATABASE_ID_HERE"
+database_id = "7a7c4cd5-3458-45eb-917c-daa410b0dc41"
