@@ -1,0 +1,23 @@
+# Pages held out of the public site build, one slug per line.
+#
+# The vault keeps everything; this list decides what leaves the machine.
+# Each exclusion needs a reason. Delete a line to publish that page.
+#
+# Anything excluded still appears in the wiki and in the artifact - this
+# only affects `build.py --target static`. Links pointing at an excluded
+# page render as plain text, and the build reports how many.
+
+# --- security posture: names the controls AND which are not built yet ---
+tenant-isolation          # isolation mechanisms + "not built beyond a tenant table"
+tool-results-are-data     # injection surface and the controls around it
+commerce-and-compliance   # X4 not started, no pen test scheduled, legal exposure
+risk-register             # eight named risks including legal and concentration
+
+# --- commercial position ---
+unit-economics            # margins, per-user COGS, vendor prices
+catalog-sources           # vendor strategy and access posture
+trend-corpus              # data licensing posture, uncommitted budget
+open-decisions            # unresolved legal and budget questions
+
+# --- internal process ---
+log                       # activity log, including the artifact URL

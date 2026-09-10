@@ -1,0 +1,189 @@
+<nav>
+  <button class="mark" data-view="home"><b>Genesis</b><span>Second Brain</span></button>
+  <div class="nlinks">
+    <button class="nl" data-view="home" aria-current="page">Home</button>
+    <button class="nl" data-view="explore">Explore</button>
+    <button class="nl" data-view="employees">Employees</button>
+    <button class="nl" data-view="ask">Ask</button>
+    <button class="nl" data-view="capture">Capture</button>
+    <button class="nl" data-view="settings">Settings</button>
+  </div>
+  <button class="tg" id="themeBtn">Theme</button>
+</nav>
+
+<main>
+  <!-- HOME -->
+  <section class="view on" id="vHome"><div class="wrap">
+    <div class="hero">
+      <h1>Everything this project decided, in one place.</h1>
+      <p class="lede">Genesis carries its thinking in four long documents — an architecture plan, a delivery roadmap, an engineering constitution, and a setup guide. Together they run to about 115,000 characters, and the reasoning you need is never in the one you opened.</p>
+      <p class="lede"><strong>This is a wiki compiled from those documents by Claude Code.</strong> Forty short pages, one idea each, cross-linked and cited back to the section they came from. The documents stay canonical; this is the readable index over them.</p>
+    </div>
+
+    <div class="figure">
+      <svg viewBox="0 0 860 200" role="img" aria-label="Four source documents are compiled into a cross-linked wiki">
+        <g id="figDocs"></g>
+        <g id="figFlow"></g>
+        <g id="figHub"></g>
+        <g id="figWiki"></g>
+      </svg>
+      <p class="fcap">Sources are read where they live and never copied. <code>/brain:ingest</code> compiles them into pages.</p>
+    </div>
+
+    <h2 class="sh">Four things you do with it</h2>
+    <p class="sub">Each one works here, and each has a command in Claude Code that does the same job with the files open.</p>
+    <div class="deck">
+      <button class="do" data-view="ask">
+        <h3><s>&#9679;</s>Ask a question</h3>
+        <p>Get an answer drawn only from the compiled pages, with a citation on every claim. If two pages disagree, it says so instead of picking one.</p>
+        <code>/brain:query</code>
+      </button>
+      <button class="do" data-view="explore">
+        <h3><s>&#9673;</s>Follow the links</h3>
+        <p>Forty pages and 212 cross-links as a map. Open any page, read it, and step to whatever it connects to.</p>
+        <code>second-brain/wiki/</code>
+      </button>
+      <button class="do" data-view="capture">
+        <h3><s>&#43;</s>Capture a note</h3>
+        <p>Something you learned that no document records. It lands in an inbox, and the next log run files it and updates any page it names.</p>
+        <code>/brain:log</code>
+      </button>
+      <button class="do" data-view="settings">
+        <h3><s>&#9881;</s>Change how it writes</h3>
+        <p>How many sources per run, how strictly claims are cited, which health checks run. These settings are read by the commands, not just stored here.</p>
+        <code>brain.config.json</code>
+      </button>
+    </div>
+
+    <div class="rule">
+      <h2>The one rule that makes it trustworthy</h2>
+      <p><b>You own the sources. Claude owns the wiki.</b> Nothing Claude writes ever lands in your source documents, so its interpretation can never be mistaken for your record. You can recompile from clean sources at any time, roll back a bad run, or change models entirely without losing ground truth.</p>
+      <p>That is also why the four Genesis documents are referenced here rather than copied — a snapshot would be a second copy of the same facts, quietly drifting from the real file.</p>
+    </div>
+
+    <div class="figures">
+      <div class="fig"><u id="nPages">40</u><i>pages</i></div>
+      <div class="fig"><u id="nLinks">212</u><i>cross-links</i></div>
+      <div class="fig"><u id="nSrc">4</u><i>sources</i></div>
+      <div class="fig"><u id="nCommit">—</u><i>compiled at</i></div>
+      <div class="fig ok"><u>in sync</u><i>vs. sources</i></div>
+    </div>
+  </div></section>
+
+  <!-- EXPLORE -->
+  <section class="view" id="vExplore">
+    <div class="bar">
+      <div class="find">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search the wiki…" aria-label="Search pages">
+      </div>
+      <div class="seg">
+        <button id="segMap" aria-pressed="true">Map</button>
+        <button id="segList" aria-pressed="false">List</button>
+      </div>
+    </div>
+    <div class="gwrap" id="gwrap">
+      <canvas id="cv"></canvas>
+      <div class="hint">Drag a node · click to open</div>
+      <div class="legend" id="legend"></div>
+      <div class="tip" id="tip"></div>
+    </div>
+    <div class="rows hid" id="rows"></div>
+  </section>
+
+  <!-- EMPLOYEES -->
+  <section class="view" id="vEmployees"><div class="wrap">
+    <h2 class="sh">Employees</h2>
+    <p class="sub">Everything that does work in this repository under its own name. Each one is read from the file that defines it &mdash; the same file Claude Code reads to run it &mdash; so a role here cannot drift from the role it actually has. The work is read from git history and the activity log.</p>
+    <div class="staff" id="staff"></div>
+    <div class="note" id="staffNote"></div>
+  </div></section>
+
+  <!-- PAGE -->
+  <section class="view" id="vPage"><div class="wrap">
+    <button class="back" id="backBtn">&larr; Back to the map</button>
+    <div class="doc" id="doc"></div>
+  </div></section>
+
+  <!-- ASK -->
+  <section class="view" id="vAsk"><div class="wrap">
+    <h2 class="sh">Ask the brain</h2>
+<!--IF:caps-->
+    <p class="sub">Answered from the compiled pages, with citations. Nothing outside the wiki is used, and a question it cannot answer gets told so. Runs on your own Claude account &mdash; it is the only thing here that does.</p>
+<!--ENDIF-->
+<!--IF:static-->
+    <p class="sub">Answered from the compiled pages, with citations. Nothing outside the wiki is used, and a question it cannot answer gets told so. The page picks the pages, then an endpoint on this site calls Claude with a key held at the edge &mdash; never in your browser. It only works while the site is behind Access.</p>
+<!--ENDIF-->
+    <textarea id="askIn" placeholder="What is blocking the catalog from hitting its targets?"></textarea>
+    <div class="acts"><button class="btn" id="askBtn">Ask</button></div>
+    <div id="askOut"></div>
+    <div class="recent"><h4>Or start here</h4><div class="sugs" id="sugs"></div></div>
+  </div></section>
+
+  <!-- CAPTURE -->
+  <section class="view" id="vCapture"><div class="wrap">
+    <h2 class="sh">Capture a note</h2>
+<!--IF:caps-->
+    <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes wait in an inbox until <code>/brain:log</code> files them into the activity log and folds them into any page they name.</p>
+<!--ENDIF-->
+<!--IF:static-->
+    <p class="sub">For something you learned that no source document records — a measurement, a decision, a dead end. Notes are kept in this browser only: nothing here can reach the vault, so copy them out and hand them to <code>/brain:log</code>, which files them and folds them into any page they name.</p>
+<!--ENDIF-->
+    <textarea id="noteIn" placeholder="Ten more registered storefronts should clear every C2 target — twelve of twenty candidates probed ingestible."></textarea>
+    <div class="acts"><button class="btn" id="noteBtn">Capture</button>
+<!--IF:static-->
+      <button class="btn gh" id="exportNotes">Copy all for /brain:log</button>
+<!--ENDIF-->
+      <span class="meta" id="noteHint"></span></div>
+    <div class="recent" id="noteWrap"></div>
+  </div></section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="vSettings"><div class="wrap">
+    <h2 class="sh">Settings</h2>
+    <p class="sub">These write <code>brain.config.json</code>, which all four commands read before they do anything. Nothing here is decorative.</p>
+
+    <div class="card">
+      <h3>Compiling</h3>
+      <p>How <code>/brain:ingest</code> turns sources into pages.</p>
+      <div class="set"><label for="cBatch">Sources per run<em>How many documents to compile in one pass</em></label><input type="number" id="cBatch" min="1" max="40"></div>
+      <div class="set"><label for="cReing">Recompile changed sources<em>Redo a page when its source document moves on</em></label><button class="sw" id="cReing" role="switch"></button></div>
+      <div class="set"><label for="cWords">Split pages longer than<em>Words, before a page is broken in two</em></label><input type="number" id="cWords" min="150" max="4000" step="50"></div>
+    </div>
+
+    <div class="card">
+      <h3>How pages are written</h3>
+      <p>The standard every compiled page is held to.</p>
+      <div class="set"><label for="cCite">Citation strictness<em>Strict puts a source reference on every claim</em></label>
+        <select id="cCite"><option value="strict">Strict</option><option value="normal">Normal</option><option value="loose">Loose</option></select></div>
+      <div class="set"><label for="cContra">Record disagreements<em>Name both sources rather than quietly resolving them</em></label><button class="sw" id="cContra" role="switch"></button></div>
+      <div class="set"><label for="cLinked">Notes update the pages they name<em>A captured note edits the page it belongs to</em></label><button class="sw" id="cLinked" role="switch"></button></div>
+    </div>
+
+    <div class="card">
+      <h3>Answering questions</h3>
+      <div class="set"><label for="cMaxP">Pages read per question<em>Cap on how wide an answer looks</em></label><input type="number" id="cMaxP" min="1" max="40"></div>
+      <div class="set"><label for="cPropose">Suggest new connections<em>Propose a wiki update, and ask before writing it</em></label><button class="sw" id="cPropose" role="switch"></button></div>
+    </div>
+
+    <div class="card">
+      <h3>Health checks</h3>
+      <p>What <code>/brain:lint</code> looks for. Anything switched off is skipped and reported as skipped.</p>
+      <div class="set"><label for="cStale">Flag pages untouched for<em>Days before a page counts as stale</em></label><input type="number" id="cStale" min="1" max="365"></div>
+      <div id="checks" class="hid"></div>
+      <button class="more" id="moreChecks">Show the eight checks</button>
+    </div>
+
+    <div class="acts">
+      <button class="btn" id="saveCfg">Save settings</button>
+      <button class="btn gh" id="dlCfg">Download the file</button>
+    </div>
+<!--IF:caps-->
+    <div class="note">Saved settings live with this page. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands, or ask Claude Code to pull them.</div>
+<!--ENDIF-->
+<!--IF:static-->
+    <div class="note">Saving keeps these in this browser, which is enough to carry them between visits but nothing the commands can read. Download <code>brain.config.json</code> into <code>second-brain/</code> to put them in front of the commands.</div>
+<!--ENDIF-->
+  </div></section>
+</main>
+<div class="toast" id="toast"></div>

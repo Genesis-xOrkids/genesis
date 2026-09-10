@@ -17,3 +17,6 @@ infra/*.js
 infra/*.d.ts
 .neon
 .env.local
+
+# generated site build
+second-brain/site/dist/

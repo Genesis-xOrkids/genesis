@@ -1,0 +1,73 @@
+{
+  "$comment": "Settings for the /brain:* commands. Edited by hand or from the Second Brain UI. Every key here is read by a command; nothing is decorative.",
+  "version": 1,
+  "ingest": {
+    "batchSize": 8,
+    "sources": [
+      "repo-docs"
+    ],
+    "reingestChangedDocs": true,
+    "createPagesFor": [
+      "concept",
+      "project",
+      "decision",
+      "person"
+    ]
+  },
+  "lint": {
+    "staleAfterDays": 30,
+    "checks": {
+      "brokenLinks": true,
+      "orphans": true,
+      "indexDrift": true,
+      "frontmatter": true,
+      "uncitedClaims": true,
+      "sourceDrift": true,
+      "staleness": true,
+      "contradictions": true
+    }
+  },
+  "schema": {
+    "requiredFrontmatter": [
+      "title",
+      "type",
+      "sources",
+      "related",
+      "created",
+      "last-updated"
+    ],
+    "allowedTypes": [
+      "concept",
+      "entity",
+      "source-summary",
+      "comparison",
+      "project",
+      "person",
+      "decision"
+    ]
+  },
+  "style": {
+    "citationStrictness": "strict",
+    "recordContradictions": true,
+    "maxPageWords": 900
+  },
+  "query": {
+    "maxPagesRead": 12,
+    "citeEveryClaim": true,
+    "proposeUpdates": true
+  },
+  "review": {
+    "maxPagesRead": 8,
+    "alwaysRead": ["pre-ship-checklist", "current-state"],
+    "severityFloor": "design",
+    "proposeWikiUpdates": true,
+    "citeEveryFinding": true
+  },
+  "log": {
+    "updateLinkedPages": true,
+    "createNewPages": false
+  },
+  "ui": {
+    "artifactUrl": "https://claude.ai/code/artifact/300f6188-199b-426c-be42-4adf58c57296"
+  }
+}
