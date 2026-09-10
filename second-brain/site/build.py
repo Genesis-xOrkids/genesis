@@ -158,7 +158,6 @@ def strip_blocks(text: str, keep: str, open_fmt: str, close: str) -> str:
 # running offline can see.
 
 KIND_ORDER = {"agent": 0, "command": 1, "service": 2}
-KIND_ICON = {"agent": "\N{ROBOT FACE}", "command": "\N{GEAR}", "service": "\N{ELECTRIC PLUG}"}
 COMMIT_SEP, FIELD_SEP = "\x1e", "\x1f"
 
 
@@ -290,7 +289,6 @@ def read_employees(excluded: set[str]) -> list[dict]:
                 "invoke": fm.get("name", path.stem),
                 "role": role_line(fm.get("description", "")),
                 "detail": fm.get("description", ""),
-                "icon": fm.get("icon", ""),
                 "model": fm.get("model", ""),
                 "effort": fm.get("effort", ""),
                 "can": [t.strip() for t in fm.get("tools", "").split(",") if t.strip()],
@@ -312,7 +310,6 @@ def read_employees(excluded: set[str]) -> list[dict]:
                 "invoke": "/" + slug.replace("/", ":"),
                 "role": role_line(fm.get("description", "")),
                 "detail": fm.get("description", ""),
-                "icon": fm.get("icon", ""),
                 "model": "",
                 "effort": "",
                 "can": [],
@@ -333,7 +330,6 @@ def read_employees(excluded: set[str]) -> list[dict]:
             "invoke": actor,
             "role": "",
             "detail": "",
-            "icon": "",
             "model": "",
             "effort": "",
             "can": [],
@@ -344,7 +340,6 @@ def read_employees(excluded: set[str]) -> list[dict]:
     )
 
     for member in staff:
-        member["icon"] = member["icon"] or KIND_ICON[member["kind"]]
         token = member["invoke"]
         done = (
             [

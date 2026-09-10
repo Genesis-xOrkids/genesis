@@ -2,10 +2,11 @@
    brand.css, which is generated in Genesis-xOrkids/brand and vendored beside
    this file - refresh it with a copy, never edit it here.
 
-   Graph categories use the categorical slots (--cat-1..4, --cat-other), not the
-   brand families: the brand is deliberately muted and three of its five hues
-   sit close together, which fails colorblind separation as a categorical scale.
-   That set is validated in both themes; see color.md in the brand repo. */
+   Graph categories and employee kinds use the categorical slots (--cat-1..4,
+   --cat-other), not the brand families: the brand is deliberately muted and
+   three of its five hues sit close together, which fails colorblind separation
+   as a categorical scale. That set is validated in both themes; see color.md in
+   the brand repo. */
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--font-text);font-size:15px;line-height:1.6;
   -webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
@@ -168,9 +169,37 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 .emp{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;padding:18px 20px 16px;
   display:flex;flex-direction:column}
 .emp.on{border-color:var(--accent)}
-.emp>header{display:flex;align-items:flex-start;gap:11px;margin-bottom:9px}
-.emp .av{width:34px;height:34px;border-radius:9px;background:var(--sunk);border:1px solid var(--hairline);
-  display:grid;place-items:center;font-size:17px;flex-shrink:0;line-height:1}
+.emp>header{display:flex;align-items:center;gap:13px;margin-bottom:10px}
+.emp>header>div{position:relative}
+/* The gem is the employee's mark: its cut says what kind of thing it is and its
+   colour agrees. Kinds are categorical, so they take the categorical slots for
+   the same reason the graph does. The facet tones are mixed from that one
+   colour rather than read off a ramp: the tokens' rule is roles only, and a
+   gem's facets have no role of their own. */
+.emp{--gem:var(--cat-4);--stone:var(--gem)}
+.emp[data-kind="command"]{--gem:var(--cat-2)}
+.emp[data-kind="service"]{--gem:var(--cat-1)}
+.emp.never{--stone:color-mix(in oklab,var(--gem) 28%,var(--text-faint))}
+.emp.live{--stone:color-mix(in oklab,var(--gem),white 12%)}
+.emp .av{position:relative;width:40px;height:40px;flex-shrink:0}
+.gem{display:block;width:40px;height:40px;overflow:visible}
+.gem polygon{stroke:color-mix(in oklab,var(--stone),black 30%);stroke-width:.4;stroke-linejoin:round}
+.gem .ft{fill:color-mix(in oklab,var(--stone),white 62%)}
+.gem .f0{fill:color-mix(in oklab,var(--stone),white 40%)}
+.gem .f1{fill:color-mix(in oklab,var(--stone),white 18%)}
+.gem .f2{fill:var(--stone)}
+.gem .f3{fill:color-mix(in oklab,var(--stone),black 28%)}
+.emp.done .gem,.emp.live .gem{filter:drop-shadow(0 2px 5px color-mix(in oklab,var(--gem) 40%,transparent))}
+/* Working: a halo in the kind's colour breathes behind the stone. */
+.emp .av::before{content:"";position:absolute;inset:-12px;border-radius:50%;opacity:0;
+  background:radial-gradient(circle,var(--gem) 0%,transparent 68%)}
+.emp.live .av::before{animation:glow 2.4s ease-in-out infinite}
+@keyframes glow{0%,100%{opacity:.4;transform:scale(.9)}50%{opacity:.85;transform:scale(1.12)}}
+@media (prefers-reduced-motion:reduce){.emp.live .av::before{animation:none;opacity:.6}}
+/* Finished: a seal on the stone's corner. */
+.emp .ok{position:absolute;right:-5px;bottom:-4px;width:16px;height:16px;overflow:visible}
+.emp .ok circle{fill:var(--success);stroke:var(--surface);stroke-width:2}
+.emp .ok path{fill:none;stroke:var(--surface);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .emp h3{font-size:14.5px;font-weight:600;margin:0;font-family:var(--font-mono);word-break:break-word}
 .emp .kind{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--text-faint);
   margin-top:3px;display:block;font-weight:600}
@@ -184,10 +213,12 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 .st{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;letter-spacing:.04em;
   text-transform:uppercase;margin-bottom:9px}
 .st i{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
-.st.live{color:var(--success)}
-.st.idle{color:var(--text-faint)}
-.st.never{color:var(--warning)}
-.st.live i{animation:bp 1.6s ease-in-out infinite}
+.st svg{width:12px;height:12px;flex-shrink:0}
+.st svg path{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.emp.live .st{color:var(--success)}
+.emp.done .st{color:var(--text-muted)}
+.emp.never .st{color:var(--warning)}
+.emp.live .st i{animation:bp 1.6s ease-in-out infinite}
 .run{display:flex;gap:10px;font-size:12.5px;color:var(--text-muted);padding:4px 0;line-height:1.45}
 .run em{font-style:normal;font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);flex-shrink:0;padding-top:1px}
 .run span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
