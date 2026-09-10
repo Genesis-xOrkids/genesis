@@ -35,13 +35,6 @@ function problem(status, message) {
 
 async function ask(request, env) {
   if (request.method !== "POST") return problem(405, "Use POST.");
-  if (!request.headers.get(ACCESS_HEADER)) {
-    return problem(
-      403,
-      "This site is not behind Cloudflare Access, so Ask is disabled. " +
-        "Gate the hostname in Zero Trust first."
-    );
-  }
   if (!env.ANTHROPIC_API_KEY) {
     return problem(
       503,
@@ -140,10 +133,137 @@ async function ask(request, env) {
   });
 }
 
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      ...SECURITY_HEADERS,
+    },
+  });
+}
+
+// Settings are stored one row per dotted path, so the shapes have to be
+// flattened on the way in and rebuilt on the way out. Arrays are left whole:
+// nothing in brain.config.json holds one, and splitting them into indexed keys
+// would invent an ordering problem for a case that does not exist.
+function flatten(value, prefix = "", into = {}) {
+  for (const [key, inner] of Object.entries(value)) {
+    const path = prefix ? prefix + "." + key : key;
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) flatten(inner, path, into);
+    else into[path] = JSON.stringify(inner);
+  }
+  return into;
+}
+
+function unflatten(rows) {
+  const out = {};
+  for (const { key, value } of rows) {
+    const parts = key.split(".");
+    let node = out;
+    for (const part of parts.slice(0, -1)) node = node[part] ??= {};
+    try { node[parts.at(-1)] = JSON.parse(value); } catch { node[parts.at(-1)] = value; }
+  }
+  return out;
+}
+
+async function notes(request, env, url) {
+  if (request.method === "GET") {
+    // `?all=1` is how /brain:log sees what it has already filed; the page only
+    // ever wants the queue.
+    const showAll = url.searchParams.get("all") === "1";
+    const { results } = await env.BRAIN_DB.prepare(
+      showAll
+        ? "SELECT id, text, created_at, filed_at FROM notes ORDER BY created_at DESC LIMIT 200"
+        : "SELECT id, text, created_at, filed_at FROM notes WHERE filed_at IS NULL ORDER BY created_at DESC LIMIT 200"
+    ).all();
+    return json({ notes: results ?? [] });
+  }
+
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const text = body && typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) return problem(400, "A note needs some text.");
+    if (text.length > 4000) return problem(400, "That note is too long.");
+    await env.BRAIN_DB.prepare("INSERT INTO notes (text, created_at) VALUES (?, ?)")
+      .bind(text, new Date().toISOString())
+      .run();
+    return json({ ok: true }, 201);
+  }
+
+  return problem(405, "Use GET or POST.");
+}
+
+async function filed(request, env) {
+  if (request.method !== "POST") return problem(405, "Use POST.");
+  const body = await request.json().catch(() => null);
+  const ids = Array.isArray(body?.ids) ? body.ids.filter(n => Number.isInteger(n)) : [];
+  if (!ids.length) return problem(400, "Name the note ids that were filed.");
+  // Marking, not deleting: a filed note stays as the record that it reached the
+  // vault, and re-running a drain that half-finished cannot lose one.
+  const marks = ids.map(() => "?").join(",");
+  await env.BRAIN_DB.prepare(
+    `UPDATE notes SET filed_at = ? WHERE id IN (${marks}) AND filed_at IS NULL`
+  ).bind(new Date().toISOString(), ...ids).run();
+  return json({ filed: ids.length });
+}
+
+async function settings(request, env) {
+  if (request.method === "GET") {
+    const { results } = await env.BRAIN_DB.prepare("SELECT key, value FROM settings").all();
+    return json({ config: unflatten(results ?? []) });
+  }
+
+  if (request.method === "PUT") {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body.config !== "object" || body.config === null) {
+      return problem(400, "Send the settings as {config: {...}}.");
+    }
+    const flat = Object.entries(flatten(body.config));
+    if (flat.length > 200) return problem(400, "That is more settings than this holds.");
+    const saved_at = new Date().toISOString();
+    await env.BRAIN_DB.batch(
+      flat.map(([key, value]) =>
+        env.BRAIN_DB.prepare(
+          "INSERT INTO settings (key, value, saved_at) VALUES (?, ?, ?) " +
+          "ON CONFLICT(key) DO UPDATE SET value = excluded.value, saved_at = excluded.saved_at"
+        ).bind(key, value, saved_at)
+      )
+    );
+    return json({ saved: flat.length, saved_at });
+  }
+
+  return problem(405, "Use GET or PUT.");
+}
+
+const ROUTES = {
+  "/api/ask": ask,
+  "/api/notes": notes,
+  "/api/notes/filed": filed,
+  "/api/config": settings,
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/ask") return ask(request, env);
-    return withSecurity(await env.ASSETS.fetch(request));
+    const route = ROUTES[url.pathname];
+    if (!route) return withSecurity(await env.ASSETS.fetch(request));
+
+    // One gate for every endpoint. Access stamps this header on requests it
+    // admits - including ones authenticated with a service token, which is how
+    // /brain:log reaches the inbox - and strips any the client sent, so its
+    // absence means the site is ungated and nothing here should answer.
+    if (!request.headers.get(ACCESS_HEADER)) {
+      return problem(403, "This site is not behind Cloudflare Access. Gate the hostname in Zero Trust first.");
+    }
+    if (route !== ask && !env.BRAIN_DB) {
+      return problem(503, "No database is bound. Create the D1 database and set database_id in wrangler.toml.");
+    }
+    try {
+      return await route(request, env, url);
+    } catch (error) {
+      return problem(500, "That request failed: " + String(error).slice(0, 200));
+    }
   },
 };
