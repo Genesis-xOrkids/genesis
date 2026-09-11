@@ -11,7 +11,7 @@ Both targets carry every panel. What differs is only where a setting, a note
 or a question goes: the Claude viewer supplies db, sample and downloads at
 runtime, and the hosted site has localStorage, a real file download, and an
 Ask endpoint in _worker.js that calls Claude with a key held at the edge. The
-panels call six adapter functions and never learn which build they are in.
+panels call five adapter functions and never learn which build they are in.
 
 The static target also applies exclude.txt, which decides what leaves this
 machine, and emits _worker.js and _headers alongside the page.
@@ -37,8 +37,6 @@ DIST = ROOT / "dist"
 sys.path.insert(0, str(REPO))
 
 from scripts.agent_definitions import split_frontmatter  # noqa: E402, I001
-from scripts.brain_db import query  # noqa: E402
-from scripts.employees import agent_id, command_id  # noqa: E402
 
 
 SECURITY_HEADERS = {
@@ -232,23 +230,34 @@ def read_log_entries() -> list[dict]:
 
 
 def read_runs() -> list[dict]:
-    """The agent run ledger, from the database that holds it.
+    """The agent run ledger: runs that leave no commit behind.
 
     A read-only agent cannot commit and cannot write, so nothing in git or the
-    wiki records that it ran. `scripts/log_agent_run.py` is the one writer;
-    see its docstring for why the record lives in D1 rather than in a file here.
-
-    Only the artifact build calls this. The hosted site fetches `/api/runs` as
-    it renders, so a run appears there the moment it is recorded rather than at
-    the next deploy - which is the whole reason the ledger left git. The
-    artifact has no worker to ask, so its runs are baked at publish time and
-    are as current as the publish.
-
-    Rows come back as the database holds them, in the same shape `/api/runs`
-    returns, because `applyRuns` in app.js turns a row into a line for the card
-    and both builds go through it.
+    wiki records that it ran. `scripts/log_agent_run.py` is the one writer of
+    this file; see its docstring for why the record lives here and not in the
+    wiki's activity log.
     """
-    return query("SELECT run_at, agent, target, outcome FROM runs ORDER BY run_at DESC LIMIT 500")
+    path = REPO / ".claude/runs.tsv"
+    if not path.exists():
+        return []
+    runs = []
+    for number, line in enumerate(path.read_text().splitlines()[1:], start=2):
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        if len(fields) != 4:
+            raise SystemExit(f"{path}:{number}: expected 4 tab-separated fields, got {len(fields)}")
+        run_at, agent, target, outcome = fields
+        runs.append(
+            {
+                "date": run_at[:10],
+                "agent": agent,
+                "what": f"{target} — {outcome}",
+                "ref": "",
+                "via": "run",
+            }
+        )
+    return runs
 
 
 def read_employees(excluded: set[str]) -> list[dict]:
@@ -265,6 +274,7 @@ def read_employees(excluded: set[str]) -> list[dict]:
     commits = read_commits("main")
     ahead = read_commits("main..HEAD")
     entries = [] if "log" in excluded else read_log_entries()
+    ledger = read_runs()
     humans = {
         c["human"] for c in commits if c["actor"] == c["human"] and not c["human"].endswith("[bot]")
     }
@@ -274,9 +284,9 @@ def read_employees(excluded: set[str]) -> list[dict]:
         fm = split_frontmatter(path.read_text())
         staff.append(
             {
-                "id": agent_id(path),
+                "id": fm.get("name", path.stem),
                 "kind": "agent",
-                "invoke": agent_id(path),
+                "invoke": fm.get("name", path.stem),
                 "role": role_line(fm.get("description", "")),
                 "detail": fm.get("description", ""),
                 "model": fm.get("model", ""),
@@ -292,7 +302,7 @@ def read_employees(excluded: set[str]) -> list[dict]:
     commands = REPO / ".claude/commands"
     for path in sorted(commands.rglob("*.md")):
         fm = split_frontmatter(path.read_text())
-        slug = command_id(path, commands)
+        slug = path.relative_to(commands).with_suffix("").as_posix()
         staff.append(
             {
                 "id": slug,
@@ -331,15 +341,19 @@ def read_employees(excluded: set[str]) -> list[dict]:
 
     for member in staff:
         token = member["invoke"]
-        done = [
-            {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
-            for c in commits
-            if c["actor"] == member["id"]
-        ] + [
-            {"date": e["date"], "what": e["title"], "ref": "", "via": "log"}
-            for e in entries
-            if token in e["body"] or member["id"] in e["body"]
-        ]
+        done = (
+            [
+                {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
+                for c in commits
+                if c["actor"] == member["id"]
+            ]
+            + [run for run in ledger if run["agent"] == member["id"]]
+            + [
+                {"date": e["date"], "what": e["title"], "ref": "", "via": "log"}
+                for e in entries
+                if token in e["body"] or member["id"] in e["body"]
+            ]
+        )
         member["done"] = sorted(done, key=lambda r: r["date"], reverse=True)
         member["doing"] = [
             {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
@@ -348,11 +362,16 @@ def read_employees(excluded: set[str]) -> list[dict]:
         ]
         member["last"] = member["done"][0]["date"] if member["done"] else ""
 
-    # Kind then name, and nothing about how much each has done: runs arrive in
-    # the browser, so the roster is only fully known there. app.js re-sorts by
-    # work once it has them, which keeps that ordering rule in one place rather
-    # than half here and half there.
-    staff.sort(key=lambda m: (KIND_ORDER[m["kind"]], m["id"]))
+    # The ledger names an employee by id but cannot check the name, because the
+    # rule that derives an id from a definition file lives here. A row naming
+    # nobody is a typo or a deleted definition, and either way its runs are
+    # invisible on the page - so the build says so rather than dropping them
+    # quietly.
+    unknown = sorted({run["agent"] for run in ledger} - {m["id"] for m in staff})
+    if unknown:
+        print(f"  warning: .claude/runs.tsv names employees that do not exist: {unknown}")
+
+    staff.sort(key=lambda m: (KIND_ORDER[m["kind"]], -len(m["done"]), m["id"]))
     return staff
 
 
@@ -422,10 +441,6 @@ def build(target: str) -> None:
         )
 
     employees = read_employees(excluded)
-    # The artifact carries its runs; the hosted site fetches them from the
-    # worker as it renders. Baking them into the hosted page too would put a
-    # copy on the page that is stale the moment the next agent runs.
-    runs = read_runs() if target == "artifact" else []
 
     data = {
         "pages": pages,
@@ -433,7 +448,6 @@ def build(target: str) -> None:
         "commit": commit,
         "pointers": pointers,
         "employees": employees,
-        "runs": runs,
         "logHeld": "log" in excluded,
         "target": target,
     }
@@ -488,11 +502,10 @@ def build(target: str) -> None:
     print(
         f"  {len(pages)} pages, {sum(len(p['links']) for p in pages)} links, compiled at {commit}"
     )
-    # Commits and log entries only. Runs are counted in the browser, because
-    # that is where they arrive.
-    print(f"  {len(employees)} employees, {sum(len(e['done']) for e in employees)} recorded items")
-    if target == "artifact":
-        print(f"  {len(runs)} agent runs baked in from the ledger")
+    idle = [e["id"] for e in employees if not e["done"]]
+    print(f"  {len(employees)} employees, {sum(len(e['done']) for e in employees)} recorded runs")
+    if idle:
+        print(f"  no recorded runs for: {', '.join(idle)}")
     if excluded:
         print(f"  {len(excluded)} pages held back: {', '.join(sorted(excluded))}")
     if dangling:

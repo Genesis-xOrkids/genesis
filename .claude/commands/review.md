@@ -44,7 +44,7 @@ rather than summarizing them away. Do not act on any finding yourself
 (no edits) unless the user asks you to after seeing the report.
 
 If the target was a pull request, the reviewer's `Stop` hook has already posted
-the report there as a comment. Do not post it again — relaying it here is for
+the report there as a comment. Do not post it again - relaying it here is for
 the user in this session, and the comment is for whoever opens the pull request
 later.
 
@@ -52,7 +52,7 @@ later.
 
 The reviewer's run records itself: it ends its report with `Target:` and
 `Outcome:` lines, and a `Stop` hook in its definition writes them to
-the run ledger when it finishes, however it was launched. Do not record the
+`.claude/runs.tsv` when it finishes, however it was launched. Do not record the
 reviewer's run here as well, or every review launched through this command is
 counted twice.
 
@@ -60,7 +60,7 @@ This command is a separate employee, and nothing else records that it ran. Once
 you have relayed the report, record `/review`'s own run under its own id:
 
 ```sh
-uv run python -m scripts.log_agent_run --agent review \
+uv run scripts/log_agent_run.py --agent review \
   --target "<the Target: line from the reviewer's report>" \
   --outcome "relayed the genesis-reviewer report"
 ```
