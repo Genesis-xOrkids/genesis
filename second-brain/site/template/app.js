@@ -30,6 +30,7 @@ function go(name) {
   });
   scrollTo({ top: 0, behavior: "instant" });
   if (name === "explore") { resize(); alpha = Math.max(alpha, .55); }
+  if (name === "employees") startGems();
 }
 document.addEventListener("click", e => {
   const v = e.target.closest("[data-view]");
@@ -42,7 +43,7 @@ $("#themeBtn").onclick = () => {
   const cur = document.documentElement.getAttribute("data-theme");
   const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme:dark)").matches;
   document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
-  readColors(); paintFigure(); draw();
+  readColors(); paintFigure(); draw(); repaintGems();
 };
 
 /* ---------- home diagram ---------- */
@@ -192,10 +193,18 @@ function renderRows() {
 /* ---------- employees ---------- */
 const SHOWN = 3;
 
-// The mark on each card is a gem: the cut says the kind, and the colour agrees
-// (styles.css owns the colours and the motion). Each cut is one outline. The
-// table is that outline shrunk about its centre, and the facets between the two
-// take their tone from how squarely they face a light at the top-left.
+// The mark on each card is a gem, and its cut says the kind. styles.css owns each
+// kind's material and the stone's float; this section owns the solid, the light
+// and the turn.
+//
+// Each cut is one outline: the stone's girdle seen from above. The solid is a
+// stack of rings, each that outline scaled about its centre at a height, from the
+// table down to the culet, and its facets are the bands between neighbouring
+// rings. A ring with a half-step twist sits on the outline's edge midpoints, so
+// the bands either side of it break into triangles - the star and bezel facets of
+// a brilliant - while untwisted neighbours give the flat steps of a step cut.
+// Every solid is convex, so hiding the facets that face away is the whole of the
+// depth sorting.
 const CUTS = {
   agent: Array.from({ length: 8 }, (_, i) => {
     const a = Math.PI * (i / 4 + 1 / 8);
@@ -204,38 +213,297 @@ const CUTS = {
   command: [[11, 3], [29, 3], [35, 9], [35, 31], [29, 37], [11, 37], [5, 31], [5, 9]],
   service: [[17, 4], [23, 4], [37, 29], [34, 35], [6, 35], [3, 29]],
 };
-function gem(kind, badge) {
-  const outer = CUTS[kind];
-  const cx = outer.reduce((s, p) => s + p[0], 0) / outer.length;
-  const cy = outer.reduce((s, p) => s + p[1], 0) / outer.length;
-  const inner = outer.map(([x, y]) => [cx + (x - cx) * .46, cy + (y - cy) * .46]);
-  const pts = list => list.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
-  let body = "", fire = "";
-  outer.forEach((a, k) => {
-    const b = outer[(k + 1) % outer.length];
-    const quad = pts([a, b, inner[(k + 1) % outer.length], inner[k]]);
-    const nx = (a[0] + b[0]) / 2 - cx, ny = (a[1] + b[1]) / 2 - cy;
-    const lit = -(nx + ny) / Math.hypot(nx, ny) / Math.SQRT2;  // 1 facing the light, -1 facing away
-    body += '<polygon class="' + (lit > .85 ? "f0" : lit > .25 ? "f1" : lit > -.25 ? "f2" : "f3") +
-      '" points="' + quad + '"/>';
-    // Fire: the same facet again in one of the kit's other two hues, flashing on
-    // its own clock. It is dispersion - the flashes of other colours a cut stone
-    // throws as it turns - and most of what makes one look alive.
-    fire += '<polygon class="x' + (k % 2) + '" style="--k:' + k + '" points="' + quad + '"/>';
+// [scale, height, twist] from the table down, as fractions of the girdle's
+// radius; a scale of 0 is a point. Agents are round brilliants, commands step
+// cuts and services trillions, with crowns and pavilions near a real stone's.
+const RINGS = {
+  agent: [[.55, .3, 0], [.9, .2, 1], [1, 0, 0], [0, -.86, 0]],
+  command: [[.62, .26, 0], [.84, .15, 0], [1, 0, 0], [.74, -.24, 0], [.42, -.46, 0], [0, -.6, 0]],
+  service: [[.5, .26, 0], [.82, .18, 1], [1, 0, 0], [0, -.62, 0]],
+};
+function solid(kind) {
+  const outline = CUTS[kind], n = outline.length;
+  const cx = outline.reduce((s, p) => s + p[0], 0) / n;
+  const cz = outline.reduce((s, p) => s + p[1], 0) / n;
+  const flat = outline.map(([x, z]) => [x - cx, z - cz]);
+  const radius = Math.max(...flat.map(([x, z]) => Math.hypot(x, z)));
+  const verts = [];
+  const rings = RINGS[kind].map(([scale, height, twist]) => {
+    if (!scale) return [verts.push([0, height, 0]) - 1];
+    return flat.map(([x, z], k) => {
+      const [x1, z1] = flat[(k + 1) % n];
+      const [qx, qz] = twist ? [(x + x1) / 2, (z + z1) / 2] : [x, z];
+      return verts.push([qx / radius * scale, height, qz / radius * scale]) - 1;
+    });
   });
-  // Sparkles sit where light catches a real stone: its highest point and its
-  // two widest ones.
-  const extreme = (axis, sign) => outer.reduce((p, q) => (q[axis] - p[axis]) * sign > 0 ? q : p);
-  const sparks = [extreme(1, -1), extreme(0, 1), extreme(0, -1)].map((p, k) =>
-    '<i class="spark" style="left:' + (p[0] * 2.5).toFixed(1) + "%;top:" + (p[1] * 2.5).toFixed(1) +
-    "%;--k:" + k + '"></i>').join("");
-  const outline = outer.map(p => (p[0] * 2.5).toFixed(1) + "% " + (p[1] * 2.5).toFixed(1) + "%").join(",");
-  return '<span class="float" aria-hidden="true"><span class="tilt">' +
-    '<svg class="gem" viewBox="0 0 40 40">' + body + '<polygon class="ft" points="' + pts(inner) + '"/>' +
-    '<g class="fire">' + fire + '<polygon class="x2" style="--k:' + outer.length + '" points="' +
-    pts(inner) + '"/></g></svg>' +
-    '<i class="glint" style="clip-path:polygon(' + outline + ')"><b></b></i>' + sparks +
-    '</span><i class="motes"><b></b><b></b><b></b></i>' + badge + "</span>";
+  const faces = [rings[0]];
+  for (let j = 1; j < rings.length; j++) {
+    const up = rings[j - 1], lo = rings[j];
+    for (let k = 0; k < n; k++) {
+      const next = (k + 1) % n, prev = (k + n - 1) % n;
+      if (lo.length === 1) faces.push([up[k], up[next], lo[0]]);
+      else if (RINGS[kind][j][2]) faces.push([up[k], up[next], lo[k]], [up[k], lo[k], lo[prev]]);
+      else if (RINGS[kind][j - 1][2]) faces.push([up[k], lo[k], lo[next]], [lo[k], up[prev], up[k]]);
+      else faces.push([up[k], up[next], lo[next], lo[k]]);
+    }
+  }
+  const centre = [0, 1, 2].map(axis => verts.reduce((s, v) => s + v[axis], 0) / verts.length);
+  const heights = verts.map(v => v[1]);
+  return {
+    verts,
+    mid: (Math.max(...heights) + Math.min(...heights)) / 2,
+    faces: faces.map(ids => {
+      // Newell's normal, turned outward if the winding left it facing in.
+      const normal = [0, 0, 0], at = [0, 0, 0];
+      ids.forEach((id, k) => {
+        const a = verts[id], b = verts[ids[(k + 1) % ids.length]];
+        normal[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        normal[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        normal[2] += (a[0] - b[0]) * (a[1] + b[1]);
+        for (let axis = 0; axis < 3; axis++) at[axis] += a[axis] / ids.length;
+      });
+      const outward = normal.reduce((s, v, axis) => s + v * (at[axis] - centre[axis]), 0) < 0 ? -1 : 1;
+      const length = Math.hypot(...normal) * outward;
+      return { ids, normal: normal.map(v => v / length) };
+    }),
+  };
+}
+const SOLIDS = Object.fromEntries(Object.keys(CUTS).map(kind => [kind, solid(kind)]));
+
+// Colour is worked in OKLCH, so a facet moves in lightness alone and keeps its
+// saturation from the table to the deepest shadow. A tone outside sRGB keeps its
+// lightness and hue and gives up chroma until it fits; clipped channel by channel
+// instead, a light blue bends into aqua.
+const linear = v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+const gamma = v => v <= .0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - .055;
+function oklch(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) throw new Error("A gem colour must be a hex token, not " + JSON.stringify(hex));
+  const [r, g, b] = [0, 2, 4].map(i => linear(parseInt(m[1].slice(i, i + 2), 16) / 255));
+  const long = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+  const medium = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+  const short = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+  const a = 1.9779984951 * long - 2.4285922050 * medium + .4505937099 * short;
+  const bb = .0259040371 * long + .7827717662 * medium - .8086757660 * short;
+  return [.2104542553 * long + .7936177850 * medium - .0040720468 * short, Math.hypot(a, bb),
+    Math.atan2(bb, a) * 180 / Math.PI];
+}
+function srgb(l, c, h) {
+  l = Math.min(1, Math.max(0, l));
+  const channels = chroma => {
+    const a = chroma * Math.cos(h * Math.PI / 180), b = chroma * Math.sin(h * Math.PI / 180);
+    const long = (l + .3963377774 * a + .2158037573 * b) ** 3;
+    const medium = (l - .1055613458 * a - .0638541728 * b) ** 3;
+    const short = (l - .0894841775 * a - 1.2914855480 * b) ** 3;
+    return [4.0767416621 * long - 3.3077115913 * medium + .2309699292 * short,
+      -1.2684380046 * long + 2.6097574011 * medium - .3413193965 * short,
+      -.0041960863 * long - .7034186147 * medium + 1.7076147010 * short];
+  };
+  const fits = chroma => channels(chroma).every(v => v > -1e-6 && v < 1 + 1e-6);
+  let inside = fits(c) ? c : 0, outside = c;
+  if (inside !== c) for (let i = 0; i < 16; i++) {
+    const mid = (inside + outside) / 2;
+    if (fits(mid)) inside = mid; else outside = mid;
+  }
+  return "rgb(" + channels(inside).map(v => Math.round(255 * gamma(Math.min(1, Math.max(0, v))))).join(",") + ")";
+}
+
+// A stone's material, read off its card. The kind's colour is lifted to the
+// lightness floor styles.css sets, and turned into a ramp of facet tones from the
+// deepest shadow to the table: chroma holds through the shadows, eases on the lit
+// facets and falls under half at the table so it reads as light, and the shadows
+// turn by --shadow-h.
+const TONES = 48;
+function material(card, state) {
+  const style = getComputedStyle(card);
+  const read = name => style.getPropertyValue(name).trim();
+  const need = name => {
+    const v = parseFloat(read(name));
+    if (Number.isNaN(v)) throw new Error("styles.css gives the gem no " + name);
+    return v;
+  };
+  const live = state === "live";
+  const [gemL, gemC, gemH] = oklch(read("--gem"));
+  const l = Math.max(gemL, need("--stone-l"), need("--kind-l")) + (live ? .05 : 0);
+  // Commands pin their own chroma and hue; the other kinds boost the token's.
+  const c = read("--chroma") ? need("--chroma") : gemC * (live ? 1.6 : 1.5);
+  const h = read("--hue") ? need("--hue") : gemH;
+  const drop = need("--facet-drop"), facetC = need("--facet-c"), shadowH = need("--shadow-h");
+  const tones = Array.from({ length: TONES }, (_, k) => {
+    const lift = -drop + (drop + .27) * k / (TONES - 1);
+    const share = lift <= 0 ? 1
+      : lift <= .07 ? 1 + (facetC - 1) * lift / .07
+      : lift <= .17 ? facetC * (1 - .15 * (lift - .07) / .1)
+      : .85 * facetC + (.45 - .85 * facetC) * (lift - .17) / .1;
+    return srgb(l + lift, c * share, h + (lift < 0 ? shadowH * -lift / drop : 0));
+  });
+  const fire = name => { const [fl, fc, fh] = oklch(read(name)); return srgb(fl + .1, fc * 1.5, fh); };
+  return { tones, stone: srgb(l, c, h), edge: srgb(l - drop - .08, c, h), fireA: fire("--fire-a"), fireB: fire("--fire-b") };
+}
+
+// Light. One lamp at the top left, where the flat marks were always lit from, and
+// a faint fill from below so the pavilion is never black. A facet flashes white as
+// it turns past the lamp, and the kit's other two hues flash just either side of
+// it: fire, the colours a cut stone throws as it turns.
+const unit = v => { const length = Math.hypot(...v); return v.map(x => x / length); };
+const halfway = light => unit([light[0], light[1], light[2] + 1]);  // Blinn, seen along +z
+const LAMP = unit([-.55, .7, .45]), FILL = unit([.4, -.55, .75]);
+const GLARE = halfway(LAMP), FIRE_A = halfway(unit([-.3, .8, .55])), FIRE_B = halfway(unit([-.78, .5, .4]));
+// The canvas is the 52px stone box with 10px either side for the turning outline
+// and its sparkles. The stone is seen from 28 degrees above its girdle, so the
+// table and the pavilion both show as it turns.
+const GEM_BOX = 72, GEM_RADIUS = 24, PITCH = .49, REST = .35, TURN = 2 * Math.PI;
+const SPIN = { never: 0, done: TURN / 9, live: TURN / 3.5 };
+const SWAY = { never: 0, done: 1, live: 1.6 };
+const SPARK_MS = 520;
+const gems = new Map();
+
+function gem(badge) {
+  return '<span class="float" aria-hidden="true"><canvas class="gem"></canvas>' +
+    '<i class="motes"><b></b><b></b><b></b></i>' + badge + "</span>";
+}
+function paintGem(card, state) {
+  const stone = material(card, state);
+  card.style.setProperty("--stone", stone.stone);
+  return stone;
+}
+function makeGem(card, kind, state, i) {
+  const canvas = card.querySelector(".gem");
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  canvas.width = canvas.height = GEM_BOX * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const shape = SOLIDS[kind];
+  return {
+    card, ctx, state, i, shape, material: paintGem(card, state),
+    screen: new Float32Array(shape.verts.length * 2), glare: new Float32Array(shape.faces.length), sparks: [],
+    yaw: REST + (state === "never" ? 0 : i * 1.1), pitch: PITCH, roll: 0, speed: 0,
+    hover: false, px: 0, py: 0, steerX: 0, steerY: 0,
+  };
+}
+function repaintGems() {
+  for (const g of gems.values()) { g.material = paintGem(g.card, g.state); drawGem(g, performance.now()); }
+}
+
+// Motion carries the state: a stone that has never run holds still, a finished
+// one turns slowly and a working one fast, and both sway on their own phase. The
+// stone under the pointer wakes, turns three times as fast and leans toward it.
+function stepGem(g, dt, t) {
+  const ease = rate => 1 - Math.exp(-dt * rate);
+  const spin = SPIN[g.state];
+  g.speed += ((g.hover ? Math.max(spin, SPIN.done) * 3 : spin) - g.speed) * ease(2.5);
+  g.yaw += g.speed * dt;
+  g.steerX += ((g.hover ? g.px : 0) - g.steerX) * ease(6);
+  g.steerY += ((g.hover ? g.py : 0) - g.steerY) * ease(6);
+  g.pitch = PITCH + SWAY[g.state] * .08 * Math.sin(t * .9 + g.i) + g.steerY * .6;
+  g.roll = SWAY[g.state] * .06 * Math.sin(t * .63 + g.i * 1.7) - g.steerX * .25;
+}
+function drawGem(g, now) {
+  const { ctx, shape, material: stone, screen } = g;
+  const yaw = g.yaw + g.steerX * .9;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(g.pitch), sp = Math.sin(g.pitch);
+  const cr = Math.cos(g.roll), sr = Math.sin(g.roll);
+  const turn = ([x, y, z]) => {
+    const x1 = x * cy + z * sy, z1 = z * cy - x * sy;
+    const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+    return [x1 * cr - y1 * sr, x1 * sr + y1 * cr, z2];
+  };
+  const middle = GEM_BOX / 2 + shape.mid * GEM_RADIUS * Math.cos(PITCH);
+  shape.verts.forEach((v, k) => {
+    const [x, y, z] = turn(v);
+    const scale = GEM_RADIUS * 6 / (6 - z);  // a little perspective
+    screen[2 * k] = GEM_BOX / 2 + x * scale;
+    screen[2 * k + 1] = middle - y * scale;
+  });
+  const trace = (path, ids) => {
+    ids.forEach((id, k) => path[k ? "lineTo" : "moveTo"](screen[2 * id], screen[2 * id + 1]));
+    path.closePath();
+  };
+  ctx.clearRect(0, 0, GEM_BOX, GEM_BOX);
+  const edges = new Path2D(), moving = g.speed > .2;
+  // The facets facing away go down first, dimmed: the inside of the stone, seen
+  // through the facets in front.
+  for (const front of [false, true]) {
+    shape.faces.forEach((face, k) => {
+      const n = turn(face.normal);
+      if (n[2] > 0 !== front) return;
+      const lit = v => Math.max(0, n[0] * v[0] + n[1] * v[1] + n[2] * v[2]);
+      const glare = lit(GLARE) ** 40;
+      const tone = Math.min(1, .04 + .6 * lit(LAMP) + .25 * lit(FILL) + .55 * glare);
+      ctx.beginPath();
+      trace(ctx, face.ids);
+      if (!front) {
+        ctx.globalAlpha = .55;
+        ctx.fillStyle = stone.tones[Math.round(tone * .6 * (TONES - 1))];
+        ctx.fill();
+        g.glare[k] = 0;
+        return;
+      }
+      ctx.globalAlpha = .92;
+      ctx.fillStyle = stone.tones[Math.round(tone * (TONES - 1))];
+      ctx.fill();
+      trace(edges, face.ids);
+      ctx.globalCompositeOperation = "lighter";
+      const flash = (amount, colour) => {
+        if (amount < .02) return;
+        ctx.globalAlpha = amount;
+        ctx.fillStyle = colour;
+        ctx.fill();
+      };
+      flash(glare * .8, "#fff");
+      flash(lit(FIRE_A) ** 80, stone.fireA);
+      flash(lit(FIRE_B) ** 80, stone.fireB);
+      ctx.globalCompositeOperation = "source-over";
+      // A sparkle is born at the facet's highest corner as it catches the lamp.
+      if (moving && glare > .7 && g.glare[k] <= .7 && g.sparks.length < 3) {
+        const top = face.ids.reduce((best, id) => screen[2 * id + 1] < screen[2 * best + 1] ? id : best);
+        g.sparks.push({ x: screen[2 * top], y: screen[2 * top + 1], born: now });
+      }
+      g.glare[k] = glare;
+    });
+  }
+  ctx.globalAlpha = .6;
+  ctx.lineWidth = .4;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = stone.edge;
+  ctx.stroke(edges);
+  g.sparks = g.sparks.filter(spark => now - spark.born < SPARK_MS);
+  for (const spark of g.sparks) {
+    const age = (now - spark.born) / SPARK_MS, size = 7 * Math.sin(Math.PI * age);
+    ctx.save();
+    ctx.translate(spark.x, spark.y);
+    ctx.rotate(age * Math.PI / 4);
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    glow.addColorStop(.2, "#fff");
+    glow.addColorStop(1, stone.fireA);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    for (let k = 0; k < 8; k++) {
+      const reach = k % 2 ? size * .2 : size;
+      ctx.lineTo(reach * Math.cos(k * Math.PI / 4), reach * Math.sin(k * Math.PI / 4));
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// One loop turns every stone, and only while the Employees view is showing. Under
+// a reduced-motion preference it never starts: each stone keeps the still frame
+// renderStaff drew.
+let gemsTurning = false, gemsLast = 0;
+function gemFrame(now) {
+  if (!$("#vEmployees").classList.contains("on")) { gemsTurning = false; return; }
+  const dt = Math.min(.05, (now - gemsLast) / 1000);
+  gemsLast = now;
+  for (const g of gems.values()) { stepGem(g, dt, now / 1000); drawGem(g, now); }
+  requestAnimationFrame(gemFrame);
+}
+function startGems() {
+  if (REDUCED || gemsTurning) return;
+  gemsTurning = true;
+  gemsLast = performance.now();
+  requestAnimationFrame(gemFrame);
 }
 const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.6l3 3 6-6.6"/></svg>';
 const SEAL = '<svg class="ok" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M4.8 8.4l2.2 2.2 4.3-4.6"/></svg>';
@@ -253,6 +521,7 @@ function runRow(r, doing) {
 function renderStaff() {
   const el = $("#staff");
   el.innerHTML = "";
+  gems.clear();
   for (const [n, m] of BRAIN.employees.entries()) {
     const live = m.doing.length > 0;
     const state = live ? "live" : m.done.length ? "done" : "never";
@@ -263,7 +532,7 @@ function renderStaff() {
     // than marching in step.
     card.style.setProperty("--i", n);
     card.innerHTML =
-      '<header><div class="av">' + gem(m.kind, state === "done" ? SEAL : "") + "</div>" +
+      '<header><div class="av">' + gem(state === "done" ? SEAL : "") + "</div>" +
       '<div><h3></h3><span class="kind"></span></div></header>' +
       '<p class="role"></p><div class="chips"></div>' +
       '<div class="work"><div class="st">' + (state === "done" ? CHECK : "<i></i>") + "<b></b></div>" +
@@ -340,6 +609,9 @@ function renderStaff() {
     ].filter(Boolean).join("  ·  ");
     card.querySelector(".work").appendChild(foot);
     el.appendChild(card);
+    const g = makeGem(card, m.kind, state, n);
+    gems.set(card, g);
+    drawGem(g, 0);
   }
 
   const never = BRAIN.employees.filter(m => !m.done.length && !m.doing.length && m.defined);
@@ -358,17 +630,25 @@ function renderStaff() {
       : "");
 }
 
-// The gem under the pointer turns toward it, as if the card were a stone tilted
-// under a lamp. Fine pointers only, since a touch has no hover to end it, and
-// never under a reduced-motion preference. styles.css reads these values only
-// while the card is hovered, so a card the pointer has left needs no reset.
+// The gem under the pointer wakes and leans toward it, as if the card were a stone
+// turned under a lamp. Fine pointers only, since a touch has no hover to end it,
+// and never under a reduced-motion preference.
 const tilts = matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)");
+let hovered = null;
 $("#staff").addEventListener("pointermove", e => {
   const card = tilts.matches && e.target.closest(".emp");
-  if (!card) return;
+  const g = card ? gems.get(card) : null;
+  if (hovered && hovered !== g) hovered.hover = false;
+  hovered = g;
+  if (!g) return;
   const r = card.getBoundingClientRect();
-  card.style.setProperty("--px", ((e.clientX - r.left) / r.width - .5).toFixed(3));
-  card.style.setProperty("--py", ((e.clientY - r.top) / r.height - .5).toFixed(3));
+  g.hover = true;
+  g.px = (e.clientX - r.left) / r.width - .5;
+  g.py = (e.clientY - r.top) / r.height - .5;
+});
+$("#staff").addEventListener("pointerleave", () => {
+  if (hovered) hovered.hover = false;
+  hovered = null;
 });
 
 $("#q").oninput = e => { query = e.target.value.trim(); renderRows(); draw(); };
@@ -725,7 +1005,7 @@ async function ask() {
 readColors(); paintFigure(); renderRows(); renderStaff(); resize();
 if (REDUCED) { for (let i = 0; i < 420; i++) tick(); alpha = .15; draw(); }
 else requestAnimationFrame(frame);
-matchMedia("(prefers-color-scheme:dark)").addEventListener("change", () => { readColors(); paintFigure(); draw(); });
+matchMedia("(prefers-color-scheme:dark)").addEventListener("change", () => { readColors(); paintFigure(); draw(); repaintGems(); });
 setTimeout(() => { resize(); draw(); }, 90);
 if (document.fonts) document.fonts.ready.then(() => { resize(); paintFigure(); draw(); });
 
