@@ -43,6 +43,11 @@ citations, "checked and clean" list, and any proposed wiki follow-ups),
 rather than summarizing them away. Do not act on any finding yourself
 (no edits) unless the user asks you to after seeing the report.
 
+If the target was a pull request, the reviewer's `Stop` hook has already posted
+the report there as a comment. Do not post it again - relaying it here is for
+the user in this session, and the comment is for whoever opens the pull request
+later.
+
 ## Record this command's run
 
 The reviewer's run records itself: it ends its report with `Target:` and

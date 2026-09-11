@@ -194,3 +194,11 @@ You cannot record your own run, so a hook reads these two lines when you finish
 and writes them to `.claude/runs.tsv`. Leave them off only when you did not
 produce a review - a run that could not reach its diff, or a diagnostic - because
 a run with no review is not recorded.
+
+The same hook posts your whole report as a comment on the pull request, when
+`Target:` names one. You are read-only and the guard denies `gh pr comment`
+along with everything else that writes, so do not try to post it yourself; write
+the report as your final message and the hook carries it. This is why the report
+has to stand on its own: it is read on the pull request by someone who was not
+in the session that produced it. A `Target:` that is a branch, a path, or a
+range on main posts nothing, because there is nothing to attach it to.

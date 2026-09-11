@@ -31,8 +31,16 @@ LEDGER = pathlib.Path(__file__).resolve().parents[1] / ".claude/runs.tsv"
 COLUMNS = ("run_at", "agent", "target", "outcome")
 
 
-def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> pathlib.Path:
-    """Write one run to the ledger, creating it with a header if absent."""
+def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[pathlib.Path, bool]:
+    """Write one run to the ledger, creating it with a header if absent.
+
+    Returns the ledger path and whether the row is new. Idempotent on
+    `(agent, run_at, target)`: a hook that fires twice for one run, a backfill
+    re-run, or a union merge that brought the same line in from both branches
+    all leave one row. The caller is told which happened, because the `Stop`
+    hook posts the review to its pull request only for a run that is new, and a
+    comment - unlike a row - cannot be deduplicated after the fact.
+    """
     for name, value in (("agent", agent), ("target", target), ("outcome", outcome)):
         if not value.strip():
             raise SystemExit(f"{name} is empty: a run with no {name} records nothing")
@@ -42,12 +50,21 @@ def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> pathli
     if run_at.tzinfo is None:
         raise SystemExit("run_at has no timezone, so the date it lands on is a guess")
     stamp = run_at.astimezone(dt.UTC).isoformat(timespec="seconds")
-    new = not LEDGER.exists()
+
+    # The key is the run, not the whole line: a re-run that reworded its outcome
+    # is still the same run, and appending it again would double the count the
+    # gallery shows.
+    key = (stamp, agent.strip(), target.strip())
+    fresh = not LEDGER.exists()
+    existing = [] if fresh else LEDGER.read_text(encoding="utf-8").splitlines()[1:]
+    if any(tuple(line.split("\t")[:3]) == key for line in existing):
+        return LEDGER, False
+
     with LEDGER.open("a", encoding="utf-8") as handle:
-        if new:
+        if fresh:
             handle.write("\t".join(COLUMNS) + "\n")
         handle.write("\t".join([stamp, agent.strip(), target.strip(), outcome.strip()]) + "\n")
-    return LEDGER
+    return LEDGER, True
 
 
 def main() -> int:
@@ -66,8 +83,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    path = append(args.agent, args.target, args.outcome, args.run_at)
-    print(f"recorded {args.agent} run in {path.relative_to(LEDGER.parents[1])}")
+    path, new = append(args.agent, args.target, args.outcome, args.run_at)
+    verb = "recorded" if new else "already recorded"
+    print(f"{verb} {args.agent} run in {path.relative_to(LEDGER.parents[1])}")
     return 0
 
 
