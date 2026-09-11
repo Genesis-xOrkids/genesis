@@ -109,8 +109,15 @@ the thing that guarantees the values are current:
 
 ```sh
 cp ../../../brand/tokens/brand.css template/brand.css   # adjust to your checkout
+cp ../../../brand/assets/{favicon-genesis,mark-genesis-solid,mark-genesis-solid-dark}.svg template/
 ./build.py --target static
 ```
+
+The favicon and the nav mark are the Genesis mark's solid files, vendored the
+same way. They are the solid ones, not the full drawing, because the circuit
+traces do not resolve at the 22px the nav draws them. `build.py` swaps each
+`asset:` reference for a data URI: the page is one file on both targets, and
+the CSP admits images only as `data:`.
 
 `styles.css` holds only this site's own rules and is written entirely against
 brand roles (`--surface`, `--text-muted`, `--accent`), never against ramp steps.
