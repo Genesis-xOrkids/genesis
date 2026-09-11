@@ -12,13 +12,81 @@ const MAX_QUESTION = 500;
 const MAX_CONTEXT = 60000;
 
 // The site carries no authentication of its own, so Cloudflare Access is the
-// only thing standing between this endpoint and anyone who guesses the
-// hostname - and behind it sits a metered API key. Access stamps this header
-// on every request it lets through and strips any the client sent, so its
-// absence means the site is ungated. Refusing here turns "must not go up
-// without Access" from a line in the README into something enforced: with no
-// Access in front, Ask does not work and nobody can spend the key.
+// only thing standing between these endpoints and anyone who reaches the
+// worker - and behind /api/ask sits a metered API key. Access sends a signed
+// JWT in this header on every request it admits, but the header being present
+// proves nothing: a request that reaches the worker without passing Access - on
+// a hostname the Access application does not cover, such as a per-deployment
+// preview URL - can carry any header it likes. So the token is verified here,
+// against the team's published signing keys and this application's audience
+// tag, and a request whose token does not verify is refused.
 const ACCESS_HEADER = "cf-access-jwt-assertion";
+
+// Access rotates its signing keys, so they are fetched rather than pinned, and
+// held per isolate rather than fetched on every request. A key id the cache has
+// not seen is what a rotation looks like from here, so it earns a refetch - at
+// most once a minute, so a stream of made-up key ids cannot turn every request
+// into a fetch.
+const KEYS_TTL_MS = 60 * 60 * 1000;
+const UNKNOWN_KEY_REFETCH_MS = 60 * 1000;
+let signingKeys = { byKid: new Map(), fetchedAt: 0 };
+
+function base64UrlBytes(part) {
+  const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")), c => c.charCodeAt(0));
+}
+
+async function loadSigningKeys(teamDomain) {
+  const response = await fetch(teamDomain + "/cdn-cgi/access/certs");
+  if (!response.ok) throw new Error("Access signing keys answered " + response.status);
+  const { keys } = await response.json();
+  const byKid = new Map();
+  // Only RS256 tokens are accepted below, so a key published for any other
+  // algorithm could never verify one and is not imported.
+  for (const jwk of keys.filter(k => k.alg === "RS256")) {
+    byKid.set(
+      jwk.kid,
+      await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"])
+    );
+  }
+  signingKeys = { byKid, fetchedAt: Date.now() };
+}
+
+// The token's claims, or null for any token Access did not issue to this
+// application: malformed, another algorithm, an unknown key, a bad signature,
+// another application's audience, another team, or outside its validity window.
+// Throws only when the signing keys cannot be fetched, which is not the
+// token's fault and is answered differently.
+async function verifyAccessToken(token, env) {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  let header, claims, signature;
+  try {
+    header = JSON.parse(new TextDecoder().decode(base64UrlBytes(parts[0])));
+    claims = JSON.parse(new TextDecoder().decode(base64UrlBytes(parts[1])));
+    signature = base64UrlBytes(parts[2]);
+  } catch {
+    return null;
+  }
+  if (header.alg !== "RS256") return null;
+
+  const age = Date.now() - signingKeys.fetchedAt;
+  if (age > KEYS_TTL_MS || (!signingKeys.byKid.has(header.kid) && age > UNKNOWN_KEY_REFETCH_MS)) {
+    await loadSigningKeys(env.ACCESS_TEAM_DOMAIN);
+  }
+  const key = signingKeys.byKid.get(header.kid);
+  if (!key) return null;
+
+  const signed = new TextEncoder().encode(parts[0] + "." + parts[1]);
+  if (!(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signature, signed))) return null;
+
+  const now = Date.now() / 1000;
+  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  if (!audiences.includes(env.ACCESS_AUD) || claims.iss !== env.ACCESS_TEAM_DOMAIN) return null;
+  if (typeof claims.exp !== "number" || claims.exp <= now) return null;
+  if (typeof claims.nbf === "number" && claims.nbf > now) return null;
+  return claims;
+}
 
 function withSecurity(response) {
   const headers = new Headers(response.headers);
@@ -250,12 +318,21 @@ export default {
     const route = ROUTES[url.pathname];
     if (!route) return withSecurity(await env.ASSETS.fetch(request));
 
-    // One gate for every endpoint. Access stamps this header on requests it
-    // admits - including ones authenticated with a service token, which is how
-    // /brain:log reaches the inbox - and strips any the client sent, so its
-    // absence means the site is ungated and nothing here should answer.
-    if (!request.headers.get(ACCESS_HEADER)) {
-      return problem(403, "This site is not behind Cloudflare Access. Gate the hostname in Zero Trust first.");
+    // One gate for every endpoint. Without the team and audience there is
+    // nothing to verify a token against, and admitting on presence alone is
+    // the hole this gate exists to close, so nothing answers.
+    if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) {
+      return problem(503, "ACCESS_TEAM_DOMAIN and ACCESS_AUD are not set, so no request can be verified. Set them in wrangler.toml.");
+    }
+    const token = request.headers.get(ACCESS_HEADER);
+    let claims;
+    try {
+      claims = token ? await verifyAccessToken(token, env) : null;
+    } catch (error) {
+      return problem(503, "Could not load the Access signing keys: " + String(error).slice(0, 200));
+    }
+    if (!claims) {
+      return problem(403, "This request does not carry a valid Cloudflare Access token for this site.");
     }
     if (route !== ask && !env.BRAIN_DB) {
       return problem(503, "No database is bound. Create the D1 database and set database_id in wrangler.toml.");

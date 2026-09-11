@@ -90,10 +90,21 @@ the site must not go up without it.
    Add a policy: Action **Allow**, Include → **Emails**, and list the addresses.
    Session duration is a judgement call; 24 hours is reasonable.
    Verify by opening the URL in a private window — you must be challenged.
+   Then copy the application's **Application Audience (AUD) Tag** into
+   `ACCESS_AUD` in `wrangler.toml`, beside `ACCESS_TEAM_DOMAIN`.
 
 3. **Custom domain, once you have one.** Pages project → Custom domains → add
    `brain.yourdomain.com`. Then update the Access application to that hostname,
    or it will be reachable ungated at the new name.
+
+**The worker does not trust Access to be in front of it.** Access sends a signed
+JWT with every request it admits, and `_worker.js` verifies that token against
+the team's published signing keys and the audience tag before any `/api/`
+endpoint answers. A request that reached the worker some other way — a hostname
+the Access application does not cover, such as a per-deployment preview URL —
+can put anything in that header, so presence alone would admit it. Without the
+two values set, every endpoint answers 503 rather than admitting on presence.
+`worker.test.mjs` covers each refusal against the built worker.
 
 `_headers` sets `X-Robots-Tag: noindex`, a strict CSP, `no-referrer`, and denies
 framing. `robots.txt` disallows everything. Neither is a control — crawlers

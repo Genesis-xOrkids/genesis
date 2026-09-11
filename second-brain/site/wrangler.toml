@@ -18,8 +18,22 @@ binding = "BRAIN_DB"
 database_name = "genesis-brain"
 database_id = "7a7c4cd5-3458-45eb-917c-daa410b0dc41"
 
+# Who the worker admits. Access signs a JWT for every request it lets through,
+# and the worker verifies it against the team's signing keys and this
+# application's audience tag (Zero Trust -> Access -> Applications ->
+# genesis-brain -> Application Audience (AUD) Tag). Neither value is a secret.
+[vars]
+ACCESS_TEAM_DOMAIN = "https://weathered-hall-0b6b.cloudflareaccess.com"
+ACCESS_AUD = "50727fa8d566f17c1da6ed47d81b0910f542fba25bcb40b778f0eb11f77bae99"
+
 [env.preview]
 [[env.preview.d1_databases]]
 binding = "BRAIN_DB"
 database_name = "genesis-brain"
 database_id = "7a7c4cd5-3458-45eb-917c-daa410b0dc41"
+
+# Pages does not inherit `vars` into an environment, the same as the D1 binding
+# above, so preview declares them again. Without them its endpoints answer 503.
+[env.preview.vars]
+ACCESS_TEAM_DOMAIN = "https://weathered-hall-0b6b.cloudflareaccess.com"
+ACCESS_AUD = "50727fa8d566f17c1da6ed47d81b0910f542fba25bcb40b778f0eb11f77bae99"
