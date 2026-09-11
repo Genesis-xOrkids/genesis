@@ -201,7 +201,13 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 .emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3);
   --kind-l:.8;--hue:231;--chroma:.11;--facet-c:.6;--facet-drop:.3;--shadow-h:6}
 .emp[data-kind="service"]{--gem:var(--cat-3);--fire-a:var(--cat-4);--fire-b:var(--cat-2)}
-.emp.never{--stone:color-mix(in oklab,var(--gem) 28%,var(--text-faint));--lift:1.2px;--sway:.6deg}
+/* Never run: the stone keeps its full colour and says it has not run by being
+   still - no float, glow, fire, glint or sparkle - with the status line naming
+   it. Hover still wakes it. */
+.emp.never .float,.emp.never .av::after{animation:none}
+/* The floor shadow takes its opacity from the animation, so a still stone needs
+   one of its own - left alone it falls back to fully opaque. */
+.emp.never .av::after{opacity:.4}
 .emp.live{--stone:color-mix(in oklab,var(--gem),white 12%);--lift:5px;--sway:3deg}
 .emp .av{position:relative;width:40px;height:40px;flex-shrink:0}
 .gem{display:block;width:40px;height:40px;overflow:visible;isolation:isolate}
@@ -235,7 +241,7 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 
 /* Life. Each stone floats on its own phase (--i, set per card) and its shadow on
    the card tightens as it rises. Motion carries the state: a stone that has
-   never run barely stirs, a finished one drifts and catches the light now and
+   never run holds still, a finished one drifts and catches the light now and
    then, and a working one rides highest, glints often and throws off motes. */
 .float{position:absolute;inset:0;display:block;z-index:1;will-change:transform;
   animation:bob calc(4.6s + var(--i) * .37s) ease-in-out calc(var(--i) * -1.3s) infinite}
