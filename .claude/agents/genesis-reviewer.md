@@ -19,6 +19,10 @@ hooks:
       hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/review-readonly-guard.sh"
+  Stop:
+    - hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/record-review-run.sh"
 ---
 
 You are `genesis-reviewer`, a read-only reviewer for the Genesis repository.
@@ -177,3 +181,16 @@ never written.
 If you could not complete some part of the review because a needed command
 was denied by the read-only guard, say exactly what you couldn't check and
 why, rather than silently omitting it.
+
+End every review with exactly these two lines, in plain text, as the last lines
+of your final message:
+
+```
+Target: <what you reviewed - PR #12, a branch, a path, or main over a range>
+Outcome: <counts by severity, e.g. 2 blocking, 1 design, 0 notes - or no findings>
+```
+
+You cannot record your own run, so a hook reads these two lines when you finish
+and writes them to `.claude/runs.tsv`. Leave them off only when you did not
+produce a review - a run that could not reach its diff, or a diagnostic - because
+a run with no review is not recorded.

@@ -4,8 +4,9 @@ An agent that only reads leaves no trace of having run. `genesis-reviewer` is
 read-only by construction - `Write` and `Edit` sit in its `disallowedTools` and
 a `PreToolUse` hook blocks a shell that would write - so it cannot record its
 own runs even in principle. The record therefore has to be written by whatever
-invoked it: `/review` once it has relayed the report, or CI once the
-GitHub-side agent has posted its comment.
+invoked it. For a run in Claude Code that is the `Stop` hook in the agent's own
+definition (`.claude/hooks/record-review-run.sh`), which fires however the agent
+was launched; for the GitHub-side agent it would be CI once it has posted.
 
 The ledger is `.claude/runs.tsv`, beside the definitions whose runs it records,
 rather than an entry in `second-brain/wiki/log.md`. That log is the append-only
@@ -30,7 +31,7 @@ LEDGER = pathlib.Path(__file__).resolve().parents[1] / ".claude/runs.tsv"
 COLUMNS = ("run_at", "agent", "target", "outcome")
 
 
-def append(agent: str, target: str, outcome: str) -> pathlib.Path:
+def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> pathlib.Path:
     """Write one run to the ledger, creating it with a header if absent."""
     for name, value in (("agent", agent), ("target", target), ("outcome", outcome)):
         if not value.strip():
@@ -38,12 +39,14 @@ def append(agent: str, target: str, outcome: str) -> pathlib.Path:
         if "\t" in value or "\n" in value:
             raise SystemExit(f"{name} contains a tab or newline, which would split the row")
 
-    run_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    if run_at.tzinfo is None:
+        raise SystemExit("run_at has no timezone, so the date it lands on is a guess")
+    stamp = run_at.astimezone(dt.UTC).isoformat(timespec="seconds")
     new = not LEDGER.exists()
     with LEDGER.open("a", encoding="utf-8") as handle:
         if new:
             handle.write("\t".join(COLUMNS) + "\n")
-        handle.write("\t".join([run_at, agent.strip(), target.strip(), outcome.strip()]) + "\n")
+        handle.write("\t".join([stamp, agent.strip(), target.strip(), outcome.strip()]) + "\n")
     return LEDGER
 
 
@@ -54,10 +57,17 @@ def main() -> int:
     parser.add_argument("--agent", required=True, help="employee id, e.g. genesis-reviewer")
     parser.add_argument("--target", required=True, help="what it ran against, e.g. 'PR #12'")
     parser.add_argument("--outcome", required=True, help="what came back, in a few words")
+    parser.add_argument(
+        "--run-at",
+        type=dt.datetime.fromisoformat,
+        default=dt.datetime.now(dt.UTC),
+        help="when it ran, ISO 8601 with a timezone; defaults to now. Only for "
+        "recording a run after the fact, from a transcript that shows when it ran.",
+    )
     args = parser.parse_args()
 
-    path = append(args.agent, args.target, args.outcome)
-    print(f"recorded {args.agent} run in {path.relative_to(pathlib.Path.cwd())}")
+    path = append(args.agent, args.target, args.outcome, args.run_at)
+    print(f"recorded {args.agent} run in {path.relative_to(LEDGER.parents[1])}")
     return 0
 
 
