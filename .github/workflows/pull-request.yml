@@ -1,0 +1,64 @@
+name: Pull request
+
+# Facts about the pull request itself, not about the code in it. CI covers the
+# code; nothing covered the title, which is the only description most of this
+# history ever gets - `git log --oneline` is titles.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    # Labels are written back to the pull request, so this job holds a token
+    # that can write them and nothing else. `pull_request` rather than
+    # `pull_request_target`: the latter would run this workflow from the base
+    # branch with a writable token while a fork's code sits in the tree, which
+    # is the standard way this kind of job is turned against its repository.
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No uv and no install step: pr_conventions.py imports only the standard
+      # library, so the runner's own python3 is enough.
+      - name: Title and labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          BOT: ${{ github.event.pull_request.user.type == 'Bot' }}
+        run: |
+          gh pr view "$PR" --json files --jq '.files[].path' > /tmp/pr-files.txt
+
+          # The label set is printed even when the title check fails, and is
+          # applied before the failure surfaces: a badly titled pull request is
+          # still one somebody has to find in a list.
+          ok=0
+          python3 scripts/pr_conventions.py \
+            --title "$TITLE" --branch "$BRANCH" \
+            $([ "$DRAFT" = "true" ] && echo --draft) \
+            $([ "$BOT" = "true" ] && echo --bot) \
+            --files /tmp/pr-files.txt > /tmp/pr-labels.txt || ok=$?
+
+          # --add-label creates nothing; the labels are defined on the
+          # repository. An undefined one fails loudly here rather than being
+          # silently dropped, which is the point of not creating them on the fly.
+          if [ -s /tmp/pr-labels.txt ]; then
+            gh pr edit "$PR" --add-label "$(paste -sd, /tmp/pr-labels.txt)"
+          fi
+
+          # `wip` tracks draft status in both directions, so a pull request
+          # marked ready loses the label rather than keeping a stale one.
+          if [ "$DRAFT" != "true" ]; then
+            gh pr edit "$PR" --remove-label wip 2>/dev/null || true
+          fi
+
+          exit $ok
