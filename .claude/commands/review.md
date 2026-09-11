@@ -43,23 +43,9 @@ citations, "checked and clean" list, and any proposed wiki follow-ups),
 rather than summarizing them away. Do not act on any finding yourself
 (no edits) unless the user asks you to after seeing the report.
 
-## Then record the run
+## The run records itself
 
-The reviewer cannot do this itself: `Write` and `Edit` are in its
-`disallowedTools` and the read-only hook blocks a shell that would write, so
-a run of it leaves no trace unless the caller leaves one. Once you have
-relayed the report, run:
-
-```sh
-uv run scripts/log_agent_run.py --agent genesis-reviewer \
-  --target "<the resolved target: PR #12, a branch, or a path>" \
-  --outcome "<counts by severity, e.g. 2 blocking, 1 design, 0 notes>"
-```
-
-Record what the reviewer actually returned, including a clean review (`no
-findings`) — a ledger that only holds runs that found something misreports
-how often the reviewer is right. Record it even when the user then asks you
-to fix a finding; the fix is a separate event and the review still happened.
-
-If the reviewer failed or you could not reach it, do not write a row. The
-ledger records runs, and a run that did not produce a review is not one.
+The reviewer ends its report with `Target:` and `Outcome:` lines, and a `Stop`
+hook in its definition writes them to `.claude/runs.tsv` when it finishes,
+however it was launched. Do not also run `scripts/log_agent_run.py` here: that
+would record every review launched through this command twice.

@@ -178,7 +178,14 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
    gem flashes the family's colours as it turns. Facet tones are derived from
    the one colour rather than read off a ramp: the tokens' rule is roles only,
    and a gem's facets have no role of their own. */
-.emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--stone:var(--gem);--lift:3.5px;--sway:2.5deg}
+.emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--stone:var(--gem);--lift:3.5px;--sway:2.5deg;
+  --stone-l:.62}
+/* The kinds' own lightness differs a lot - violet sits at 0.48 against pink's
+   0.58 in light - so a stone that kept its token's lightness read dull beside
+   the others. Every stone is lifted to at least this floor instead, so the
+   three read as equally vivid and differ by hue and cut, not by brightness. */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .emp{--stone-l:.68}}
+:root[data-theme="dark"] .emp{--stone-l:.68}
 .emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3)}
 .emp[data-kind="service"]{--gem:var(--cat-3);--fire-a:var(--cat-4);--fire-b:var(--cat-2)}
 .emp.never{--stone:color-mix(in oklab,var(--gem) 28%,var(--text-faint));--lift:1.2px;--sway:.6deg}
@@ -200,8 +207,8 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
    the colour holds its saturation from the table to the darkest facet. On a
    wide-gamut display the boosted values land outside sRGB and show as such. */
 @supports (color:oklch(from red l c h)){
-  .emp{--stone:oklch(from var(--gem) calc(l + .03) calc(c * 1.45) h)}
-  .emp.live{--stone:oklch(from var(--gem) calc(l + .07) calc(c * 1.6) h)}
+  .emp{--stone:oklch(from var(--gem) max(l, var(--stone-l)) calc(c * 1.5) h)}
+  .emp.live{--stone:oklch(from var(--gem) calc(max(l, var(--stone-l)) + .05) calc(c * 1.6) h)}
   .gem polygon{stroke:oklch(from var(--stone) calc(l - .22) c h)}
   .gem .ft{fill:oklch(from var(--stone) calc(l + .27) calc(c * .45) h)}
   .gem .f0{fill:oklch(from var(--stone) calc(l + .17) calc(c * .85) h)}
