@@ -1,31 +1,24 @@
-"""Append one row to the agent run ledger.
+"""Append one run to the agent run ledger, `.claude/runs.tsv`.
 
-An agent that only reads leaves no trace of having run. `genesis-reviewer` is
-read-only by construction - `Write` and `Edit` sit in its `disallowedTools` and
-a `PreToolUse` hook blocks a shell that would write - so it cannot record its
-own runs even in principle. The record therefore has to be written by whatever
-invoked it. For a run in Claude Code that is the `Stop` hook in the agent's own
-definition (`.claude/hooks/record-review-run.sh`), which fires however the agent
-was launched; for the GitHub-side agent it would be CI once it has posted.
+The ledger is the git record of what agents did: one row per finished run that
+reported a target and an outcome. `scripts/agent_activity.py` records runs live
+in the brain's database as they start and finish, wherever they run, and its
+`drain` moves the finished ones here through `append`. Nothing else writes this
+file, so there is one answer to what a row looks like and when two runs are the
+same run.
 
-The ledger is `.claude/runs.tsv`, beside the definitions whose runs it records,
-rather than an entry in `second-brain/wiki/log.md`. That log is the append-only
-record of what happened to the wiki; reviewing a code diff does not touch the
-wiki, and the static site build holds the log back, which would make every
-recorded review vanish from the published gallery.
+The ledger stays in git rather than the database (PR #27) because it is
+history: it has to be reproducible from a clone, and it cannot depend on a
+network or a login to exist. `.gitattributes` merges it with the union driver,
+so branches that each bring rows in never conflict.
 
-This script deliberately does not check the agent name against the roster. The
-rule that turns a definition file into an employee id lives in exactly one
-place - `read_employees` in `second-brain/site/build.py` - and a copy here
-would be a second home for it that could disagree. The build reports any ledger
-row whose agent matches no employee instead, which is the same check one step
-later and with one owner.
+It is kept apart from `second-brain/wiki/log.md`. That log is the append-only
+record of what happened to the wiki, and reviewing a code diff does not touch
+the wiki.
 """
 
-import argparse
 import datetime as dt
 import pathlib
-import sys
 
 LEDGER = pathlib.Path(__file__).resolve().parents[1] / ".claude/runs.tsv"
 COLUMNS = ("run_at", "agent", "target", "outcome")
@@ -35,11 +28,8 @@ def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[
     """Write one run to the ledger, creating it with a header if absent.
 
     Returns the ledger path and whether the row is new. Idempotent on
-    `(agent, run_at, target)`: a hook that fires twice for one run, a backfill
-    re-run, or a union merge that brought the same line in from both branches
-    all leave one row. The caller is told which happened, because the `Stop`
-    hook posts the review to its pull request only for a run that is new, and a
-    comment - unlike a row - cannot be deduplicated after the fact.
+    `(agent, run_at, target)`: a drain re-run after failing part-way, or a union
+    merge that brought the same line in from both branches, leaves one row.
     """
     for name, value in (("agent", agent), ("target", target), ("outcome", outcome)):
         if not value.strip():
@@ -65,29 +55,3 @@ def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[
             handle.write("\t".join(COLUMNS) + "\n")
         handle.write("\t".join([stamp, agent.strip(), target.strip(), outcome.strip()]) + "\n")
     return LEDGER, True
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("--agent", required=True, help="employee id, e.g. genesis-reviewer")
-    parser.add_argument("--target", required=True, help="what it ran against, e.g. 'PR #12'")
-    parser.add_argument("--outcome", required=True, help="what came back, in a few words")
-    parser.add_argument(
-        "--run-at",
-        type=dt.datetime.fromisoformat,
-        default=dt.datetime.now(dt.UTC),
-        help="when it ran, ISO 8601 with a timezone; defaults to now. Only for "
-        "recording a run after the fact, from a transcript that shows when it ran.",
-    )
-    args = parser.parse_args()
-
-    path, new = append(args.agent, args.target, args.outcome, args.run_at)
-    verb = "recorded" if new else "already recorded"
-    print(f"{verb} {args.agent} run in {path.relative_to(LEDGER.parents[1])}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

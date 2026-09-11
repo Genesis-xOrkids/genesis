@@ -107,3 +107,14 @@ test("with the team or audience unset, nothing is admitted", async () => {
   assert.equal((await call(valid, { ACCESS_AUD: undefined })).status, 503);
   assert.equal((await call(valid, { ACCESS_TEAM_DOMAIN: undefined })).status, 503);
 });
+
+test("live activity sits behind the same gate, and is read-only", async () => {
+  const request = (init = {}) =>
+    worker.fetch(new Request("https://brain.example/api/activity", init), env);
+  assert.equal((await request()).status, 403);
+  const headers = { "cf-access-jwt-assertion": await token() };
+  const admitted = await request({ headers });
+  assert.equal(admitted.status, 200);
+  assert.deepEqual(await admitted.json(), { runs: [] });
+  assert.equal((await request({ method: "POST", headers })).status, 405);
+});

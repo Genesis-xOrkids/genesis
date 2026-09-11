@@ -30,7 +30,7 @@ function go(name) {
   });
   scrollTo({ top: 0, behavior: "instant" });
   if (name === "explore") { resize(); alpha = Math.max(alpha, .55); }
-  if (name === "employees") startGems();
+  if (name === "employees") { startGems(); refreshActivity(); }
 }
 document.addEventListener("click", e => {
   const v = e.target.closest("[data-view]");
@@ -610,13 +610,51 @@ function runRow(r, doing) {
   return row;
 }
 
+// Live activity: runs open now, and runs finished recently that the ledger baked
+// into this page does not carry yet. Hooks write it as each agent starts and
+// stops, wherever it runs. The hosted site fetches it while the Employees view
+// is showing; the artifact has no worker to ask, so its adapter has none.
+let activity = [], activityError = "";
+async function refreshActivity() {
+  try {
+    activity = await loadActivity();
+    activityError = "";
+  } catch (e) {
+    activityError = e.message;
+  }
+  renderStaff();
+}
+
+function elapsed(since) {
+  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(since)) / 60000));
+  return minutes < 90 ? minutes + " min" : Math.round(minutes / 60) + " h";
+}
+
 function renderStaff() {
   const el = $("#staff");
   el.innerHTML = "";
   gems.clear();
   for (const [n, m] of BRAIN.employees.entries()) {
-    const live = m.doing.length > 0;
-    const state = live ? "live" : m.done.length ? "done" : "never";
+    // A finished run appears once: from the ledger once it has been drained
+    // there, and from live activity until then. The ledger's own key - when the
+    // run finished, and its target - is what says the two are the same run.
+    const ledgered = new Set(m.done.filter(r => r.via === "run").map(r => r.at + "\t" + r.target));
+    const mine = activity.filter(r => r.agent === m.id);
+    const working = mine.filter(r => !r.finished_at);
+    const done = m.done
+      .concat(
+        mine
+          .filter(r => r.finished_at && !ledgered.has(r.finished_at + "\t" + r.target))
+          .map(r => ({
+            date: r.finished_at.slice(0, 10),
+            what: r.target && r.outcome ? r.target + " \u2014 " + r.outcome : "Ended without a report",
+            ref: "",
+            via: "run",
+          }))
+      )
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const live = working.length > 0;
+    const state = live ? "live" : done.length ? "done" : "never";
     const card = document.createElement("div");
     card.className = "emp " + state;
     card.dataset.kind = m.kind;
@@ -652,27 +690,33 @@ function renderStaff() {
     if (m.cannot.length) add("cannot write", "no");
 
     card.querySelector(".st b").textContent = live
-      ? "Working — " + m.doing.length + " unmerged"
+      ? "Working \u2014 " + working.length + (working.length === 1 ? " run open" : " runs open")
       : state === "done" ? "Finished" : "Never run";
 
     const runs = card.querySelector(".runs");
-    for (const r of m.doing) runs.appendChild(runRow(r, true));
-    const rest = m.done.slice(0, Math.max(0, SHOWN - m.doing.length));
+    for (const r of working) {
+      runs.appendChild(runRow({
+        date: r.started_at ? r.started_at.slice(0, 10) : "",
+        what: r.started_at ? "Running for " + elapsed(r.started_at) : "Running, start time unknown",
+        ref: "",
+      }, true));
+    }
+    const rest = done.slice(0, Math.max(0, SHOWN - working.length));
     for (const r of rest) runs.appendChild(runRow(r, false));
 
-    if (m.done.length > rest.length) {
+    if (done.length > rest.length) {
       const more = document.createElement("button");
       more.className = "more";
-      more.textContent = "Show all " + m.done.length;
+      more.textContent = "Show all " + done.length;
       more.onclick = () => {
         more.remove();
-        for (const r of m.done.slice(rest.length)) runs.appendChild(runRow(r, false));
+        for (const r of done.slice(rest.length)) runs.appendChild(runRow(r, false));
         card.classList.add("on");
       };
       card.querySelector(".work").appendChild(more);
     }
 
-    if (!m.done.length && !live) {
+    if (!done.length && !live) {
       const why = document.createElement("div");
       why.className = "run";
       why.innerHTML = "<span></span>";
@@ -690,13 +734,13 @@ function renderStaff() {
     const foot = document.createElement("footer");
     const tally = [["run", "runs"], ["commit", "commits"], ["log mention", "log mentions"]]
       .map(([one, many], i) => {
-        const n = m.done.filter(r => r.via === ["run", "commit", "log"][i]).length;
+        const n = done.filter(r => r.via === ["run", "commit", "log"][i]).length;
         return n ? n + " " + (n === 1 ? one : many) : "";
       })
       .filter(Boolean);
     foot.textContent = [
       tally.join(" · ") || "nothing recorded",
-      m.last ? "last " + m.last : "",
+      done.length ? "last " + done[0].date : "",
       m.defined,
     ].filter(Boolean).join("  ·  ");
     card.querySelector(".work").appendChild(foot);
@@ -706,12 +750,15 @@ function renderStaff() {
     drawGem(g, 0);
   }
 
-  const never = BRAIN.employees.filter(m => !m.done.length && !m.doing.length && m.defined);
+  const never = BRAIN.employees.filter(m => m.defined && !m.done.length && !activity.some(r => r.agent === m.id));
   $("#staffNote").textContent =
-    "Roles come from the definition files under .claude/. Work comes from three places: commits " +
+    (activityError ? "Live activity could not be loaded: " + activityError + " " : "") +
+    "Roles come from the definition files under .claude/. Work comes from four places: commits " +
     "on main, which attribute a bot by its author and Claude by its Co-Authored-By trailer; the " +
-    "run ledger at .claude/runs.tsv, written by whatever invoked an agent that cannot write for " +
-    "itself; and " +
+    "run ledger at .claude/runs.tsv; live activity, which hooks record as each agent starts and " +
+    "stops, wherever it runs" +
+    (BRAIN.target === "artifact" ? " (shown on the hosted site; this view has no worker to ask)" : "") +
+    "; and " +
     (BRAIN.logHeld
       ? "the wiki's activity log, which this build holds back — so anything whose only trace is a " +
         "log entry reads as never run here."
@@ -900,6 +947,9 @@ async function captureNote(text) {
   await db.collection("inbox").add({ text, created: new Date().toISOString(), status: "pending" });
   return "Captured — /brain:log will file it";
 }
+async function loadActivity() {
+  return [];
+}
 function watchNotes(render) {
   if (!db) return;
   db.collection("inbox").orderBy("created", "desc").limit(8)
@@ -948,6 +998,9 @@ async function saveFile(name, data) {
 async function captureNote(text) {
   await api("/api/notes", { method: "POST", body: JSON.stringify({ text }) });
   return "Captured \u2014 /brain:log will file it";
+}
+async function loadActivity() {
+  return (await api("/api/activity")).runs;
 }
 async function watchNotes(render) {
   try {
@@ -1131,4 +1184,5 @@ $("#noteHint").textContent = NOTE_HINT;
   } catch (e) { $("#noteHint").textContent = e.message; }
   await watchNotes(renderNotes);
 })();
+setInterval(() => { if ($("#vEmployees").classList.contains("on")) refreshActivity(); }, 30000);
 /*ENDIF*/

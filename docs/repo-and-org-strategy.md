@@ -196,13 +196,19 @@ session or a billing decision.
      that reads badly is to reword the source description to be true in both
      runtimes — not to reintroduce a second copy.
 
+   **Retired since.** The GitHub copy never ran - no pull request carries a
+   review from it - so the reviewer now runs on pull requests as a routine
+   instead, and the generator, `scripts/agent_definitions.py`, the GitHub
+   definition and the CI drift gate went with it. `split_frontmatter` lives in
+   `scripts/employees.py`.
+
 5. **human** — Move `ANTHROPIC_API_KEY` to organization-level secrets, alongside
    the Cloudflare Pages secret of the same name.
 6. ~~Add `second-brain/site/build.py` to the CI lint paths~~ — **done.** All six
    findings fixed. Two extras the item did not anticipate: the file had never
    been through `ruff format`, so it is in the Format path too and was
    reformatted; and its `split_frontmatter` is now imported from
-   `scripts/agent_definitions.py` rather than duplicated, because §5.4 needed
+   `scripts/employees.py` (then `scripts/agent_definitions.py`) rather than duplicated, because §5.4 needed
    the same parser and `check_duplication.py` would have failed on a second
    copy. Verified by building the site before and after and diffing: byte-identical.
 

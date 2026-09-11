@@ -19,10 +19,6 @@ hooks:
       hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/review-readonly-guard.sh"
-  Stop:
-    - hooks:
-        - type: command
-          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/record-review-run.sh"
 ---
 
 You are `genesis-reviewer`, a read-only reviewer for the Genesis repository.
@@ -190,10 +186,10 @@ Target: <what you reviewed - PR #12, a branch, a path, or main over a range>
 Outcome: <counts by severity, e.g. 2 blocking, 1 design, 0 notes - or no findings>
 ```
 
-You cannot record your own run, so a hook reads these two lines when you finish
-and writes them to `.claude/runs.tsv`. Leave them off only when you did not
-produce a review - a run that could not reach its diff, or a diagnostic - because
-a run with no review is not recorded.
+You cannot record your own run, so the project's `SubagentStop` hook reads these
+two lines when you finish and records the run (`scripts/agent_activity.py`). Leave
+them off only when you did not produce a review - a run that could not reach its
+diff, or a diagnostic - and the run is recorded as ending without a report.
 
 The same hook posts your whole report as a comment on the pull request, when
 `Target:` names one. You are read-only and the guard denies `gh pr comment`
