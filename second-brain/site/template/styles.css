@@ -179,16 +179,35 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
    the one colour rather than read off a ramp: the tokens' rule is roles only,
    and a gem's facets have no role of their own. */
 .emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--stone:var(--gem);--lift:3.5px;--sway:2.5deg;
-  --stone-l:.62}
+  --stone-l:.62;--kind-l:0;--facet-c:1;--facet-drop:.14;--shadow-h:-14}
 /* The kinds' own lightness differs a lot - violet sits at 0.48 against pink's
    0.58 in light - so a stone that kept its token's lightness read dull beside
    the others. Every stone is lifted to at least this floor instead, so the
    three read as equally vivid and differ by hue and cut, not by brightness. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .emp{--stone-l:.68}}
 :root[data-theme="dark"] .emp{--stone-l:.68}
-.emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3)}
+/* Commands are cut as diamonds: a baby blue far lighter than the kit's blue
+   (0.80 against 0.55) at a fixed hue of 231, with shadow facets that drop much
+   deeper than the other stones and turn toward blue rather than away from it.
+   Hue and chroma are fixed rather than derived: the token's hue differs by
+   theme, and at this lightness sRGB holds only about 0.124 of chroma, so the
+   1.5x boost the other stones take (about 0.18) is clipped channel by channel
+   into aqua. 0.11 sits just inside that limit. The bright facets take less
+   chroma, so the highlights stay icy white rather than clipping cyan, and the
+   shadows lean blue so they read as steel rather than teal. The contrast between a near-white
+   table and steel-blue shadows is what reads as brilliance; a pale stone with
+   shallow facets reads as frosted glass instead. The deeper outline keeps it
+   from dissolving into a white card. */
+.emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3);
+  --kind-l:.8;--hue:231;--chroma:.11;--facet-c:.6;--facet-drop:.3;--shadow-h:6}
 .emp[data-kind="service"]{--gem:var(--cat-3);--fire-a:var(--cat-4);--fire-b:var(--cat-2)}
-.emp.never{--stone:color-mix(in oklab,var(--gem) 28%,var(--text-faint));--lift:1.2px;--sway:.6deg}
+/* Never run: the stone keeps its full colour and says it has not run by being
+   still - no float, glow, fire, glint or sparkle - with the status line naming
+   it. Hover still wakes it. */
+.emp.never .float,.emp.never .av::after{animation:none}
+/* The floor shadow takes its opacity from the animation, so a still stone needs
+   one of its own - left alone it falls back to fully opaque. */
+.emp.never .av::after{opacity:.4}
 .emp.live{--stone:color-mix(in oklab,var(--gem),white 12%);--lift:5px;--sway:3deg}
 .emp .av{position:relative;width:40px;height:40px;flex-shrink:0}
 .gem{display:block;width:40px;height:40px;overflow:visible;isolation:isolate}
@@ -207,22 +226,22 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
    the colour holds its saturation from the table to the darkest facet. On a
    wide-gamut display the boosted values land outside sRGB and show as such. */
 @supports (color:oklch(from red l c h)){
-  .emp{--stone:oklch(from var(--gem) max(l, var(--stone-l)) calc(c * 1.5) h)}
-  .emp.live{--stone:oklch(from var(--gem) calc(max(l, var(--stone-l)) + .05) calc(c * 1.6) h)}
-  .gem polygon{stroke:oklch(from var(--stone) calc(l - .22) c h)}
+  .emp{--stone:oklch(from var(--gem) max(l, var(--stone-l), var(--kind-l)) var(--chroma, calc(c * 1.5)) var(--hue, h))}
+  .emp.live{--stone:oklch(from var(--gem) calc(max(l, var(--stone-l), var(--kind-l)) + .05) var(--chroma, calc(c * 1.6)) var(--hue, h))}
+  .gem polygon{stroke:oklch(from var(--stone) calc(l - var(--facet-drop) - .08) c h)}
   .gem .ft{fill:oklch(from var(--stone) calc(l + .27) calc(c * .45) h)}
-  .gem .f0{fill:oklch(from var(--stone) calc(l + .17) calc(c * .85) h)}
-  .gem .f1{fill:oklch(from var(--stone) calc(l + .07) c h)}
-  .gem .f3{fill:oklch(from var(--stone) calc(l - .14) c calc(h - 14))}
+  .gem .f0{fill:oklch(from var(--stone) calc(l + .17) calc(c * .85 * var(--facet-c)) h)}
+  .gem .f1{fill:oklch(from var(--stone) calc(l + .07) calc(c * var(--facet-c)) h)}
+  .gem .f3{fill:oklch(from var(--stone) calc(l - var(--facet-drop)) c calc(h + var(--shadow-h)))}
   .gem .x0{fill:oklch(from var(--fire-a) calc(l + .1) calc(c * 1.5) h)}
   .gem .x1{fill:oklch(from var(--fire-b) calc(l + .1) calc(c * 1.5) h)}
 }
-.emp.done .gem,.emp.live .gem{filter:drop-shadow(0 3px 7px color-mix(in oklab,var(--gem) 55%,transparent))
+.emp.done .gem,.emp.live .gem{filter:drop-shadow(0 3px 7px color-mix(in oklab,var(--stone) 60%,transparent))
   drop-shadow(0 0 3px color-mix(in oklab,var(--fire-a) 35%,transparent))}
 
 /* Life. Each stone floats on its own phase (--i, set per card) and its shadow on
    the card tightens as it rises. Motion carries the state: a stone that has
-   never run barely stirs, a finished one drifts and catches the light now and
+   never run holds still, a finished one drifts and catches the light now and
    then, and a working one rides highest, glints often and throws off motes. */
 .float{position:absolute;inset:0;display:block;z-index:1;will-change:transform;
   animation:bob calc(4.6s + var(--i) * .37s) ease-in-out calc(var(--i) * -1.3s) infinite}
@@ -254,6 +273,7 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 @keyframes twinkle{0%,60%,100%{transform:scale(0) rotate(0)}74%{transform:scale(1) rotate(45deg)}
   88%{transform:scale(.15) rotate(90deg)}}
 .emp.live .spark{animation-duration:3s}
+.emp[data-kind="command"] .spark{width:11px;height:11px;margin:-5.5px 0 0 -5.5px}
 .motes{position:absolute;inset:0;display:none;pointer-events:none}
 .emp.live .motes{display:block}
 .motes b{position:absolute;bottom:40%;left:30%;width:3px;height:3px;border-radius:50%;background:var(--fire-a);
