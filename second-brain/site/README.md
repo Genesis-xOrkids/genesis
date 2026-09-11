@@ -40,8 +40,14 @@ cd second-brain/site
 npx wrangler d1 create genesis-brain          # copy the id into wrangler.toml
 npx wrangler d1 execute genesis-brain --remote --file schema.sql
 npx wrangler pages secret put ANTHROPIC_API_KEY
+npx wrangler pages secret put ANTHROPIC_API_KEY --env preview
 npx wrangler pages deploy                     # reads wrangler.toml for the binding
 ```
+
+The key is set twice because Pages scopes secrets per environment — the same
+non-inheritance `wrangler.toml` works around for the D1 binding and the Access
+vars, except that a secret cannot live in that file. Skip the second line and
+Ask answers 503 on every preview host.
 
 ### Draining the inbox from Claude Code
 
@@ -110,6 +116,53 @@ two values set, every endpoint answers 503 rather than admitting on presence.
 framing. `robots.txt` disallows everything. Neither is a control — crawlers
 honour them voluntarily — but behind Access nothing unauthenticated reaches
 either file anyway.
+
+## Seeing a change before it ships
+
+Merging is not how you look at a change. Two cheaper loops come first, and
+neither widens the audience: Access covers `*.genesis-brain.pages.dev`, so the
+production host, every branch alias and every per-deployment host answer to the
+same application. Re-check that whenever the Access policy changes — `curl -sI
+https://anything.genesis-brain.pages.dev` must redirect to `cloudflareaccess.com`,
+and a 200 means previews are going out ungated.
+
+**Locally, for anything the page renders.** The whole wiki is baked into the
+HTML, so the graph, the pages, the Employees panel and every brand token are
+fully exercised with nothing deployed:
+
+```sh
+./build.py --target static
+npx wrangler pages dev
+```
+
+Ask, Capture and Settings will not work there, and cannot be made to: every
+`/api/` endpoint wants a JWT signed by Access, and only a hostname Access fronts
+ever carries one. `pages dev` does not read `[vars]` from `wrangler.toml` either,
+so the refusal you actually see is the 503 for an unset `ACCESS_AUD` rather than
+the 403 for a missing token. Those refusals are exercised in `worker.test.mjs`,
+not in a browser.
+
+**On a preview host, for everything else.** One command publishes the working
+tree — no branch, no commit, no pull request:
+
+```sh
+./build.py --target static
+npx wrangler pages deploy --branch dev --commit-dirty=true
+```
+
+That lands on `https://dev.genesis-brain.pages.dev`, and the alias is stable
+across redeploys, so it can be left open in a tab or on a phone. Any other
+`--branch` name gets its own alias the same way.
+
+**`--branch` is not optional.** Without it wrangler reads the branch from git,
+and a tree sitting on `main` deploys to production — the real site, from an
+unreviewed working copy. The flag is what makes this a preview, which is why CI
+passes `--branch main` explicitly rather than letting it be inferred.
+
+A deploy from your own machine also skips CI, and with it the check on what
+`exclude.txt` holds back. That is not a leak — a preview reaches exactly the
+people production does — but `build.py` prints the publication report on every
+run, and that is the moment to read it.
 
 ## Brand
 
