@@ -145,6 +145,15 @@ A design can pass every test written for it and still be wrong, because the test
 - Evals ran for any prompt, tool-schema, or model change, and generated artifacts (GraphQL SDL, graphql-codegen types) are regenerated and committed.
 - Verify the fix live, not by re-reading the diff: reproduce before, confirm after, for the new case and every pre-existing case the same code path serves.
 
+## Branches, titles and labels
+
+- Branches are `<type>/<slug>`: `feat/` a new capability, `fix/` behaviour that was wrong, `chore/` dependencies and CI and tooling, `docs/` prose only. The type lives here and not in the title, because nothing in this repository reads a `feat:` prefix — there is no release, no changelog, no semantic version — so in a title it would spend characters the description needs and return nothing, while on a branch it is what you type and what `git branch` shows.
+- The title says what the change does, in a sentence. `git log --oneline` is titles, so the title is the only description most of this history ever gets. Not a noun phrase that names the area ("Agents panel"), and never the slug `gh pr create` offers when a branch holds more than one commit — that offer is why half this history reads "Gems life", "Brand second brain". `scripts/pr_conventions.py` rejects a title that is its branch's own words, under three words, over 80 characters, or ending in a period.
+- Mood is deliberately not enforced. "Fill the catalog: storefront registry, ingestion runner, 21k products" and "3D employee gems that float, spin and shimmer" are both good titles and only one is imperative.
+- Labels are derived, never typed: the type from the branch prefix, the area (`brain`, `agents`, `api`, `intelligence`, `web`, `infra`, `ci`) from the paths the diff touches, `wip` from draft status. The Pull request workflow applies them on every push. A label somebody has to remember to add is a label that goes missing.
+- WIP is draft status, which already blocks the merge button; `wip` mirrors it so `gh pr list --label wip` works, and is removed when the pull request is marked ready.
+- Bots are exempt from all of it. Dependabot's titles and branches are generated from the dependency it moved.
+
 ## PR and migration docstrings
 
 - Write down the result of the "grep for the fact elsewhere" check, not just that you did it: which existing thing you checked against and why the new field isn't a duplicate, or "checked X, no existing home for this fact". It goes in the PR description or migration docstring, not left for a reviewer to re-derive.
