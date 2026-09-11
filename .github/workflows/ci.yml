@@ -117,6 +117,15 @@ jobs:
             exit 1
           }
 
+      - name: Worker tests
+        # The Access gate is the only control on the hosted site's endpoints,
+        # so its refusals are tested against the worker that deploys rather
+        # than the template. No setup step: the runner's Node already has
+        # WebCrypto, fetch and the test runner.
+        run: |
+          python3 second-brain/site/build.py --target static >/dev/null
+          node --test second-brain/site/worker.test.mjs
+
       - name: Secrets
         # Free stand-in for GitHub's push protection, which costs money on
         # private repos. The binary is run directly rather than through

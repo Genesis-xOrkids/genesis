@@ -3,10 +3,14 @@
 # Extends the default rules rather than replacing them: the point is to silence
 # specific false positives, not to narrow what is looked for. A scanner that
 # reports noise gets ignored, which is the same as not running it.
+#
+# Each false positive is its own `[[allowlists]]` entry, scoped as tightly as the
+# case allows. Gitleaks refuses the single legacy `[allowlist]` table alongside
+# them, so there is only the one form.
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Build artifacts and local tooling state, none of which is committed"
 paths = [
   # CDK synthesis output. Contains S3 object keys, which are content hashes that
@@ -15,3 +19,19 @@ paths = [
   # Documents the shape of the variables; the values are blank.
   '''\.env\.example''',
 ]
+
+# The Cloudflare Access audience tag is an identifier, not a credential: Access
+# puts it in every login redirect URL for the site, and the worker needs it in
+# the clear to check that a token was issued for this application. The generic
+# rule reads its 64 hex characters as an API key.
+#
+# The entry matches the assignment the rule reports, `ACCESS_AUD = "<64 hex>"`,
+# rather than scoping to wrangler.toml: gitleaks applies an allowlist's `paths`
+# by skipping the whole file, even with `condition = "AND"`, which would hide a
+# real key in that file too. As written, a key under any other name - in that
+# file or any other - is still reported, and only the generic rule is affected.
+[[allowlists]]
+description = "Cloudflare Access audience tag"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''ACCESS_AUD = "[0-9a-f]{64}"''']
