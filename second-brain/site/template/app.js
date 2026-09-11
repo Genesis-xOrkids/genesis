@@ -203,8 +203,8 @@ const SHOWN = 3;
 // rings. A ring with a half-step twist sits on the outline's edge midpoints, so
 // the bands either side of it break into triangles - the star and bezel facets of
 // a brilliant - while untwisted neighbours give the flat steps of a step cut.
-// Every solid is convex, so hiding the facets that face away is the whole of the
-// depth sorting.
+// Every solid is convex, so it is exactly the space inside all of its facets'
+// planes, which is what lets each pixel be ray-traced through it cheaply.
 const CUTS = {
   agent: Array.from({ length: 8 }, (_, i) => {
     const a = Math.PI * (i / 4 + 1 / 8);
@@ -221,6 +221,7 @@ const RINGS = {
   command: [[.62, .26, 0], [.84, .15, 0], [1, 0, 0], [.74, -.24, 0], [.42, -.46, 0], [0, -.6, 0]],
   service: [[.5, .26, 0], [.82, .18, 1], [1, 0, 0], [0, -.62, 0]],
 };
+const MAX_FACETS = 48;  // the shader's fixed loop bound
 function solid(kind) {
   const outline = CUTS[kind], n = outline.length;
   const cx = outline.reduce((s, p) => s + p[0], 0) / n;
@@ -249,30 +250,33 @@ function solid(kind) {
   }
   const centre = [0, 1, 2].map(axis => verts.reduce((s, v) => s + v[axis], 0) / verts.length);
   const heights = verts.map(v => v[1]);
-  return {
-    verts,
-    mid: (Math.max(...heights) + Math.min(...heights)) / 2,
-    faces: faces.map(ids => {
-      // Newell's normal, turned outward if the winding left it facing in.
-      const normal = [0, 0, 0], at = [0, 0, 0];
-      ids.forEach((id, k) => {
-        const a = verts[id], b = verts[ids[(k + 1) % ids.length]];
-        normal[0] += (a[1] - b[1]) * (a[2] + b[2]);
-        normal[1] += (a[2] - b[2]) * (a[0] + b[0]);
-        normal[2] += (a[0] - b[0]) * (a[1] + b[1]);
-        for (let axis = 0; axis < 3; axis++) at[axis] += a[axis] / ids.length;
-      });
-      const outward = normal.reduce((s, v, axis) => s + v * (at[axis] - centre[axis]), 0) < 0 ? -1 : 1;
-      const length = Math.hypot(...normal) * outward;
-      return { ids, normal: normal.map(v => v / length) };
-    }),
-  };
+  if (faces.length > MAX_FACETS) throw new Error(kind + " has more facets than the gem shader reads");
+  const facets = faces.map(ids => {
+    // Newell's normal, turned outward if the winding left it facing in.
+    const normal = [0, 0, 0], at = [0, 0, 0];
+    ids.forEach((id, k) => {
+      const a = verts[id], b = verts[ids[(k + 1) % ids.length]];
+      normal[0] += (a[1] - b[1]) * (a[2] + b[2]);
+      normal[1] += (a[2] - b[2]) * (a[0] + b[0]);
+      normal[2] += (a[0] - b[0]) * (a[1] + b[1]);
+      for (let axis = 0; axis < 3; axis++) at[axis] += a[axis] / ids.length;
+    });
+    const outward = normal.reduce((s, v, axis) => s + v * (at[axis] - centre[axis]), 0) < 0 ? -1 : 1;
+    const length = Math.hypot(...normal) * outward;
+    return { ids, normal: normal.map(v => v / length) };
+  });
+  // Each facet's plane as its outward normal and its distance from the centre.
+  const planes = new Float32Array(4 * MAX_FACETS);
+  facets.forEach(({ ids, normal }, k) => {
+    const v = verts[ids[0]];
+    planes.set([...normal, normal[0] * v[0] + normal[1] * v[1] + normal[2] * v[2]], 4 * k);
+  });
+  return { verts, mid: (Math.max(...heights) + Math.min(...heights)) / 2, faces: facets, planes };
 }
 const SOLIDS = Object.fromEntries(Object.keys(CUTS).map(kind => [kind, solid(kind)]));
 
-// Colour is worked in OKLCH, so a facet moves in lightness alone and keeps its
-// saturation from the table to the deepest shadow. A tone outside sRGB keeps its
-// lightness and hue and gives up chroma until it fits; clipped channel by channel
+// Colour. A stone's body colour is worked in OKLCH, then brought into sRGB by
+// giving up chroma at constant lightness and hue; clipped channel by channel
 // instead, a light blue bends into aqua.
 const linear = v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
 const gamma = v => v <= .0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - .055;
@@ -288,7 +292,7 @@ function oklch(hex) {
   return [.2104542553 * long + .7936177850 * medium - .0040720468 * short, Math.hypot(a, bb),
     Math.atan2(bb, a) * 180 / Math.PI];
 }
-function srgb(l, c, h) {
+function inGamut(l, c, h) {  // linear sRGB
   l = Math.min(1, Math.max(0, l));
   const channels = chroma => {
     const a = chroma * Math.cos(h * Math.PI / 180), b = chroma * Math.sin(h * Math.PI / 180);
@@ -305,15 +309,15 @@ function srgb(l, c, h) {
     const mid = (inside + outside) / 2;
     if (fits(mid)) inside = mid; else outside = mid;
   }
-  return "rgb(" + channels(inside).map(v => Math.round(255 * gamma(Math.min(1, Math.max(0, v))))).join(",") + ")";
+  return channels(inside).map(v => Math.min(1, Math.max(0, v)));
 }
+const css = rgb => "rgb(" + rgb.map(v => Math.round(255 * gamma(v))).join(",") + ")";
 
 // A stone's material, read off its card. The kind's colour is lifted to the
-// lightness floor styles.css sets, and turned into a ramp of facet tones from the
-// deepest shadow to the table: chroma holds through the shadows, eases on the lit
-// facets and falls under half at the table so it reads as light, and the shadows
-// turn by --shadow-h.
-const TONES = 48;
+// lightness floor styles.css sets and becomes the stone's body. Light crossing the
+// stone is absorbed in proportion to how far it travels, so thin edges run pale
+// and long paths run deep - the way a cut stone takes its colour.
+const DEPTH = .75;
 function material(card, state) {
   const style = getComputedStyle(card);
   const read = name => style.getPropertyValue(name).trim();
@@ -328,35 +332,160 @@ function material(card, state) {
   // Commands pin their own chroma and hue; the other kinds boost the token's.
   const c = read("--chroma") ? need("--chroma") : gemC * (live ? 1.6 : 1.5);
   const h = read("--hue") ? need("--hue") : gemH;
-  const drop = need("--facet-drop"), facetC = need("--facet-c"), shadowH = need("--shadow-h");
-  const tones = Array.from({ length: TONES }, (_, k) => {
-    const lift = -drop + (drop + .27) * k / (TONES - 1);
-    const share = lift <= 0 ? 1
-      : lift <= .07 ? 1 + (facetC - 1) * lift / .07
-      : lift <= .17 ? facetC * (1 - .15 * (lift - .07) / .1)
-      : .85 * facetC + (.45 - .85 * facetC) * (lift - .17) / .1;
-    return srgb(l + lift, c * share, h + (lift < 0 ? shadowH * -lift / drop : 0));
-  });
-  const fire = name => { const [fl, fc, fh] = oklch(read(name)); return srgb(fl + .1, fc * 1.5, fh); };
-  return { tones, stone: srgb(l, c, h), edge: srgb(l - drop - .08, c, h), fireA: fire("--fire-a"), fireB: fire("--fire-b") };
+  const body = inGamut(l, c, h);
+  const fire = name => { const [fl, fc, fh] = oklch(read(name)); return inGamut(fl + .1, fc * 1.5, fh); };
+  return {
+    stone: css(body), absorb: body.map(v => -Math.log(Math.max(v, .02)) * DEPTH),
+    fireA: fire("--fire-a"), fireB: fire("--fire-b"),
+  };
 }
 
-// Light. One lamp at the top left, where the flat marks were always lit from, and
-// a faint fill from below so the pavilion is never black. A facet flashes white as
-// it turns past the lamp, and the kit's other two hues flash just either side of
-// it: fire, the colours a cut stone throws as it turns.
+// Light. Every pixel of a stone is ray-traced on the GPU. A ray from the eye splits
+// at the surface: some reflects the studio around the stone, the rest refracts in,
+// bounces off the insides of the facets - mostly by total internal reflection,
+// which is what makes a cut stone bright - and leaves through another facet, bent
+// a little differently for red, green and blue. That split is fire. The studio is
+// a dim floor under a pale sky, a broad fill behind the eye, a large softbox at the
+// top left where the flat marks were always lit from, a strip light to the right,
+// a bright horizon, and two small panels in the stone's fire hues. It stays still
+// while the stone turns, so the facets flash as they catch it.
+const GEM_SHADER = `
+precision highp float;
+uniform vec4 planes[${MAX_FACETS}];
+uniform int count;
+uniform mat3 turn, back;
+uniform vec3 absorb, fireA, fireB;
+uniform vec4 sparks[3];
+uniform float size, unit, lift;
+const float IOR = 2.2;
+const float SPREAD = .07;
+
+vec3 studio(vec3 d) {
+  vec3 light = mix(vec3(.08, .08, .09), vec3(.62, .63, .67), smoothstep(-.6, .6, d.y));
+  light += 1.1 * smoothstep(.2, .9, dot(d, vec3(0., .2, .98)));
+  light += 8. * smoothstep(.85, .96, dot(d, normalize(vec3(-.55, .7, .45))));
+  light += 3. * smoothstep(.93, .99, dot(d, normalize(vec3(.8, .3, .5))));
+  light += 1.6 * exp(-pow((d.y - .1) * 10., 2.));
+  light += 2.5 * fireA * smoothstep(.92, .98, dot(d, normalize(vec3(-.75, -.3, .6))));
+  light += 2.5 * fireB * smoothstep(.92, .98, dot(d, normalize(vec3(.7, -.4, .6))));
+  return light;
+}
+float fresnel(float cosine) { return .1 + .9 * pow(1. - clamp(cosine, 0., 1.), 5.); }
+
+vec4 stone(vec2 p) {
+  vec3 origin = back * vec3(p.x, p.y + lift, 4.), ray = back * vec3(0., 0., -1.);
+  float entry = -1e9, depth = 1e9;
+  vec3 normal = vec3(0., 0., 1.);
+  for (int i = 0; i < ${MAX_FACETS}; i++) {
+    if (i >= count) break;
+    float facing = dot(planes[i].xyz, ray), gap = planes[i].w - dot(planes[i].xyz, origin);
+    if (abs(facing) < 1e-6) { if (gap < 0.) depth = -1e9; continue; }
+    float t = gap / facing;
+    if (facing < 0.) { if (t > entry) { entry = t; normal = planes[i].xyz; } }
+    else depth = min(depth, t);
+  }
+  float chord = depth - entry;
+  if (chord <= 0.) return vec4(0.);
+
+  float f = fresnel(-dot(ray, normal));
+  vec3 light = f * studio(turn * reflect(ray, normal));
+  vec3 at = origin + ray * entry, dir = refract(ray, normal, 1. / IOR), carried = vec3(1. - f);
+  for (int bounce = 0; bounce < 5; bounce++) {
+    float leave = 1e9;
+    vec3 exit = vec3(0., 1., 0.);
+    for (int i = 0; i < ${MAX_FACETS}; i++) {
+      if (i >= count) break;
+      float facing = dot(planes[i].xyz, dir);
+      if (facing > 1e-6) {
+        float t = (planes[i].w - dot(planes[i].xyz, at)) / facing;
+        if (t < leave) { leave = t; exit = planes[i].xyz; }
+      }
+    }
+    at += dir * leave;
+    carried *= exp(-absorb * leave);
+    vec3 red = refract(dir, -exit, IOR - SPREAD), green = refract(dir, -exit, IOR), blue = refract(dir, -exit, IOR + SPREAD);
+    vec3 passes = vec3(step(1e-4, dot(red, red)), step(1e-4, dot(green, green)), step(1e-4, dot(blue, blue)));
+    vec3 outside = vec3(studio(turn * red).r, studio(turn * green).g, studio(turn * blue).b);
+    float kept = fresnel(dot(dir, exit));
+    light += carried * (1. - kept) * passes * outside;
+    carried *= mix(vec3(1.), vec3(kept), passes);
+    dir = reflect(dir, -exit);
+  }
+  light += .5 * carried * studio(turn * dir);
+  float edge = clamp(chord / (unit * 3.), 0., 1.);  // soften the outline where the stone is thinnest
+  return vec4(pow(1. - exp(-1.5 * light), vec3(1. / 2.2)) * edge, edge);
+}
+
+// A sparkle: a soft bloom crossed by two thin rays, turning as it lives.
+float sparkle(vec2 frag) {
+  float light = 0.;
+  for (int i = 0; i < 3; i++) {
+    if (sparks[i].z <= 0.) continue;
+    vec2 d = frag - sparks[i].xy;
+    float c = cos(sparks[i].w), s = sin(sparks[i].w);
+    d = vec2(c * d.x - s * d.y, s * d.x + c * d.y) / sparks[i].z;
+    light += .9 * exp(-6. * dot(d, d)) + max(0., 1. - abs(d.x) * 14. - abs(d.y)) + max(0., 1. - abs(d.y) * 14. - abs(d.x));
+  }
+  return min(light, 1.);
+}
+
+void main() {
+  vec4 base = stone((gl_FragCoord.xy - size * .5) * unit);
+  float glint = sparkle(gl_FragCoord.xy);
+  gl_FragColor = vec4(min(base.rgb + glint, 1.), max(base.a, glint));
+}`;
+// Sparkles are born where a facet facing the eye catches the softbox head on, and
+// live about half a second.
 const unit = v => { const length = Math.hypot(...v); return v.map(x => x / length); };
-const halfway = light => unit([light[0], light[1], light[2] + 1]);  // Blinn, seen along +z
-const LAMP = unit([-.55, .7, .45]), FILL = unit([.4, -.55, .75]);
-const GLARE = halfway(LAMP), FIRE_A = halfway(unit([-.3, .8, .55])), FIRE_B = halfway(unit([-.78, .5, .4]));
+const GLARE = unit([-.55, .7, 1.45]);
 // The canvas is the 52px stone box with 10px either side for the turning outline
 // and its sparkles. The stone is seen from 28 degrees above its girdle, so the
 // table and the pavilion both show as it turns.
 const GEM_BOX = 72, GEM_RADIUS = 24, PITCH = .49, REST = .35, TURN = 2 * Math.PI;
-const SPIN = { never: 0, done: TURN / 9, live: TURN / 3.5 };
-const SWAY = { never: 0, done: 1, live: 1.6 };
 const SPARK_MS = 520;
 const gems = new Map();
+
+// One WebGL canvas, off the page, draws every stone in turn and hands each frame to
+// its card's canvas as a bitmap. A page may hold only a handful of WebGL contexts
+// and there is a card per employee; handing over a bitmap moves the frame without
+// reading its pixels back off the GPU, which copying into a 2D canvas would. Frames
+// render at twice the card's device pixels and are shown at its size, so the edges
+// come out antialiased. Without WebGL the stones stay unpainted and the cards read
+// the same.
+const STUDIO_SIZE = GEM_BOX * Math.min(2, devicePixelRatio || 1) * 2;
+let studio;
+function makeStudio() {
+  if (typeof OffscreenCanvas === "undefined") return null;
+  const canvas = new OffscreenCanvas(STUDIO_SIZE, STUDIO_SIZE);
+  const gl = canvas.getContext("webgl", { antialias: false });
+  if (!gl) return null;
+  const shader = (type, source) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error("gem shader: " + gl.getShaderInfoLog(s));
+    return s;
+  };
+  const program = gl.createProgram();
+  gl.attachShader(program, shader(gl.VERTEX_SHADER, "attribute vec2 corner; void main() { gl_Position = vec4(corner, 0., 1.); }"));
+  gl.attachShader(program, shader(gl.FRAGMENT_SHADER, GEM_SHADER));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error("gem shader: " + gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const corner = gl.getAttribLocation(program, "corner");
+  gl.enableVertexAttribArray(corner);
+  gl.vertexAttribPointer(corner, 2, gl.FLOAT, false, 0, 0);
+  gl.viewport(0, 0, STUDIO_SIZE, STUDIO_SIZE);
+  const at = name => gl.getUniformLocation(program, name);
+  gl.uniform1f(at("size"), STUDIO_SIZE);
+  gl.uniform1f(at("unit"), GEM_BOX / GEM_RADIUS / STUDIO_SIZE);
+  return {
+    canvas, gl, planes: at("planes"), count: at("count"), turn: at("turn"), back: at("back"), lift: at("lift"),
+    absorb: at("absorb"), fireA: at("fireA"), fireB: at("fireB"), sparks: at("sparks"),
+  };
+}
 
 function gem(badge) {
   return '<span class="float" aria-hidden="true"><canvas class="gem"></canvas>' +
@@ -368,16 +497,14 @@ function paintGem(card, state) {
   return stone;
 }
 function makeGem(card, kind, state, i) {
+  if (studio === undefined) studio = makeStudio();
   const canvas = card.querySelector(".gem");
-  const dpr = Math.min(2, devicePixelRatio || 1);
-  canvas.width = canvas.height = GEM_BOX * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
+  canvas.width = canvas.height = STUDIO_SIZE;
   const shape = SOLIDS[kind];
   return {
-    card, ctx, state, i, shape, material: paintGem(card, state),
+    card, frame: canvas.getContext("bitmaprenderer"), state, i, shape, material: paintGem(card, state),
     screen: new Float32Array(shape.verts.length * 2), glare: new Float32Array(shape.faces.length), sparks: [],
-    yaw: REST + (state === "never" ? 0 : i * 1.1), pitch: PITCH, roll: 0, speed: 0,
+    yaw: REST + i * 1.1, pitch: PITCH, roll: 0, speed: 0,
     hover: false, px: 0, py: 0, steerX: 0, steerY: 0,
   };
 }
@@ -385,21 +512,21 @@ function repaintGems() {
   for (const g of gems.values()) { g.material = paintGem(g.card, g.state); drawGem(g, performance.now()); }
 }
 
-// Motion carries the state: a stone that has never run holds still, a finished
-// one turns slowly and a working one fast, and both sway on their own phase. The
-// stone under the pointer wakes, turns three times as fast and leans toward it.
+// Every stone turns and sways whatever its record - the status line says whether
+// it has run - and a working one turns fastest. The stone under the pointer turns
+// faster still and leans toward it.
 function stepGem(g, dt, t) {
   const ease = rate => 1 - Math.exp(-dt * rate);
-  const spin = SPIN[g.state];
-  g.speed += ((g.hover ? Math.max(spin, SPIN.done) * 3 : spin) - g.speed) * ease(2.5);
+  const spin = g.state === "live" ? TURN / 3.5 : TURN / 9, sway = g.state === "live" ? 1.6 : 1;
+  g.speed += ((g.hover ? spin * 2.5 : spin) - g.speed) * ease(2.5);
   g.yaw += g.speed * dt;
   g.steerX += ((g.hover ? g.px : 0) - g.steerX) * ease(6);
   g.steerY += ((g.hover ? g.py : 0) - g.steerY) * ease(6);
-  g.pitch = PITCH + SWAY[g.state] * .08 * Math.sin(t * .9 + g.i) + g.steerY * .6;
-  g.roll = SWAY[g.state] * .06 * Math.sin(t * .63 + g.i * 1.7) - g.steerX * .25;
+  g.pitch = PITCH + sway * .08 * Math.sin(t * .9 + g.i) + g.steerY * .6;
+  g.roll = sway * .06 * Math.sin(t * .63 + g.i * 1.7) - g.steerX * .25;
 }
 function drawGem(g, now) {
-  const { ctx, shape, material: stone, screen } = g;
+  const { shape, material: stone, screen } = g;
   const yaw = g.yaw + g.steerX * .9;
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(g.pitch), sp = Math.sin(g.pitch);
   const cr = Math.cos(g.roll), sr = Math.sin(g.roll);
@@ -408,84 +535,41 @@ function drawGem(g, now) {
     const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
     return [x1 * cr - y1 * sr, x1 * sr + y1 * cr, z2];
   };
-  const middle = GEM_BOX / 2 + shape.mid * GEM_RADIUS * Math.cos(PITCH);
+  const lift = shape.mid * Math.cos(PITCH);
   shape.verts.forEach((v, k) => {
-    const [x, y, z] = turn(v);
-    const scale = GEM_RADIUS * 6 / (6 - z);  // a little perspective
-    screen[2 * k] = GEM_BOX / 2 + x * scale;
-    screen[2 * k + 1] = middle - y * scale;
+    const [x, y] = turn(v);
+    screen[2 * k] = GEM_BOX / 2 + x * GEM_RADIUS;
+    screen[2 * k + 1] = GEM_BOX / 2 + (lift - y) * GEM_RADIUS;
   });
-  const trace = (path, ids) => {
-    ids.forEach((id, k) => path[k ? "lineTo" : "moveTo"](screen[2 * id], screen[2 * id + 1]));
-    path.closePath();
-  };
-  ctx.clearRect(0, 0, GEM_BOX, GEM_BOX);
-  const edges = new Path2D(), moving = g.speed > .2;
-  // The facets facing away go down first, dimmed: the inside of the stone, seen
-  // through the facets in front.
-  for (const front of [false, true]) {
-    shape.faces.forEach((face, k) => {
-      const n = turn(face.normal);
-      if (n[2] > 0 !== front) return;
-      const lit = v => Math.max(0, n[0] * v[0] + n[1] * v[1] + n[2] * v[2]);
-      const glare = lit(GLARE) ** 40;
-      const tone = Math.min(1, .04 + .6 * lit(LAMP) + .25 * lit(FILL) + .55 * glare);
-      ctx.beginPath();
-      trace(ctx, face.ids);
-      if (!front) {
-        ctx.globalAlpha = .55;
-        ctx.fillStyle = stone.tones[Math.round(tone * .6 * (TONES - 1))];
-        ctx.fill();
-        g.glare[k] = 0;
-        return;
-      }
-      ctx.globalAlpha = .92;
-      ctx.fillStyle = stone.tones[Math.round(tone * (TONES - 1))];
-      ctx.fill();
-      trace(edges, face.ids);
-      ctx.globalCompositeOperation = "lighter";
-      const flash = (amount, colour) => {
-        if (amount < .02) return;
-        ctx.globalAlpha = amount;
-        ctx.fillStyle = colour;
-        ctx.fill();
-      };
-      flash(glare * .8, "#fff");
-      flash(lit(FIRE_A) ** 80, stone.fireA);
-      flash(lit(FIRE_B) ** 80, stone.fireB);
-      ctx.globalCompositeOperation = "source-over";
-      // A sparkle is born at the facet's highest corner as it catches the lamp.
-      if (moving && glare > .7 && g.glare[k] <= .7 && g.sparks.length < 3) {
-        const top = face.ids.reduce((best, id) => screen[2 * id + 1] < screen[2 * best + 1] ? id : best);
-        g.sparks.push({ x: screen[2 * top], y: screen[2 * top + 1], born: now });
-      }
-      g.glare[k] = glare;
-    });
-  }
-  ctx.globalAlpha = .6;
-  ctx.lineWidth = .4;
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = stone.edge;
-  ctx.stroke(edges);
-  g.sparks = g.sparks.filter(spark => now - spark.born < SPARK_MS);
-  for (const spark of g.sparks) {
-    const age = (now - spark.born) / SPARK_MS, size = 7 * Math.sin(Math.PI * age);
-    ctx.save();
-    ctx.translate(spark.x, spark.y);
-    ctx.rotate(age * Math.PI / 4);
-    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
-    glow.addColorStop(.2, "#fff");
-    glow.addColorStop(1, stone.fireA);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    for (let k = 0; k < 8; k++) {
-      const reach = k % 2 ? size * .2 : size;
-      ctx.lineTo(reach * Math.cos(k * Math.PI / 4), reach * Math.sin(k * Math.PI / 4));
+  shape.faces.forEach((face, k) => {
+    const n = turn(face.normal);
+    const glare = n[2] > 0 ? Math.max(0, n[0] * GLARE[0] + n[1] * GLARE[1] + n[2] * GLARE[2]) ** 40 : 0;
+    if (glare > .7 && g.glare[k] <= .7 && g.sparks.length < 3) {
+      const top = face.ids.reduce((best, id) => screen[2 * id + 1] < screen[2 * best + 1] ? id : best);
+      g.sparks.push({ x: screen[2 * top], y: screen[2 * top + 1], born: now });
     }
-    ctx.fill();
-    ctx.restore();
-  }
+    g.glare[k] = glare;
+  });
+  g.sparks = g.sparks.filter(spark => now - spark.born < SPARK_MS);
+  if (!studio) return;
+  const { gl } = studio, pixel = STUDIO_SIZE / GEM_BOX;
+  const sparks = new Float32Array(12);
+  g.sparks.forEach((spark, k) => {
+    const age = (now - spark.born) / SPARK_MS;
+    sparks.set([spark.x * pixel, (GEM_BOX - spark.y) * pixel, 8 * Math.sin(Math.PI * age) * pixel, age * Math.PI / 4], 4 * k);
+  });
+  const columns = [turn([1, 0, 0]), turn([0, 1, 0]), turn([0, 0, 1])];
+  gl.uniform4fv(studio.planes, shape.planes);
+  gl.uniform1i(studio.count, shape.faces.length);
+  gl.uniformMatrix3fv(studio.turn, false, columns.flat());
+  gl.uniformMatrix3fv(studio.back, false, [0, 1, 2].flatMap(row => columns.map(column => column[row])));
+  gl.uniform1f(studio.lift, lift);
+  gl.uniform3fv(studio.absorb, stone.absorb);
+  gl.uniform3fv(studio.fireA, stone.fireA);
+  gl.uniform3fv(studio.fireB, stone.fireB);
+  gl.uniform4fv(studio.sparks, sparks);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  g.frame.transferFromImageBitmap(studio.canvas.transferToImageBitmap());
 }
 
 // One loop turns every stone, and only while the Employees view is showing. Under

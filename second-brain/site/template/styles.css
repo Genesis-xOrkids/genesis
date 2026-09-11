@@ -174,46 +174,41 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 /* The gem is the employee's mark: its cut says what kind of thing it is and its
    colour agrees. Kinds are categorical, so they take the categorical slots -
    violet for agents, blue for commands, pink for services, the kit's three
-   jewel hues. Each stone's fire (--fire-a, --fire-b) is the other two, so every
-   gem flashes the family's colours as it turns. This block is the stone's
-   material and nothing more: app.js builds the solid, lights and turns it, and
-   derives the facet tones from the one colour rather than reading them off a
-   ramp - the tokens' rule is roles only, and a gem's facets have no role of
-   their own. It writes the stone's colour back as --stone, for the shadow and
-   halo below. */
-.emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--lift:3.5px;
-  --stone-l:.62;--kind-l:0;--facet-c:1;--facet-drop:.14;--shadow-h:-14}
+   jewel hues. Each stone's fire (--fire-a, --fire-b) is the other two, lit as
+   two small panels in the studio it reflects, so every gem flashes the family's
+   colours as it turns. This block is the stone's material and nothing more:
+   app.js builds the solid, ray-traces and turns it, and derives the stone's body
+   colour from the one token rather than a ramp step - the tokens' rule is roles
+   only, and a gem has no role of its own. It writes that colour back as
+   --stone, for the shadow and halo below. */
+.emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--lift:3.5px;--stone-l:.62;--kind-l:0}
 /* The kinds' own lightness differs a lot - violet sits at 0.48 against pink's
    0.58 in light - so a stone that kept its token's lightness read dull beside
    the others. Every stone is lifted to at least this floor instead, so the
    three read as equally vivid and differ by hue and cut, not by brightness. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .emp{--stone-l:.68}}
 :root[data-theme="dark"] .emp{--stone-l:.68}
-/* Commands are cut as diamonds: a baby blue far lighter than the kit's blue
-   (0.80 against 0.55) at a fixed hue of 231, with shadow facets that drop much
-   deeper than the other stones and turn toward blue rather than away from it.
-   Hue and chroma are fixed rather than derived: the token's hue differs by
-   theme, and at this lightness sRGB holds only about 0.124 of chroma, so 0.11
-   is set just inside it rather than boosted past it. The bright facets take
-   less chroma, so the highlights stay icy white, and the shadows lean blue so
-   they read as steel rather than teal. The contrast between a near-white table
-   and steel-blue shadows is what reads as brilliance; a pale stone with shallow
-   facets reads as frosted glass instead. The deeper outline keeps it from
-   dissolving into a white card. */
-.emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3);
-  --kind-l:.8;--hue:231;--chroma:.11;--facet-c:.6;--facet-drop:.3;--shadow-h:6}
+/* Commands are baby-blue diamonds: far lighter than the kit's blue (0.80
+   against 0.55) at a fixed hue of 231, so they read as clear stones with an
+   icy tint rather than as sapphires. Hue and chroma are fixed rather than
+   derived: the token's hue differs by theme, and at this lightness sRGB holds
+   only about 0.124 of chroma, so 0.11 is set just inside it rather than boosted
+   past it. */
+.emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3);--kind-l:.8;--hue:231;--chroma:.11}
 .emp[data-kind="service"]{--gem:var(--cat-3);--fire-a:var(--cat-4);--fire-b:var(--cat-2)}
 .emp.live{--lift:5px}
 .emp .av{position:relative;width:52px;height:52px;flex-shrink:0}
 /* The canvas overhangs the stone's box by 10px a side, so the turning outline
    and its sparkles are never clipped. */
-.gem{position:absolute;left:-10px;top:-10px;width:72px;height:72px}
-.emp.done .gem,.emp.live .gem{filter:drop-shadow(0 3px 7px color-mix(in oklab,var(--stone) 60%,transparent))
+.gem{position:absolute;left:-10px;top:-10px;width:72px;height:72px;
+  filter:drop-shadow(0 3px 7px color-mix(in oklab,var(--stone) 60%,transparent))
   drop-shadow(0 0 3px color-mix(in oklab,var(--fire-a) 35%,transparent))}
 
-/* Life. The stone turns and catches the light in app.js; here it floats, each on
-   its own phase (--i, set per card), and its shadow on the card tightens as it
-   rises. A working stone rides highest and throws off motes. */
+/* Life. Every stone floats, turns and glows whatever its record - the status
+   line says whether it has run. The turn is app.js's; here each stone floats on
+   its own phase (--i, set per card), its shadow on the card tightens as it
+   rises, and a halo in the kind's colour breathes behind it. A working stone
+   rides highest, breathes fastest and throws off motes. */
 .float{position:absolute;inset:0;display:block;z-index:1;will-change:transform;
   animation:bob calc(4.6s + var(--i) * .37s) ease-in-out calc(var(--i) * -1.3s) infinite}
 @keyframes bob{0%,100%{transform:translateY(calc(var(--lift) * .4))}50%{transform:translateY(calc(var(--lift) * -1))}}
@@ -221,13 +216,11 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
   background:color-mix(in oklab,var(--stone) 60%,transparent);filter:blur(3px);
   animation:settle calc(4.6s + var(--i) * .37s) ease-in-out calc(var(--i) * -1.3s) infinite}
 @keyframes settle{0%,100%{transform:scaleX(1);opacity:.6}50%{transform:scaleX(.7);opacity:.28}}
-/* Never run: the stone keeps its full colour and says it has not run by being
-   still - no float, turn or glow - with the status line naming it. Hover still
-   wakes it. */
-.emp.never .float,.emp.never .av::after{animation:none}
-/* The floor shadow takes its opacity from the animation, so a still stone needs
-   one of its own - left alone it falls back to fully opaque. */
-.emp.never .av::after{opacity:.4}
+.emp .av::before{content:"";position:absolute;inset:-14px;border-radius:50%;opacity:0;
+  background:radial-gradient(circle,var(--stone) 0%,color-mix(in oklab,var(--fire-a) 45%,transparent) 42%,transparent 70%);
+  animation:glow 3.8s ease-in-out calc(var(--i) * -.9s) infinite}
+.emp.live .av::before{animation-duration:2.4s}
+@keyframes glow{0%,100%{opacity:.4;transform:scale(.9)}50%{opacity:.85;transform:scale(1.12)}}
 .motes{position:absolute;inset:0;display:none;pointer-events:none}
 .emp.live .motes{display:block}
 .motes b{position:absolute;bottom:40%;left:30%;width:3px;height:3px;border-radius:50%;background:var(--fire-a);
@@ -236,11 +229,6 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 .motes b:nth-child(3){left:45%;width:2px;height:2px;animation-delay:-2.1s}
 @keyframes rise{0%{transform:translateY(0) scale(.6);opacity:0}20%{opacity:.9}
   100%{transform:translateY(-26px) scale(1);opacity:0}}
-/* Working: a halo in the kind's colour breathes behind the stone. */
-.emp .av::before{content:"";position:absolute;inset:-14px;border-radius:50%;opacity:0;
-  background:radial-gradient(circle,var(--stone) 0%,color-mix(in oklab,var(--fire-a) 45%,transparent) 42%,transparent 70%)}
-.emp.live .av::before{animation:glow 2.4s ease-in-out infinite}
-@keyframes glow{0%,100%{opacity:.4;transform:scale(.9)}50%{opacity:.85;transform:scale(1.12)}}
 /* Under a reduced-motion preference everything holds still at a resting frame,
    the way the home diagram's dashes do, rather than inheriting the site-wide
    .01ms duration and flickering through infinite cycles; app.js draws each
@@ -248,7 +236,7 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 @media (prefers-reduced-motion:reduce){
   :is(.float,.motes b),.emp .av::after,.emp .av::before{animation:none!important}
   .emp .av::after{opacity:.4}
-  .emp.live .av::before{opacity:.6}
+  .emp .av::before{opacity:.6}
 }
 /* Finished: a seal on the stone's corner. It floats with the stone but does not
    turn with it. */
