@@ -18,6 +18,7 @@ machine, and emits _worker.js and _headers alongside the page.
 """
 
 import argparse
+import base64
 import json
 import pathlib
 import re
@@ -52,6 +53,22 @@ SECURITY_HEADERS = {
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     ),
 }
+
+
+def inline_images(html: str) -> str:
+    """Swap each `asset:NAME.svg` reference for that template file as a data URI.
+
+    The page is one file on both targets, and the policy above admits images only
+    as `data:`, so the favicon and the nav mark cannot be files beside the page.
+    """
+    return re.sub(
+        r"asset:([\w.-]+\.svg)",
+        lambda match: (
+            "data:image/svg+xml;base64,"
+            + base64.b64encode(TPL.joinpath(match.group(1)).read_bytes()).decode()
+        ),
+        html,
+    )
 
 
 def render_worker() -> str:
@@ -452,14 +469,14 @@ def build(target: str) -> None:
         "target": target,
     }
     keep = "caps" if target == "artifact" else "static"
-    shell = strip_blocks(
-        TPL.joinpath("shell.html").read_text(), keep, "<!--IF:{}-->", "<!--ENDIF-->"
+    shell = inline_images(
+        strip_blocks(TPL.joinpath("shell.html").read_text(), keep, "<!--IF:{}-->", "<!--ENDIF-->")
     )
     app = strip_blocks(TPL.joinpath("app.js").read_text(), keep, "/*IF:{}*/", "/*ENDIF*/")
 
     html = "".join(
         [
-            TPL.joinpath("head.html").read_text(),
+            inline_images(TPL.joinpath("head.html").read_text()),
             "<style>\n",
             # Brand tokens first: styles.css is written against the roles they
             # define, so a missing brand.css is a broken page, not a fallback.
