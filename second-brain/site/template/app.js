@@ -199,10 +199,10 @@ const SHOWN = 3;
 //
 // Each cut is one outline: the stone's girdle seen from above. The solid is a
 // stack of rings, each that outline scaled about its centre at a height, from the
-// table down to the culet, and its facets are the bands between neighbouring
+// top of the stone to its base, and its facets are the bands between neighbouring
 // rings. A ring with a half-step twist sits on the outline's edge midpoints, so
 // the bands either side of it break into triangles - the star and bezel facets of
-// a brilliant - while untwisted neighbours give the flat steps of a step cut.
+// a brilliant - while untwisted neighbours give long flat faces, like a shard's.
 // Every solid is convex, so it is exactly the space inside all of its facets'
 // planes, which is what lets each pixel be ray-traced through it cheaply.
 const CUTS = {
@@ -210,15 +210,17 @@ const CUTS = {
     const a = Math.PI * (i / 4 + 1 / 8);
     return [20 + 17.5 * Math.cos(a), 20 + 17.5 * Math.sin(a)];
   }),
-  command: [[11, 3], [29, 3], [35, 9], [35, 31], [29, 37], [11, 37], [5, 31], [5, 9]],
+  command: [[5, 19], [14, 13], [30, 12], [36, 19], [28, 27], [11, 26]],
   service: [[17, 4], [23, 4], [37, 29], [34, 35], [6, 35], [3, 29]],
 };
-// [scale, height, twist] from the table down, as fractions of the girdle's
-// radius; a scale of 0 is a point. Agents are round brilliants, commands step
-// cuts and services trillions, with crowns and pavilions near a real stone's.
+// [scale, height, twist, x, z] from the top down, as fractions of the outline's
+// radius; a scale of 0 is a point, set off the axis by x and z. Agents are round
+// brilliants and services trillions, with crowns and pavilions near a real
+// stone's. Commands are not cut at all: each is a shard, a thin blade of crystal
+// broken off to a long leaning point at the top and a shorter one below.
 const RINGS = {
   agent: [[.55, .3, 0], [.9, .2, 1], [1, 0, 0], [0, -.86, 0]],
-  command: [[.62, .26, 0], [.84, .15, 0], [1, 0, 0], [.74, -.24, 0], [.42, -.46, 0], [0, -.6, 0]],
+  command: [[0, 1.2, 0, .09, 0], [.5, .45, 0], [.6, 0, 0], [.48, -.5, 0], [0, -.95, 0, -.07, .03]],
   service: [[.5, .26, 0], [.82, .18, 1], [1, 0, 0], [0, -.62, 0]],
 };
 const MAX_FACETS = 48;  // the shader's fixed loop bound
@@ -229,20 +231,21 @@ function solid(kind) {
   const flat = outline.map(([x, z]) => [x - cx, z - cz]);
   const radius = Math.max(...flat.map(([x, z]) => Math.hypot(x, z)));
   const verts = [];
-  const rings = RINGS[kind].map(([scale, height, twist]) => {
-    if (!scale) return [verts.push([0, height, 0]) - 1];
+  const rings = RINGS[kind].map(([scale, height, twist, x = 0, z = 0]) => {
+    if (!scale) return [verts.push([x, height, z]) - 1];
     return flat.map(([x, z], k) => {
       const [x1, z1] = flat[(k + 1) % n];
       const [qx, qz] = twist ? [(x + x1) / 2, (z + z1) / 2] : [x, z];
       return verts.push([qx / radius * scale, height, qz / radius * scale]) - 1;
     });
   });
-  const faces = [rings[0]];
+  const faces = rings[0].length > 1 ? [rings[0]] : [];  // a table, unless the top is a point
   for (let j = 1; j < rings.length; j++) {
     const up = rings[j - 1], lo = rings[j];
     for (let k = 0; k < n; k++) {
       const next = (k + 1) % n, prev = (k + n - 1) % n;
-      if (lo.length === 1) faces.push([up[k], up[next], lo[0]]);
+      if (up.length === 1) faces.push([up[0], lo[next], lo[k]]);
+      else if (lo.length === 1) faces.push([up[k], up[next], lo[0]]);
       else if (RINGS[kind][j][2]) faces.push([up[k], up[next], lo[k]], [up[k], lo[k], lo[prev]]);
       else if (RINGS[kind][j - 1][2]) faces.push([up[k], lo[k], lo[next]], [lo[k], up[prev], up[k]]);
       else faces.push([up[k], up[next], lo[next], lo[k]]);
