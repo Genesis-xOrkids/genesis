@@ -25,14 +25,14 @@ With no `$ARGUMENTS`, drain the inboxes instead of capturing something new.
 There are two, because the brain has two front ends, and a note can be waiting
 in either.
 
-**The hosted site.** Run `uv run scripts/brain_inbox.py`. It prints one note per
+**The hosted site.** Run `uv run python -m scripts.brain_inbox`. It prints one note per
 line as `id`, capture date, text — reaching D1 through `wrangler`, so it needs
 nothing configured beyond the Cloudflare login already on the machine. Append
 each note to `wiki/log.md` under its own capture date — not today's — then mark
 exactly the ones you filed:
 
 ```sh
-uv run scripts/brain_inbox.py --mark 3,4,7
+uv run python -m scripts.brain_inbox --mark 3,4,7
 ```
 
 Mark after writing, never before. The two steps are separate so that a failure

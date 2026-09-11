@@ -191,6 +191,6 @@ Outcome: <counts by severity, e.g. 2 blocking, 1 design, 0 notes - or no finding
 ```
 
 You cannot record your own run, so a hook reads these two lines when you finish
-and writes them to `.claude/runs.tsv`. Leave them off only when you did not
+and writes them to the run ledger in the brain's database. Leave them off only when you did not
 produce a review - a run that could not reach its diff, or a diagnostic - because
 a run with no review is not recorded.

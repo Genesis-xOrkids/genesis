@@ -27,7 +27,19 @@ if [[ -z "$target" || -z "$outcome" ]]; then
   exit 0
 fi
 
-python3 "${CLAUDE_PROJECT_DIR}/scripts/log_agent_run.py" \
-  --agent genesis-reviewer --target "$target" --outcome "$outcome" >&2
-jq -n --arg target "$target" --arg outcome "$outcome" \
-  '{systemMessage: ("Recorded genesis-reviewer run: " + $target + " - " + $outcome)}'
+# Run as a module, from the project directory, so that `scripts` is a package on
+# sys.path - the writer imports its D1 adapter and the roster's id rule from
+# beside it, and a plain path invocation would put only `scripts/` on the path
+# and fail those imports.
+cd "${CLAUDE_PROJECT_DIR}"
+if ! result="$(python3 -m scripts.log_agent_run \
+  --agent genesis-reviewer --target "$target" --outcome "$outcome" 2>&1)"; then
+  # The ledger is a database now, so recording can fail in ways appending to a
+  # file could not: no network, no Cloudflare login. Say so. Losing the run
+  # quietly would put the reviewer back to reading "Never run" after a real
+  # review, which is the bug this hook exists to fix.
+  jq -n --arg detail "$result" \
+    '{systemMessage: ("genesis-reviewer ran, but the run could not be recorded: " + $detail)}'
+  exit 0
+fi
+jq -n --arg result "$result" '{systemMessage: $result}'
