@@ -237,11 +237,24 @@ async function settings(request, env) {
   return problem(405, "Use GET or PUT.");
 }
 
+// The agent run ledger, read-only over HTTP. Nothing writes a run through this
+// worker: the writer is `scripts/log_agent_run.py`, which reaches D1 through
+// wrangler because the hooks that call it run on a machine with a Cloudflare
+// login and no Access session. One writer, and it is not this one.
+async function runs(request, env) {
+  if (request.method !== "GET") return problem(405, "Use GET.");
+  const { results } = await env.BRAIN_DB.prepare(
+    "SELECT run_at, agent, target, outcome FROM runs ORDER BY run_at DESC LIMIT 500"
+  ).all();
+  return json({ runs: results ?? [] });
+}
+
 const ROUTES = {
   "/api/ask": ask,
   "/api/notes": notes,
   "/api/notes/filed": filed,
   "/api/config": settings,
+  "/api/runs": runs,
 };
 
 export default {

@@ -13,7 +13,7 @@ hosted site and the Claude artifact cannot drift apart.
 ## What differs between the two
 
 Both builds carry every panel. What differs is where a setting, a note or a
-question goes, and five adapter functions in `app.js` are the only code that
+question goes, and six adapter functions in `app.js` are the only code that
 knows which build it is in:
 
 | | Claude artifact | Hosted site |
@@ -21,11 +21,19 @@ knows which build it is in:
 | Ask | `sample()` from the viewer, on your own Claude account | `POST /api/ask`, answered by `_worker.js` with a key held at the edge |
 | Capture | the note inbox, drained by `/brain:log` | the same inbox, in D1 behind `/api/notes` |
 | Settings | stored with the page | stored in D1 behind `/api/config` |
+| Runs | baked in at publish time | fetched from `/api/runs` as the page renders |
 
 Both are durable and shared: a note captured on a phone is in the inbox when
 `/brain:log` next drains it from a laptop, and settings follow you between
 devices. `brain.config.json` on disk stays canonical either way, because that is
 the file the commands read — which is why both builds still offer the download.
+
+Runs are the one row the site never writes. `scripts/log_agent_run.py` writes
+them through wrangler, because the hooks that call it run on a machine with a
+Cloudflare login and no Access session, and `/api/runs` is read-only. The hosted
+site fetches rather than baking so that a run appears the moment it is recorded
+instead of at the next deploy; the artifact has no worker to ask, so its ledger
+is as current as the publish.
 
 The static build also applies `exclude.txt`, and emits `_worker.js` and
 `_headers` alongside the page.
@@ -43,9 +51,14 @@ npx wrangler pages secret put ANTHROPIC_API_KEY
 npx wrangler pages deploy                     # reads wrangler.toml for the binding
 ```
 
+`schema.sql` holds three tables: `notes`, `settings`, and `runs` — the agent run
+ledger, which moved here from `.claude/runs.tsv` so that recording a run stops
+being a pull request. Re-running the `--file schema.sql` line is safe; every
+statement in it is `IF NOT EXISTS`.
+
 ### Draining the inbox from Claude Code
 
-`/brain:log` with no arguments drains both inboxes. `scripts/brain_inbox.py`
+`/brain:log` with no arguments drains both inboxes. `python -m scripts.brain_inbox`
 reads the queue and `--mark` records what was filed; the two are separate steps
 so a failure between reading and writing leaves notes queued rather than lost.
 

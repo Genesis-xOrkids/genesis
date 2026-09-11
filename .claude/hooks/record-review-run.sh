@@ -27,7 +27,50 @@ if [[ -z "$target" || -z "$outcome" ]]; then
   exit 0
 fi
 
-python3 "${CLAUDE_PROJECT_DIR}/scripts/log_agent_run.py" \
-  --agent genesis-reviewer --target "$target" --outcome "$outcome" >&2
-jq -n --arg target "$target" --arg outcome "$outcome" \
-  '{systemMessage: ("Recorded genesis-reviewer run: " + $target + " - " + $outcome)}'
+# Run as a module, from the project directory, so that `scripts` is a package on
+# sys.path - the writer imports its D1 adapter and the roster's id rule from
+# beside it, and a plain path invocation would put only `scripts/` on the path
+# and fail those imports.
+cd "${CLAUDE_PROJECT_DIR}"
+if ! result="$(python3 -m scripts.log_agent_run \
+  --agent genesis-reviewer --target "$target" --outcome "$outcome" 2>&1)"; then
+  # The ledger is a database now, so recording can fail in ways appending to a
+  # file could not: no network, no Cloudflare login. Say so. Losing the run
+  # quietly would put the reviewer back to reading "Never run" after a real
+  # review, which is the bug this hook exists to fix.
+  jq -n --arg detail "$result" \
+    '{systemMessage: ("genesis-reviewer ran, but the run could not be recorded: " + $detail)}'
+  exit 0
+fi
+
+# The report itself, posted where the diff is.
+#
+# The reviewer cannot post it: it is read-only by construction and the guard
+# denies `gh pr comment` along with everything else that writes. So this hook
+# does it, which keeps the agent's read-only property intact and still works
+# however the agent was launched. Before this, a review existed only in the
+# transcript of the session that ran it - the findings were gone the moment the
+# window closed, while the one-line outcome survived in the ledger.
+#
+# Only a `PR #<n>` target gets a comment. A branch, a path, or a range on main
+# has nothing to attach to, and the ledger row is the whole record for those.
+pr="$(printf '%s' "$target" | sed -n 's/.*PR #\([0-9][0-9]*\).*/\1/p')"
+posted=""
+if [[ -n "$pr" ]]; then
+  # Gated on the run being new. The ledger insert is idempotent on
+  # `(agent, run_at, target)`, but a comment is not - a hook that fired twice
+  # would post the review twice. Reusing the writer's own answer keeps one
+  # source of truth for "is this run new" rather than inventing a second.
+  if [[ "$result" == already* ]]; then
+    posted="; the review was already posted to PR #${pr}"
+  elif body="$(printf '%s\n' "🤖 **genesis-reviewer** — ${outcome}" "" "$message" \
+       | gh pr comment "$pr" --body-file - 2>&1)"; then
+    posted="; review posted to PR #${pr}"
+  else
+    # The run is recorded either way. Say the comment failed rather than
+    # implying the review reached the pull request.
+    posted="; the review could NOT be posted to PR #${pr}: ${body}"
+  fi
+fi
+
+jq -n --arg result "$result" --arg posted "$posted" '{systemMessage: ($result + $posted)}'
