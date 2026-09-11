@@ -210,19 +210,22 @@ const CUTS = {
     const a = Math.PI * (i / 4 + 1 / 8);
     return [20 + 17.5 * Math.cos(a), 20 + 17.5 * Math.sin(a)];
   }),
-  command: [[5, 19], [14, 13], [30, 12], [36, 19], [28, 27], [11, 26]],
+  command: [[6, 18], [15, 8], [29, 9], [35, 20], [27, 31], [12, 30]],
   service: [[17, 4], [23, 4], [37, 29], [34, 35], [6, 35], [3, 29]],
 };
 // [scale, height, twist, x, z] from the top down, as fractions of the outline's
 // radius; a scale of 0 is a point, set off the axis by x and z. Agents are round
 // brilliants and services trillions, with crowns and pavilions near a real
-// stone's. Commands are not cut at all: each is a shard, a thin blade of crystal
-// broken off to a long leaning point at the top and a shorter one below.
+// stone's. Commands are not cut at all: each is a shard of crystal, broken off
+// to a long point at one end and a shorter one at the other.
 const RINGS = {
   agent: [[.55, .3, 0], [.9, .2, 1], [1, 0, 0], [0, -.86, 0]],
-  command: [[0, 1.2, 0, .09, 0], [.5, .45, 0], [.6, 0, 0], [.48, -.5, 0], [0, -.95, 0, -.07, .03]],
+  command: [[0, 1.35, 0, .08, 0], [.58, .38, 0], [.72, 0, 0], [.55, -.42, 0], [0, -1, 0, -.07, .03]],
   service: [[.5, .26, 0], [.82, .18, 1], [1, 0, 0], [0, -.62, 0]],
 };
+// How far each kind leans in the picture, in radians. A shard turns about its own
+// length on a diagonal; the cut stones stand upright.
+const TILT = { agent: 0, command: -.6, service: 0 };
 const MAX_FACETS = 48;  // the shader's fixed loop bound
 function solid(kind) {
   const outline = CUTS[kind], n = outline.length;
@@ -359,7 +362,8 @@ uniform int count;
 uniform mat3 turn, back;
 uniform vec3 absorb, fireA, fireB;
 uniform vec4 sparks[3];
-uniform float size, unit, lift;
+uniform vec2 centre;
+uniform float size, unit;
 const float IOR = 2.2;
 const float SPREAD = .07;
 
@@ -376,7 +380,7 @@ vec3 studio(vec3 d) {
 float fresnel(float cosine) { return .1 + .9 * pow(1. - clamp(cosine, 0., 1.), 5.); }
 
 vec4 stone(vec2 p) {
-  vec3 origin = back * vec3(p.x, p.y + lift, 4.), ray = back * vec3(0., 0., -1.);
+  vec3 origin = back * vec3(p + centre, 4.), ray = back * vec3(0., 0., -1.);
   float entry = -1e9, depth = 1e9;
   vec3 normal = vec3(0., 0., 1.);
   for (int i = 0; i < ${MAX_FACETS}; i++) {
@@ -485,7 +489,7 @@ function makeStudio() {
   gl.uniform1f(at("size"), STUDIO_SIZE);
   gl.uniform1f(at("unit"), GEM_BOX / GEM_RADIUS / STUDIO_SIZE);
   return {
-    canvas, gl, planes: at("planes"), count: at("count"), turn: at("turn"), back: at("back"), lift: at("lift"),
+    canvas, gl, planes: at("planes"), count: at("count"), turn: at("turn"), back: at("back"), centre: at("centre"),
     absorb: at("absorb"), fireA: at("fireA"), fireB: at("fireB"), sparks: at("sparks"),
   };
 }
@@ -505,7 +509,7 @@ function makeGem(card, kind, state, i) {
   canvas.width = canvas.height = STUDIO_SIZE;
   const shape = SOLIDS[kind];
   return {
-    card, frame: canvas.getContext("bitmaprenderer"), state, i, shape, material: paintGem(card, state),
+    card, frame: canvas.getContext("bitmaprenderer"), state, i, shape, tilt: TILT[kind], material: paintGem(card, state),
     screen: new Float32Array(shape.verts.length * 2), glare: new Float32Array(shape.faces.length), sparks: [],
     yaw: REST + i * 1.1, pitch: PITCH, roll: 0, speed: 0,
     hover: false, px: 0, py: 0, steerX: 0, steerY: 0,
@@ -526,7 +530,7 @@ function stepGem(g, dt, t) {
   g.steerX += ((g.hover ? g.px : 0) - g.steerX) * ease(6);
   g.steerY += ((g.hover ? g.py : 0) - g.steerY) * ease(6);
   g.pitch = PITCH + sway * .08 * Math.sin(t * .9 + g.i) + g.steerY * .6;
-  g.roll = sway * .06 * Math.sin(t * .63 + g.i * 1.7) - g.steerX * .25;
+  g.roll = g.tilt + sway * .06 * Math.sin(t * .63 + g.i * 1.7) - g.steerX * .25;
 }
 function drawGem(g, now) {
   const { shape, material: stone, screen } = g;
@@ -538,11 +542,12 @@ function drawGem(g, now) {
     const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
     return [x1 * cr - y1 * sr, x1 * sr + y1 * cr, z2];
   };
-  const lift = shape.mid * Math.cos(PITCH);
+  // The stone's middle stays at the middle of its box however it is turned.
+  const [centreX, centreY] = turn([0, shape.mid, 0]);
   shape.verts.forEach((v, k) => {
     const [x, y] = turn(v);
-    screen[2 * k] = GEM_BOX / 2 + x * GEM_RADIUS;
-    screen[2 * k + 1] = GEM_BOX / 2 + (lift - y) * GEM_RADIUS;
+    screen[2 * k] = GEM_BOX / 2 + (x - centreX) * GEM_RADIUS;
+    screen[2 * k + 1] = GEM_BOX / 2 + (centreY - y) * GEM_RADIUS;
   });
   shape.faces.forEach((face, k) => {
     const n = turn(face.normal);
@@ -566,7 +571,7 @@ function drawGem(g, now) {
   gl.uniform1i(studio.count, shape.faces.length);
   gl.uniformMatrix3fv(studio.turn, false, columns.flat());
   gl.uniformMatrix3fv(studio.back, false, [0, 1, 2].flatMap(row => columns.map(column => column[row])));
-  gl.uniform1f(studio.lift, lift);
+  gl.uniform2f(studio.centre, centreX, centreY);
   gl.uniform3fv(studio.absorb, stone.absorb);
   gl.uniform3fv(studio.fireA, stone.fireA);
   gl.uniform3fv(studio.fireB, stone.fireB);
