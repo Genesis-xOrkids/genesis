@@ -50,9 +50,13 @@ TYPES = {
 }
 
 # Path prefix -> area label. First match wins per file, so the more specific
-# prefix is listed first. A file matching nothing contributes no label; that is
-# a repository root file (README, pyproject) and the type label already says
-# what it was.
+# prefix is listed first.
+#
+# A file matching nothing contributes no label, and two things deliberately
+# match nothing: repository root files (README, pyproject, CLAUDE.md) and
+# `scripts/`. The scripts directory spans every area - ingestion runners, CI
+# checks, agent tooling - so any one label for it would be wrong more often
+# than right, and the type label already says what the change was.
 AREAS = [
     (".github/workflows/", "ci"),
     (".github/agents/", "agents"),
