@@ -188,9 +188,9 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
    three read as equally vivid and differ by hue and cut, not by brightness. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .emp{--stone-l:.68}}
 :root[data-theme="dark"] .emp{--stone-l:.68}
-/* Commands are baby-blue diamonds: far lighter than the kit's blue (0.80
-   against 0.55) at a fixed hue of 231, so they read as clear stones with an
-   icy tint rather than as sapphires. Hue and chroma are fixed rather than
+/* Commands are baby-blue shards: far lighter than the kit's blue (0.80
+   against 0.55) at a fixed hue of 231, so they read as clear crystal with an
+   icy tint rather than as sapphire. Hue and chroma are fixed rather than
    derived: the token's hue differs by theme, and at this lightness sRGB holds
    only about 0.124 of chroma, so 0.11 is set just inside it rather than boosted
    past it. */
