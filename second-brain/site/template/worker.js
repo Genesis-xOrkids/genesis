@@ -305,11 +305,29 @@ async function settings(request, env) {
   return problem(405, "Use GET or PUT.");
 }
 
+// Live agent activity, read-only. The writer is `scripts/agent_activity.py`,
+// called by hooks from wherever an agent runs; nothing writes through here.
+// Open runs, runs not yet moved into `.claude/runs.tsv` however old they are -
+// so a drain that has stopped working shows as runs piling up rather than as
+// runs disappearing - and a week of finished ones for the page to merge with
+// the ledger it already carries.
+async function activity(request, env) {
+  if (request.method !== "GET") return problem(405, "Use GET.");
+  const { results } = await env.BRAIN_DB.prepare(
+    "SELECT agent, session_id, agent_id, started_at, finished_at, target, outcome FROM agent_runs " +
+      "WHERE finished_at IS NULL OR ledgered_at IS NULL " +
+      "OR finished_at > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-7 days') " +
+      "ORDER BY COALESCE(finished_at, started_at) DESC LIMIT 500"
+  ).all();
+  return json({ runs: results ?? [] });
+}
+
 const ROUTES = {
   "/api/ask": ask,
   "/api/notes": notes,
   "/api/notes/filed": filed,
   "/api/config": settings,
+  "/api/activity": activity,
 };
 
 export default {

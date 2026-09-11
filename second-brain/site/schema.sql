@@ -25,3 +25,34 @@ CREATE TABLE IF NOT EXISTS settings (
   value     TEXT NOT NULL,
   saved_at  TEXT NOT NULL
 );
+
+-- Live agent activity. Every employee's work runs as a subagent, so project
+-- hooks open a row when one starts and close it when it stops, from wherever it
+-- runs: a worktree, a background session, a cloud routine. The hosted Employees
+-- tab reads these rows as they change. `scripts/agent_activity.py` is the only
+-- writer; the worker only reads.
+--
+-- The git ledger, `.claude/runs.tsv`, stays the history (PR #27). `drain` moves
+-- finished, reported runs into it and sets `ledgered_at`, the way the inbox sets
+-- `filed_at`: the row records that the run left, rather than a second copy of it
+-- sitting behind the first.
+--
+-- Nulls are unknowns. `started_at` is null when a stop was recorded but its
+-- start never was; `finished_at` is null while the run is open; `target` and
+-- `outcome` are null until the agent reports, and stay null for a run that ended
+-- without a report. `(session_id, agent_id)` is the natural key, so a hook that
+-- fires twice records one run.
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent        TEXT NOT NULL,
+  session_id   TEXT NOT NULL,
+  agent_id     TEXT NOT NULL,
+  started_at   TEXT,
+  finished_at  TEXT,
+  target       TEXT,
+  outcome      TEXT,
+  ledgered_at  TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_agent_runs_session_id_agent_id ON agent_runs (session_id, agent_id);
+CREATE INDEX IF NOT EXISTS ix_agent_runs_finished_at ON agent_runs (finished_at);

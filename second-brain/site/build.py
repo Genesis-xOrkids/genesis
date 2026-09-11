@@ -37,7 +37,7 @@ DIST = ROOT / "dist"
 # goes on the path before the import rather than through a package name.
 sys.path.insert(0, str(REPO))
 
-from scripts.agent_definitions import split_frontmatter  # noqa: E402, I001
+from scripts.employees import agent_id, command_id, split_frontmatter  # noqa: E402, I001
 
 
 SECURITY_HEADERS = {
@@ -265,6 +265,9 @@ def read_runs() -> list[dict]:
         if len(fields) != 4:
             raise SystemExit(f"{path}:{number}: expected 4 tab-separated fields, got {len(fields)}")
         run_at, agent, target, outcome = fields
+        # `at` and `target` are the ledger's own key beside the agent, so the
+        # page can recognise a live activity row that has since been ledgered
+        # and show that run once.
         runs.append(
             {
                 "date": run_at[:10],
@@ -272,6 +275,8 @@ def read_runs() -> list[dict]:
                 "what": f"{target} — {outcome}",
                 "ref": "",
                 "via": "run",
+                "at": run_at,
+                "target": target,
             }
         )
     return runs
@@ -289,7 +294,6 @@ def read_employees(excluded: set[str]) -> list[dict]:
     a held-back `log` would publish the page a line at a time.
     """
     commits = read_commits("main")
-    ahead = read_commits("main..HEAD")
     entries = [] if "log" in excluded else read_log_entries()
     ledger = read_runs()
     humans = {
@@ -301,9 +305,9 @@ def read_employees(excluded: set[str]) -> list[dict]:
         fm = split_frontmatter(path.read_text())
         staff.append(
             {
-                "id": fm.get("name", path.stem),
+                "id": agent_id(path),
                 "kind": "agent",
-                "invoke": fm.get("name", path.stem),
+                "invoke": agent_id(path),
                 "role": role_line(fm.get("description", "")),
                 "detail": fm.get("description", ""),
                 "model": fm.get("model", ""),
@@ -319,7 +323,7 @@ def read_employees(excluded: set[str]) -> list[dict]:
     commands = REPO / ".claude/commands"
     for path in sorted(commands.rglob("*.md")):
         fm = split_frontmatter(path.read_text())
-        slug = path.relative_to(commands).with_suffix("").as_posix()
+        slug = command_id(path, commands)
         staff.append(
             {
                 "id": slug,
@@ -372,12 +376,6 @@ def read_employees(excluded: set[str]) -> list[dict]:
             ]
         )
         member["done"] = sorted(done, key=lambda r: r["date"], reverse=True)
-        member["doing"] = [
-            {"date": c["date"], "what": c["subject"], "ref": c["sha"], "via": "commit"}
-            for c in ahead
-            if c["actor"] == member["id"]
-        ]
-        member["last"] = member["done"][0]["date"] if member["done"] else ""
 
     # The ledger names an employee by id but cannot check the name, because the
     # rule that derives an id from a definition file lives here. A row naming

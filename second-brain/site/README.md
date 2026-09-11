@@ -61,6 +61,19 @@ own `/api/notes` over HTTPS, which runs through Access and would need a service
 token created, added to the site's policy, and kept in three environment
 variables — all to read a table wrangler can already read.
 
+## Live agent activity
+
+`agent_runs` holds one row per employee run. The `SubagentStart` hook opens it,
+`SubagentStop` closes it with what the agent reported, and `SessionEnd` closes
+any row its session left open (`.claude/settings.json`,
+`scripts/agent_activity.py`). The Employees view fetches `/api/activity` while
+it is showing, so work in progress appears as it happens. The worker only
+reads; the hooks write through wrangler, the same way the inbox drain does.
+
+Finished runs are drained nightly into `.claude/runs.tsv`, the git ledger, and
+marked `ledgered_at`. The page merges the two on the ledger's own key, so a run
+shows once, whichever side it is on.
+
 ## exclude.txt, and what it does not do
 
 `exclude.txt` decides which pages leave this machine. It holds back the security
