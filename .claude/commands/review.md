@@ -43,9 +43,24 @@ citations, "checked and clean" list, and any proposed wiki follow-ups),
 rather than summarizing them away. Do not act on any finding yourself
 (no edits) unless the user asks you to after seeing the report.
 
-## The run records itself
+## Record this command's run
 
-The reviewer ends its report with `Target:` and `Outcome:` lines, and a `Stop`
-hook in its definition writes them to `.claude/runs.tsv` when it finishes,
-however it was launched. Do not also run `scripts/log_agent_run.py` here: that
-would record every review launched through this command twice.
+The reviewer's run records itself: it ends its report with `Target:` and
+`Outcome:` lines, and a `Stop` hook in its definition writes them to
+`.claude/runs.tsv` when it finishes, however it was launched. Do not record the
+reviewer's run here as well, or every review launched through this command is
+counted twice.
+
+This command is a separate employee, and nothing else records that it ran. Once
+you have relayed the report, record `/review`'s own run under its own id:
+
+```sh
+uv run scripts/log_agent_run.py --agent review \
+  --target "<the Target: line from the reviewer's report>" \
+  --outcome "relayed the genesis-reviewer report"
+```
+
+The outcome says what this command did, not what the review found. The findings
+belong to the reviewer's row, and a copy here would be a second place the same
+counts could disagree. If the reviewer failed or produced no review, do not
+write a row: there was nothing to relay.
