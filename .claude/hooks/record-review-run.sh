@@ -42,4 +42,35 @@ if ! result="$(python3 -m scripts.log_agent_run \
     '{systemMessage: ("genesis-reviewer ran, but the run could not be recorded: " + $detail)}'
   exit 0
 fi
-jq -n --arg result "$result" '{systemMessage: $result}'
+
+# The report itself, posted where the diff is.
+#
+# The reviewer cannot post it: it is read-only by construction and the guard
+# denies `gh pr comment` along with everything else that writes. So this hook
+# does it, which keeps the agent's read-only property intact and still works
+# however the agent was launched. Before this, a review existed only in the
+# transcript of the session that ran it - the findings were gone the moment the
+# window closed, while the one-line outcome survived in the ledger.
+#
+# Only a `PR #<n>` target gets a comment. A branch, a path, or a range on main
+# has nothing to attach to, and the ledger row is the whole record for those.
+pr="$(printf '%s' "$target" | sed -n 's/.*PR #\([0-9][0-9]*\).*/\1/p')"
+posted=""
+if [[ -n "$pr" ]]; then
+  # Gated on the run being new. The ledger insert is idempotent on
+  # `(agent, run_at, target)`, but a comment is not - a hook that fired twice
+  # would post the review twice. Reusing the writer's own answer keeps one
+  # source of truth for "is this run new" rather than inventing a second.
+  if [[ "$result" == already* ]]; then
+    posted="; the review was already posted to PR #${pr}"
+  elif body="$(printf '%s\n' "🤖 **genesis-reviewer** — ${outcome}" "" "$message" \
+       | gh pr comment "$pr" --body-file - 2>&1)"; then
+    posted="; review posted to PR #${pr}"
+  else
+    # The run is recorded either way. Say the comment failed rather than
+    # implying the review reached the pull request.
+    posted="; the review could NOT be posted to PR #${pr}: ${body}"
+  fi
+fi
+
+jq -n --arg result "$result" --arg posted "$posted" '{systemMessage: ($result + $posted)}'
