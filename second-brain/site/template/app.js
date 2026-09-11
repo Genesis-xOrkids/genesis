@@ -193,9 +193,9 @@ function renderRows() {
 const SHOWN = 3;
 
 // The mark on each card is a gem: the cut says the kind, and the colour agrees
-// (styles.css owns the colours). Each cut is one outline. The table is that
-// outline shrunk about its centre, and the facets between the two take their
-// tone from how squarely they face a light at the top-left.
+// (styles.css owns the colours and the motion). Each cut is one outline. The
+// table is that outline shrunk about its centre, and the facets between the two
+// take their tone from how squarely they face a light at the top-left.
 const CUTS = {
   agent: Array.from({ length: 8 }, (_, i) => {
     const a = Math.PI * (i / 4 + 1 / 8);
@@ -204,22 +204,38 @@ const CUTS = {
   command: [[11, 3], [29, 3], [35, 9], [35, 31], [29, 37], [11, 37], [5, 31], [5, 9]],
   service: [[17, 4], [23, 4], [37, 29], [34, 35], [6, 35], [3, 29]],
 };
-function gem(kind) {
+function gem(kind, badge) {
   const outer = CUTS[kind];
   const cx = outer.reduce((s, p) => s + p[0], 0) / outer.length;
   const cy = outer.reduce((s, p) => s + p[1], 0) / outer.length;
   const inner = outer.map(([x, y]) => [cx + (x - cx) * .46, cy + (y - cy) * .46]);
-  const poly = (pts, cls) => '<polygon class="' + cls + '" points="' +
-    pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") + '"/>';
-  let s = "";
-  outer.forEach((a, i) => {
-    const b = outer[(i + 1) % outer.length];
+  const pts = list => list.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  let body = "", fire = "";
+  outer.forEach((a, k) => {
+    const b = outer[(k + 1) % outer.length];
+    const quad = pts([a, b, inner[(k + 1) % outer.length], inner[k]]);
     const nx = (a[0] + b[0]) / 2 - cx, ny = (a[1] + b[1]) / 2 - cy;
     const lit = -(nx + ny) / Math.hypot(nx, ny) / Math.SQRT2;  // 1 facing the light, -1 facing away
-    s += poly([a, b, inner[(i + 1) % outer.length], inner[i]],
-      lit > .85 ? "f0" : lit > .25 ? "f1" : lit > -.25 ? "f2" : "f3");
+    body += '<polygon class="' + (lit > .85 ? "f0" : lit > .25 ? "f1" : lit > -.25 ? "f2" : "f3") +
+      '" points="' + quad + '"/>';
+    // Fire: the same facet again in one of the kit's other two hues, flashing on
+    // its own clock. It is dispersion - the flashes of other colours a cut stone
+    // throws as it turns - and most of what makes one look alive.
+    fire += '<polygon class="x' + (k % 2) + '" style="--k:' + k + '" points="' + quad + '"/>';
   });
-  return '<svg class="gem" viewBox="0 0 40 40" aria-hidden="true">' + s + poly(inner, "ft") + "</svg>";
+  // Sparkles sit where light catches a real stone: its highest point and its
+  // two widest ones.
+  const extreme = (axis, sign) => outer.reduce((p, q) => (q[axis] - p[axis]) * sign > 0 ? q : p);
+  const sparks = [extreme(1, -1), extreme(0, 1), extreme(0, -1)].map((p, k) =>
+    '<i class="spark" style="left:' + (p[0] * 2.5).toFixed(1) + "%;top:" + (p[1] * 2.5).toFixed(1) +
+    "%;--k:" + k + '"></i>').join("");
+  const outline = outer.map(p => (p[0] * 2.5).toFixed(1) + "% " + (p[1] * 2.5).toFixed(1) + "%").join(",");
+  return '<span class="float" aria-hidden="true"><span class="tilt">' +
+    '<svg class="gem" viewBox="0 0 40 40">' + body + '<polygon class="ft" points="' + pts(inner) + '"/>' +
+    '<g class="fire">' + fire + '<polygon class="x2" style="--k:' + outer.length + '" points="' +
+    pts(inner) + '"/></g></svg>' +
+    '<i class="glint" style="clip-path:polygon(' + outline + ')"><b></b></i>' + sparks +
+    '</span><i class="motes"><b></b><b></b><b></b></i>' + badge + "</span>";
 }
 const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.6l3 3 6-6.6"/></svg>';
 const SEAL = '<svg class="ok" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M4.8 8.4l2.2 2.2 4.3-4.6"/></svg>';
@@ -237,14 +253,17 @@ function runRow(r, doing) {
 function renderStaff() {
   const el = $("#staff");
   el.innerHTML = "";
-  for (const m of BRAIN.employees) {
+  for (const [n, m] of BRAIN.employees.entries()) {
     const live = m.doing.length > 0;
     const state = live ? "live" : m.done.length ? "done" : "never";
     const card = document.createElement("div");
     card.className = "emp " + state;
     card.dataset.kind = m.kind;
+    // Each card's motion runs on its own phase, so a row of gems drifts rather
+    // than marching in step.
+    card.style.setProperty("--i", n);
     card.innerHTML =
-      '<header><div class="av">' + gem(m.kind) + (state === "done" ? SEAL : "") + "</div>" +
+      '<header><div class="av">' + gem(m.kind, state === "done" ? SEAL : "") + "</div>" +
       '<div><h3></h3><span class="kind"></span></div></header>' +
       '<p class="role"></p><div class="chips"></div>' +
       '<div class="work"><div class="st">' + (state === "done" ? CHECK : "<i></i>") + "<b></b></div>" +
@@ -338,6 +357,19 @@ function renderStaff() {
         "recorded against them yet."
       : "");
 }
+
+// The gem under the pointer turns toward it, as if the card were a stone tilted
+// under a lamp. Fine pointers only, since a touch has no hover to end it, and
+// never under a reduced-motion preference. styles.css reads these values only
+// while the card is hovered, so a card the pointer has left needs no reset.
+const tilts = matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)");
+$("#staff").addEventListener("pointermove", e => {
+  const card = tilts.matches && e.target.closest(".emp");
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty("--px", ((e.clientX - r.left) / r.width - .5).toFixed(3));
+  card.style.setProperty("--py", ((e.clientY - r.top) / r.height - .5).toFixed(3));
+});
 
 $("#q").oninput = e => { query = e.target.value.trim(); renderRows(); draw(); };
 $("#segMap").onclick = () => setMode(true);
