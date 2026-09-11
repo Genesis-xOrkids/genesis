@@ -27,17 +27,8 @@ if [[ -z "$target" || -z "$outcome" ]]; then
   exit 0
 fi
 
-# Run as a module, from the project directory, so that `scripts` is a package on
-# sys.path - the writer imports its D1 adapter and the roster's id rule from
-# beside it, and a plain path invocation would put only `scripts/` on the path
-# and fail those imports.
-cd "${CLAUDE_PROJECT_DIR}"
-if ! result="$(python3 -m scripts.log_agent_run \
+if ! result="$(python3 "${CLAUDE_PROJECT_DIR}/scripts/log_agent_run.py" \
   --agent genesis-reviewer --target "$target" --outcome "$outcome" 2>&1)"; then
-  # The ledger is a database now, so recording can fail in ways appending to a
-  # file could not: no network, no Cloudflare login. Say so. Losing the run
-  # quietly would put the reviewer back to reading "Never run" after a real
-  # review, which is the bug this hook exists to fix.
   jq -n --arg detail "$result" \
     '{systemMessage: ("genesis-reviewer ran, but the run could not be recorded: " + $detail)}'
   exit 0
@@ -57,7 +48,7 @@ fi
 pr="$(printf '%s' "$target" | sed -n 's/.*PR #\([0-9][0-9]*\).*/\1/p')"
 posted=""
 if [[ -n "$pr" ]]; then
-  # Gated on the run being new. The ledger insert is idempotent on
+  # Gated on the run being new. The ledger write is idempotent on
   # `(agent, run_at, target)`, but a comment is not - a hook that fired twice
   # would post the review twice. Reusing the writer's own answer keeps one
   # source of truth for "is this run new" rather than inventing a second.

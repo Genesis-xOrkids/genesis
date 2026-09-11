@@ -193,10 +193,6 @@ function renderRows() {
 /* ---------- employees ---------- */
 const SHOWN = 3;
 
-// Set when the ledger cannot be read, so the roster can say that runs are
-// missing instead of letting them read as never run.
-let ledgerError = "";
-
 // The mark on each card is a gem, and its cut says the kind. styles.css owns each
 // kind's material and the stone's float; this section owns the solid, the light
 // and the turn.
@@ -706,8 +702,8 @@ function renderStaff() {
   $("#staffNote").textContent =
     "Roles come from the definition files under .claude/. Work comes from three places: commits " +
     "on main, which attribute a bot by its author and Claude by its Co-Authored-By trailer; the " +
-    "run ledger in the brain's database, written by whatever invoked an agent that cannot write " +
-    "for itself; and " +
+    "run ledger at .claude/runs.tsv, written by whatever invoked an agent that cannot write for " +
+    "itself; and " +
     (BRAIN.logHeld
       ? "the wiki's activity log, which this build holds back — so anything whose only trace is a " +
         "log entry reads as never run here."
@@ -715,44 +711,7 @@ function renderStaff() {
     (never.length && !BRAIN.logHeld
       ? " " + never.map(m => m.invoke).join(" and ") + " show nothing because no run has been " +
         "recorded against them yet."
-      : "") +
-    // An unreachable ledger and an empty one look identical on the cards, and
-    // only one of them means nobody has run anything. Say which this is.
-    (ledgerError ? "  The run ledger could not be read, so runs are missing here: " + ledgerError : "");
-}
-
-// Runs arrive separately from the roster. The roster is built from files in the
-// repository, so it ships with the page; a run is a row in the brain's database
-// written by whatever launched the agent, so the hosted site asks the worker for
-// it and the artifact carries a copy baked at publish time. Both end up here,
-// which is why the merge and the ordering live in one place rather than half in
-// build.py and half in the fetch.
-//
-// Idempotent on purpose: the hosted page applies the empty baked set first and
-// the fetched set a moment later, and applying a set twice must not double a
-// card's history.
-function applyRuns(runs) {
-  const byAgent = new Map();
-  for (const r of runs) {
-    if (!byAgent.has(r.agent)) byAgent.set(r.agent, []);
-    byAgent.get(r.agent).push({
-      date: r.run_at.slice(0, 10),
-      what: r.target + " — " + r.outcome,
-      ref: "",
-      via: "run",
-    });
-  }
-  for (const m of BRAIN.employees) {
-    const kept = m.done.filter(r => r.via !== "run");
-    m.done = kept.concat(byAgent.get(m.id) ?? []).sort((a, b) => b.date.localeCompare(a.date));
-    m.last = m.done.length ? m.done[0].date : "";
-  }
-  // Kind first, then how much each has done, then name. build.py sorts by kind
-  // and name only, because it cannot know the run counts.
-  const KINDS = { agent: 0, command: 1, service: 2 };
-  BRAIN.employees.sort((a, b) =>
-    KINDS[a.kind] - KINDS[b.kind] || b.done.length - a.done.length || a.id.localeCompare(b.id));
-  renderStaff();
+      : "");
 }
 
 // The gem under the pointer wakes and leans toward it, as if the card were a stone
@@ -912,14 +871,12 @@ let tt; const toast = m => { const t = $("#toast"); t.textContent = m; t.classLi
 // setting, a note or a question goes: the Claude viewer hands us db, sample
 // and downloads at runtime, and the hosted site has localStorage, a real file
 // download, and an endpoint at the edge. Everything past this block calls
-// these six functions and never learns which build it is in.
+// these five functions and never learns which build it is in.
 //
 // Each one either returns the line to show the reader or throws with a message
 // worth reading. Nothing here swallows a failure and reports success.
 
 /*IF:caps*/
-// Baked at publish time: an artifact has no worker to ask.
-async function loadRuns() { return BRAIN.runs; }
 async function saveConfig(next) {
   if (!db) throw new Error("Settings can't be stored here — download the file instead");
   await db.doc("config/current").set({ config: next, savedAt: new Date().toISOString() });
@@ -957,9 +914,6 @@ const NOTE_HINT = "Notes wait in the inbox until /brain:log files them.";
 // the inbox from a laptop, and a setting has to outlive cleared site data.
 // Cloudflare Access is the authentication - the endpoints refuse without it -
 // so there is no token or session for this code to hold.
-// Fetched, not baked, so a run shows here as soon as it is recorded rather than
-// at the next deploy.
-async function loadRuns() { return (await api("/api/runs")).runs; }
 async function api(path, init) {
   const res = await fetch(path, {
     ...init,
@@ -1133,15 +1087,6 @@ async function ask() {
 /*ENDIF*/
 /* ---------- boot ---------- */
 readColors(); paintFigure(); renderRows(); renderStaff(); resize();
-
-// The roster paints first from what shipped with the page, then again once the
-// ledger answers. A ledger that cannot be reached leaves the cards showing
-// commits and log entries and says so on the card, rather than showing a page
-// that silently claims nobody has run anything.
-loadRuns().then(applyRuns).catch(err => {
-  ledgerError = err.message || "The run ledger could not be reached.";
-  renderStaff();
-});
 if (REDUCED) { for (let i = 0; i < 420; i++) tick(); alpha = .15; draw(); }
 else requestAnimationFrame(frame);
 matchMedia("(prefers-color-scheme:dark)").addEventListener("change", () => { readColors(); paintFigure(); draw(); repaintGems(); });

@@ -160,16 +160,6 @@ jobs:
       - name: Build both targets
         # The artifact target is built too, so a failure in it surfaces here
         # rather than the next time someone publishes by hand.
-        #
-        # It reads the run ledger out of D1 and bakes it in, because an artifact
-        # has no worker to ask at render time. The static target does not: it
-        # fetches /api/runs, so it needs no credentials and the `checks` job -
-        # which builds it for the publication-report gate - still runs without
-        # any. These are the same credentials the deploy step below uses, so
-        # this adds no secret; the token does need D1 read alongside Pages write.
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           python3 second-brain/site/build.py --target static
           python3 second-brain/site/build.py --target artifact

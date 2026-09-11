@@ -25,28 +25,3 @@ CREATE TABLE IF NOT EXISTS settings (
   value     TEXT NOT NULL,
   saved_at  TEXT NOT NULL
 );
-
--- The agent run ledger. A read-only agent leaves no commit and touches no wiki
--- page, so a run of it is invisible unless something records it; this is where
--- that record lives.
---
--- It lived in `.claude/runs.tsv` until it moved here, and the move is the point.
--- A file in git has exactly one write path - open a pull request - so every run
--- either became a pull request of its own or rode along inside an unrelated one
--- (PRs #19 and #21 did the latter), two concurrent branches appending to it
--- conflicted by construction, and a run stayed invisible until CI deployed the
--- site. None of that is a property of the record; all of it was a property of
--- the file.
---
--- `(agent, run_at, target)` is the natural key, so a hook that fires twice, or a
--- backfill re-run, records one run rather than two.
-CREATE TABLE IF NOT EXISTS runs (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_at   TEXT NOT NULL,
-  agent    TEXT NOT NULL,
-  target   TEXT NOT NULL,
-  outcome  TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS unique_runs_agent_run_at_target ON runs (agent, run_at, target);
-CREATE INDEX IF NOT EXISTS ix_runs_agent_run_at ON runs (agent, run_at DESC);

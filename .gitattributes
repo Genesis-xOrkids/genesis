@@ -1,0 +1,9 @@
+# The run ledger is append-only, and two branches that each run an agent both
+# append to its end. Git's union driver keeps both sides' lines instead of
+# raising a conflict over an edit neither side made, which is exactly right for
+# a file where a line is a fact and no line ever replaces another.
+#
+# `log_agent_run.py` is idempotent on (agent, run_at, target), so a row that
+# genuinely appears on both sides collapses the next time it is written rather
+# than surviving twice.
+.claude/runs.tsv merge=union

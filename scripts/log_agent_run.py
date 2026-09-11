@@ -1,4 +1,4 @@
-"""Record one agent run in the ledger.
+"""Append one row to the agent run ledger.
 
 An agent that only reads leaves no trace of having run. `genesis-reviewer` is
 read-only by construction - `Write` and `Edit` sit in its `disallowedTools` and
@@ -8,68 +8,63 @@ invoked it. For a run in Claude Code that is the `Stop` hook in the agent's own
 definition (`.claude/hooks/record-review-run.sh`), which fires however the agent
 was launched; for the GitHub-side agent it would be CI once it has posted.
 
-The ledger is the `runs` table in the hosted brain's D1 database, not a file in
-this repository and not an entry in `second-brain/wiki/log.md`. The wiki log is
-the append-only record of what happened to the wiki, and reviewing a code diff
-does not touch the wiki. The file it used to be, `.claude/runs.tsv`, had one
-write path - open a pull request - which made every run either a pull request of
-its own or a passenger in an unrelated one, made two concurrent branches
-conflict on an append, and kept a run invisible until CI next deployed the site.
-`second-brain/site/schema.sql` records the same reasoning beside the table.
+The ledger is `.claude/runs.tsv`, beside the definitions whose runs it records,
+rather than an entry in `second-brain/wiki/log.md`. That log is the append-only
+record of what happened to the wiki; reviewing a code diff does not touch the
+wiki, and the static site build holds the log back, which would make every
+recorded review vanish from the published gallery.
 
-The agent name is checked against the roster before the row is written, using
-the same id rule the site builds the roster from (`scripts/employees.py`). A
-typo in an id used to be caught by the site build, one step later, as a warning
-beside a row nobody could see; catching it here means the bad row never exists.
-Services are not checked, because nothing calls this on their behalf - a GitHub
-app records itself by committing.
+This script deliberately does not check the agent name against the roster. The
+rule that turns a definition file into an employee id lives in exactly one
+place - `read_employees` in `second-brain/site/build.py` - and a copy here
+would be a second home for it that could disagree. The build reports any ledger
+row whose agent matches no employee instead, which is the same check one step
+later and with one owner.
 """
-
-from __future__ import annotations
 
 import argparse
 import datetime as dt
 import pathlib
 import sys
 
-from scripts.brain_db import literal, query
-from scripts.employees import defined_ids
-
-REPO = pathlib.Path(__file__).resolve().parents[1]
+LEDGER = pathlib.Path(__file__).resolve().parents[1] / ".claude/runs.tsv"
+COLUMNS = ("run_at", "agent", "target", "outcome")
 
 
-def record(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[str, bool]:
-    """Write one run. Returns the timestamp it was filed under, and whether it is new.
+def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[pathlib.Path, bool]:
+    """Write one run to the ledger, creating it with a header if absent.
 
-    Idempotent on the natural key `(agent, run_at, target)`: the row is looked
-    up first so the caller can say which happened, and written with
-    `INSERT OR IGNORE` so that two hooks racing still leave one row rather than
-    failing the second.
+    Returns the ledger path and whether the row is new. Idempotent on
+    `(agent, run_at, target)`: a hook that fires twice for one run, a backfill
+    re-run, or a union merge that brought the same line in from both branches
+    all leave one row. The caller is told which happened, because the `Stop`
+    hook posts the review to its pull request only for a run that is new, and a
+    comment - unlike a row - cannot be deduplicated after the fact.
     """
     for name, value in (("agent", agent), ("target", target), ("outcome", outcome)):
         if not value.strip():
             raise SystemExit(f"{name} is empty: a run with no {name} records nothing")
-
-    known = defined_ids(REPO)
-    if agent.strip() not in known:
-        raise SystemExit(
-            f"no employee is defined as {agent.strip()!r}. Defined: {', '.join(sorted(known))}"
-        )
+        if "\t" in value or "\n" in value:
+            raise SystemExit(f"{name} contains a tab or newline, which would split the row")
 
     if run_at.tzinfo is None:
         raise SystemExit("run_at has no timezone, so the date it lands on is a guess")
     stamp = run_at.astimezone(dt.UTC).isoformat(timespec="seconds")
 
-    existing = query(
-        "SELECT id FROM runs WHERE "
-        f"agent = {literal(agent.strip())} AND run_at = {literal(stamp)} "
-        f"AND target = {literal(target.strip())}"
-    )
-    values = ", ".join(
-        literal(value) for value in (stamp, agent.strip(), target.strip(), outcome.strip())
-    )
-    query(f"INSERT OR IGNORE INTO runs (run_at, agent, target, outcome) VALUES ({values})")
-    return stamp, not existing
+    # The key is the run, not the whole line: a re-run that reworded its outcome
+    # is still the same run, and appending it again would double the count the
+    # gallery shows.
+    key = (stamp, agent.strip(), target.strip())
+    fresh = not LEDGER.exists()
+    existing = [] if fresh else LEDGER.read_text(encoding="utf-8").splitlines()[1:]
+    if any(tuple(line.split("\t")[:3]) == key for line in existing):
+        return LEDGER, False
+
+    with LEDGER.open("a", encoding="utf-8") as handle:
+        if fresh:
+            handle.write("\t".join(COLUMNS) + "\n")
+        handle.write("\t".join([stamp, agent.strip(), target.strip(), outcome.strip()]) + "\n")
+    return LEDGER, True
 
 
 def main() -> int:
@@ -88,9 +83,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    stamp, new = record(args.agent, args.target, args.outcome, args.run_at)
+    path, new = append(args.agent, args.target, args.outcome, args.run_at)
     verb = "recorded" if new else "already recorded"
-    print(f"{verb} {args.agent} run at {stamp}")
+    print(f"{verb} {args.agent} run in {path.relative_to(LEDGER.parents[1])}")
     return 0
 
 
