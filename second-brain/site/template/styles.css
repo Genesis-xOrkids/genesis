@@ -19,11 +19,7 @@ nav{display:flex;align-items:center;gap:26px;padding:16px 30px;border-bottom:1px
 .mark{display:flex;align-items:baseline;gap:8px;cursor:pointer;background:none;border:0;padding:0}
 .mark b{font-family:var(--font-display);font-variation-settings:var(--fraunces-title);font-size:19px;font-weight:600;letter-spacing:-.01em}
 .mark span{font-size:10px;letter-spacing:.17em;text-transform:uppercase;color:var(--text-faint)}
-.mark img{width:22px;height:22px;align-self:center}
-.mark .on-dark{display:none}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mark .on-light{display:none}:root:not([data-theme="light"]) .mark .on-dark{display:block}}
-:root[data-theme="dark"] .mark .on-light{display:none}
-:root[data-theme="dark"] .mark .on-dark{display:block}
+.mark img{width:32px;height:32px;align-self:center}
 .nlinks{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 .nl{background:none;border:0;padding:6px 13px;border-radius:20px;cursor:pointer;color:var(--text-muted);
   font-size:13.5px;transition:.16s}
