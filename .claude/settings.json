@@ -26,7 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python3 -m scripts.agent_activity hook"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python3 -m scripts.agent_activity hook",
+            "timeout": 60
           }
         ]
       }
