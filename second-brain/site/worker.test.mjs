@@ -28,6 +28,14 @@ const copy = join(mkdtempSync(join(tmpdir(), "worker-")), "worker.mjs");
 copyFileSync(join(here, "dist", "_worker.js"), copy);
 const worker = (await import(pathToFileURL(copy).href)).default;
 
+// A worker with a key cache of its own. The signing keys are held per isolate,
+// so a test that exercises fetching them starts from an empty cache.
+let instances = 0;
+async function freshWorker() {
+  instances += 1;
+  return (await import(pathToFileURL(copy).href + "?instance=" + instances)).default;
+}
+
 const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
 const keyPair = () =>
   crypto.subtle.generateKey(
@@ -40,17 +48,22 @@ const stranger = await keyPair();
 const published = { ...(await crypto.subtle.exportKey("jwk", trusted.publicKey)), kid: "trusted", alg: "RS256", use: "sig" };
 
 // Access publishes its keys on the team domain, and nothing else is fetched.
+// `keyServer` is how a test makes Access rotate a key or go down, and
+// `keyFetches` counts what reached it.
+let keyServer = async () => Response.json({ keys: [published] });
+let keyFetches = 0;
 globalThis.fetch = async url => {
   assert.equal(String(url), TEAM + "/cdn-cgi/access/certs");
-  return Response.json({ keys: [published] });
+  keyFetches += 1;
+  return keyServer();
 };
 
 const segment = value => Buffer.from(JSON.stringify(value)).toString("base64url");
 const now = () => Math.floor(Date.now() / 1000);
 
-async function token(claims = {}, key = trusted.privateKey) {
+async function token(claims = {}, key = trusted.privateKey, kid = "trusted") {
   const body =
-    segment({ alg: "RS256", kid: "trusted", typ: "JWT" }) +
+    segment({ alg: "RS256", kid, typ: "JWT" }) +
     "." +
     segment({ aud: [AUD], iss: TEAM, iat: now(), nbf: now(), exp: now() + 600, email: "owner@example.com", ...claims });
   const signature = await crypto.subtle.sign(algorithm, key, new TextEncoder().encode(body));
@@ -61,6 +74,7 @@ const env = {
   ACCESS_TEAM_DOMAIN: TEAM,
   ACCESS_AUD: AUD,
   BRAIN_DB: { prepare: () => ({ all: async () => ({ results: [] }) }) },
+  ASSETS: { fetch: async () => new Response("the page") },
 };
 
 // `/api/config` answers a GET from the database stub, so a 200 means the gate
@@ -118,3 +132,99 @@ test("live activity sits behind the same gate, and is read-only", async () => {
   assert.deepEqual(await admitted.json(), { runs: [] });
   assert.equal((await request({ method: "POST", headers })).status, 405);
 });
+
+// --- the page, and the key cache ---
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+
+// Runs `work` with the clock set to `moment`, so a test can wait out the key
+// cache's intervals without waiting.
+async function at(moment, work) {
+  const realNow = Date.now;
+  Date.now = () => moment;
+  try {
+    return await work();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+function ask(instance, assertion, path = "/api/config") {
+  const headers = assertion === undefined ? {} : { "cf-access-jwt-assertion": assertion };
+  return instance.fetch(new Request("https://brain.example" + path, { headers }), env);
+}
+
+test("the page itself is behind the gate, not only the endpoints", async () => {
+  assert.equal((await ask(worker, undefined, "/")).status, 403);
+  assert.equal((await ask(worker, "anything-at-all", "/")).status, 403);
+  const served = await ask(worker, await token(), "/");
+  assert.equal(served.status, 200);
+  assert.equal(await served.text(), "the page");
+  assert.equal(served.headers.get("x-frame-options"), "DENY");
+});
+
+test("a token not signed with RS256, or with no expiry, is refused", async () => {
+  const unsigned = segment({ alg: "HS256", kid: "trusted", typ: "JWT" }) + "." + segment({ aud: [AUD], iss: TEAM, exp: now() + 600 });
+  assert.equal((await call(unsigned + ".c2lnbmF0dXJl")).status, 403);
+  assert.equal((await call(await token({ exp: undefined }))).status, 403);
+});
+
+test("requests that arrive together share one fetch of the keys", async () => {
+  const instance = await freshWorker();
+  keyServer = async () => Response.json({ keys: [published] });
+  keyFetches = 0;
+  const assertion = await token();
+  const statuses = await Promise.all([1, 2, 3].map(async () => (await ask(instance, assertion)).status));
+  assert.deepEqual(statuses, [200, 200, 200]);
+  assert.equal(keyFetches, 1);
+});
+
+test("a key Access rotates in is fetched once the cache may refresh, then admitted", async () => {
+  const instance = await freshWorker();
+  const start = Date.now();
+  keyServer = async () => Response.json({ keys: [published] });
+  keyFetches = 0;
+  assert.equal((await at(start, async () => ask(instance, await token()))).status, 200);
+
+  const rotated = await keyPair();
+  const rotatedKey = { ...(await crypto.subtle.exportKey("jwk", rotated.publicKey)), kid: "rotated", alg: "RS256", use: "sig" };
+  keyServer = async () => Response.json({ keys: [published, rotatedKey] });
+  // Within the minute, an unknown key id does not earn a fetch.
+  assert.equal((await at(start + 1000, async () => ask(instance, await token({}, rotated.privateKey, "rotated")))).status, 403);
+  assert.equal(keyFetches, 1);
+  assert.equal((await at(start + MINUTE + 1000, async () => ask(instance, await token({}, rotated.privateKey, "rotated")))).status, 200);
+  assert.equal(keyFetches, 2);
+});
+
+test("an outage at Access is tried once a minute, not once a request", async () => {
+  const instance = await freshWorker();
+  const start = Date.now();
+  keyServer = async () => new Response("down", { status: 503 });
+  keyFetches = 0;
+  for (const offset of [0, 1000, 2000]) {
+    const refused = await at(start + offset, async () => ask(instance, await token()));
+    assert.equal(refused.status, 503);
+  }
+  assert.equal(keyFetches, 1);
+  assert.equal((await at(start + MINUTE + 1000, async () => ask(instance, await token()))).status, 503);
+  assert.equal(keyFetches, 2);
+});
+
+test("keys already fetched keep verifying through an outage, for a day", async () => {
+  const instance = await freshWorker();
+  const start = Date.now();
+  keyServer = async () => Response.json({ keys: [published] });
+  keyFetches = 0;
+  assert.equal((await at(start, async () => ask(instance, await token()))).status, 200);
+
+  keyServer = async () => {
+    throw new TypeError("network down");
+  };
+  assert.equal((await at(start + HOUR + MINUTE, async () => ask(instance, await token()))).status, 200);
+  assert.equal(keyFetches, 2);
+  const tooOld = await at(start + 24 * HOUR + 2 * MINUTE, async () => ask(instance, await token()));
+  assert.equal(tooOld.status, 503);
+  assert.match((await tooOld.json()).error, /network down/);
+});
+

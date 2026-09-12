@@ -23,13 +23,16 @@ const MAX_CONTEXT = 60000;
 const ACCESS_HEADER = "cf-access-jwt-assertion";
 
 // Access rotates its signing keys, so they are fetched rather than pinned, and
-// held per isolate rather than fetched on every request. A key id the cache has
-// not seen is what a rotation looks like from here, so it earns a refetch - at
-// most once a minute, so a stream of made-up key ids cannot turn every request
-// into a fetch.
+// held per isolate rather than fetched on every request. A fetch is attempted at
+// most once a minute whatever prompted it - keys past their hour, a key id the
+// cache has not seen, or a fetch that failed - so neither made-up key ids nor an
+// outage at Access can turn requests into fetches, and requests that arrive
+// together share one. When a refresh fails, keys fetched within the last day go
+// on verifying tokens, so a blip at Access does not lock signed-in readers out.
 const KEYS_TTL_MS = 60 * 60 * 1000;
-const UNKNOWN_KEY_REFETCH_MS = 60 * 1000;
-let signingKeys = { byKid: new Map(), fetchedAt: 0 };
+const KEYS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const FETCH_INTERVAL_MS = 60 * 1000;
+const signingKeys = { byKid: new Map(), loadedAt: 0, attemptedAt: 0, loading: null, lastError: null };
 
 function base64UrlBytes(part) {
   const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
@@ -49,14 +52,37 @@ async function loadSigningKeys(teamDomain) {
       await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"])
     );
   }
-  signingKeys = { byKid, fetchedAt: Date.now() };
+  signingKeys.byKid = byKid;
+  signingKeys.loadedAt = Date.now();
+}
+
+// The key a token names, or undefined when Access has published no such key.
+// Throws when there are no keys young enough to trust at all.
+async function signingKey(kid, teamDomain) {
+  const now = Date.now();
+  const wanted = now - signingKeys.loadedAt > KEYS_TTL_MS || !signingKeys.byKid.has(kid);
+  if (wanted && !signingKeys.loading && now - signingKeys.attemptedAt >= FETCH_INTERVAL_MS) {
+    signingKeys.attemptedAt = now;
+    // A failed fetch is not reported by whichever request happened to start
+    // it: whether the keys on hand are still good enough is decided below, the
+    // same way for every request.
+    signingKeys.loading = loadSigningKeys(teamDomain)
+      .then(() => { signingKeys.lastError = null; })
+      .catch(error => { signingKeys.lastError = String(error); })
+      .finally(() => { signingKeys.loading = null; });
+  }
+  if (signingKeys.loading) await signingKeys.loading;
+  if (!signingKeys.byKid.size || Date.now() - signingKeys.loadedAt > KEYS_MAX_AGE_MS) {
+    throw new Error("no usable signing keys (" + (signingKeys.lastError ?? "none fetched yet") + "); retried within a minute");
+  }
+  return signingKeys.byKid.get(kid);
 }
 
 // The token's claims, or null for any token Access did not issue to this
 // application: malformed, another algorithm, an unknown key, a bad signature,
 // another application's audience, another team, or outside its validity window.
-// Throws only when the signing keys cannot be fetched, which is not the
-// token's fault and is answered differently.
+// Throws only when no signing keys young enough to trust can be had, which is
+// not the token's fault and is answered differently.
 async function verifyAccessToken(token, env) {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
@@ -70,11 +96,7 @@ async function verifyAccessToken(token, env) {
   }
   if (header.alg !== "RS256") return null;
 
-  const age = Date.now() - signingKeys.fetchedAt;
-  if (age > KEYS_TTL_MS || (!signingKeys.byKid.has(header.kid) && age > UNKNOWN_KEY_REFETCH_MS)) {
-    await loadSigningKeys(env.ACCESS_TEAM_DOMAIN);
-  }
-  const key = signingKeys.byKid.get(header.kid);
+  const key = await signingKey(header.kid, env.ACCESS_TEAM_DOMAIN);
   if (!key) return null;
 
   const signed = new TextEncoder().encode(parts[0] + "." + parts[1]);
@@ -334,11 +356,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const route = ROUTES[url.pathname];
-    if (!route) return withSecurity(await env.ASSETS.fetch(request));
 
-    // One gate for every endpoint. Without the team and audience there is
-    // nothing to verify a token against, and admitting on presence alone is
-    // the hole this gate exists to close, so nothing answers.
+    // One gate for everything the worker serves: the page as much as the
+    // endpoints, because the page carries every published wiki page inline.
+    // Without the team and audience there is nothing to verify a token against,
+    // and admitting on presence alone is the hole this gate exists to close, so
+    // nothing answers.
     if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) {
       return problem(503, "ACCESS_TEAM_DOMAIN and ACCESS_AUD are not set, so no request can be verified. Set them in wrangler.toml.");
     }
@@ -352,6 +375,7 @@ export default {
     if (!claims) {
       return problem(403, "This request does not carry a valid Cloudflare Access token for this site.");
     }
+    if (!route) return withSecurity(await env.ASSETS.fetch(request));
     if (route !== ask && !env.BRAIN_DB) {
       return problem(503, "No database is bound. Create the D1 database and set database_id in wrangler.toml.");
     }
