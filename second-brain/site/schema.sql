@@ -56,3 +56,41 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 
 CREATE UNIQUE INDEX IF NOT EXISTS unique_agent_runs_session_id_agent_id ON agent_runs (session_id, agent_id);
 CREATE INDEX IF NOT EXISTS ix_agent_runs_finished_at ON agent_runs (finished_at);
+
+-- The dispatch queue. A task typed into the Dispatch panel waits here until the
+-- watcher on the agents' machine (`scripts/dispatch_watch.py`) claims it and
+-- starts a background dispatcher session for it. States are derived, never
+-- stored: pending until `claimed_at`, cancelled once `cancelled_at`, done once
+-- `finished_at`.
+--
+-- `created_by` is the identity in the verified Access token, never a value the
+-- page sends. `assignee` is null when the dispatcher should choose.
+-- `background_id` is the short id `claude agents` lists for the session working
+-- on the task, and null until one has started. `outcome` is null until the task
+-- finishes.
+CREATE TABLE IF NOT EXISTS tasks (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  text           TEXT NOT NULL,
+  assignee       TEXT,
+  created_by     TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  claimed_at     TEXT,
+  background_id  TEXT,
+  cancelled_at   TEXT,
+  finished_at    TEXT,
+  outcome        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_tasks_claimed_at_created_at ON tasks (claimed_at, created_at);
+
+-- One row per machine running the watcher. `started_at` is when its watcher
+-- last started and `last_seen_at` moves on every poll, so the panel can say
+-- whether anything is on duty to pick a task up.
+CREATE TABLE IF NOT EXISTS dispatchers (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  host          TEXT NOT NULL,
+  started_at    TEXT NOT NULL,
+  last_seen_at  TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_dispatchers_host ON dispatchers (host);

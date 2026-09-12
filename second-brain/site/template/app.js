@@ -20,7 +20,7 @@ $("#nSrc").textContent = BRAIN.pointers.length;
 $("#nCommit").textContent = BRAIN.commit;
 
 /* ---------- navigation ---------- */
-const VIEWS = { home: "vHome", explore: "vExplore", employees: "vEmployees", page: "vPage", ask: "vAsk", capture: "vCapture", settings: "vSettings" };
+const VIEWS = { home: "vHome", explore: "vExplore", employees: "vEmployees", dispatch: "vDispatch", page: "vPage", ask: "vAsk", capture: "vCapture", settings: "vSettings" };
 function go(name) {
   if (!$("#" + VIEWS[name])) name = "home";
   for (const id of Object.values(VIEWS)) { const el = $("#" + id); if (el) el.classList.toggle("on", id === VIEWS[name]); }
@@ -31,6 +31,7 @@ function go(name) {
   scrollTo({ top: 0, behavior: "instant" });
   if (name === "explore") { resize(); alpha = Math.max(alpha, .55); }
   if (name === "employees") { startGems(); refreshActivity(); }
+  if (name === "dispatch") refreshDispatch();
 }
 document.addEventListener("click", e => {
   const v = e.target.closest("[data-view]");
@@ -1185,4 +1186,57 @@ $("#noteHint").textContent = NOTE_HINT;
   await watchNotes(renderNotes);
 })();
 setInterval(() => { if ($("#vEmployees").classList.contains("on")) refreshActivity(); }, 30000);
+
+// The dispatch queue. Tasks go to D1 through the worker, which records who asked
+// from the verified Access token; the watcher on the agents' machine claims them.
+// A task's state is read from its timestamps, never stored.
+const ON_DUTY_MS = 60000; // twice the watcher's 30-second poll
+function taskState(t) {
+  if (t.cancelled_at) return "cancelled";
+  if (t.finished_at) return "done";
+  if (t.claimed_at) return t.background_id ? "working \u00b7 " + t.background_id : "starting";
+  return "waiting";
+}
+function renderDispatch({ tasks, dispatchers }) {
+  const now = Date.now();
+  const onDuty = dispatchers.find(d => now - Date.parse(d.last_seen_at) < ON_DUTY_MS);
+  $("#taskHint").textContent = onDuty
+    ? "On duty on " + onDuty.host + " \u00b7 last check " + Math.round((now - Date.parse(onDuty.last_seen_at)) / 1000) + "s ago"
+    : dispatchers.length
+      ? "Nothing on duty \u2014 last seen on " + dispatchers[0].host + " at " + new Date(dispatchers[0].last_seen_at).toLocaleString() + ". Tasks wait until a watcher polls."
+      : "No watcher has run yet. Tasks wait until one is installed with scripts/dispatch_watch.py.";
+  $("#taskWrap").innerHTML = tasks.length
+    ? "<h4>Tasks</h4>" + tasks.map(t =>
+      '<div class="rec"><span>' + esc(t.text.slice(0, 160)) + (t.text.length > 160 ? "\u2026" : "") +
+      '<br><span class="meta">#' + t.id + " \u00b7 " + esc(t.assignee || "dispatcher chooses") + " \u00b7 " + esc(t.created_by) +
+      (t.outcome ? " \u2014 " + esc(t.outcome) : "") + "</span>" +
+      (t.claimed_at || t.cancelled_at ? "" : ' <button class="btn gh" data-cancel="' + t.id + '">Cancel</button>') +
+      "</span><em>" + esc(taskState(t)) + "</em></div>").join("")
+    : "";
+}
+async function refreshDispatch() {
+  try {
+    renderDispatch(await api("/api/tasks"));
+  } catch (e) {
+    $("#taskHint").textContent = e.message;
+  }
+}
+$("#taskFor").innerHTML = '<option value="">Let the dispatcher choose</option>' +
+  BRAIN.employees.filter(m => m.kind === "agent" && m.id !== "dispatcher")
+    .map(m => '<option value="' + m.id + '">' + esc(m.invoke) + "</option>").join("");
+$("#taskBtn").onclick = async () => {
+  const text = $("#taskIn").value.trim(); if (!text) return;
+  try {
+    const { id } = await api("/api/tasks", { method: "POST", body: JSON.stringify({ text, assignee: $("#taskFor").value || null }) });
+    $("#taskIn").value = ""; toast("Dispatched \u2014 task #" + id + " waits for the watcher"); refreshDispatch();
+  } catch (e) { toast(e.message); }
+};
+$("#taskWrap").addEventListener("click", async e => {
+  const button = e.target.closest("[data-cancel]"); if (!button) return;
+  try {
+    await api("/api/tasks/cancel", { method: "POST", body: JSON.stringify({ id: Number(button.dataset.cancel) }) });
+    toast("Cancelled task #" + button.dataset.cancel); refreshDispatch();
+  } catch (err) { toast(err.message); }
+});
+setInterval(() => { if ($("#vDispatch").classList.contains("on")) refreshDispatch(); }, 15000);
 /*ENDIF*/
