@@ -86,7 +86,7 @@ running by launchd. Every 30 seconds it:
 - records a heartbeat in `dispatchers`;
 - closes the tasks it claimed whose session stopped without finishing them;
 - starts a background `dispatcher` session for each pending task, in a detached
-  worktree of the task's own beside the watcher's checkout;
+  worktree of the task's own, made from the watcher's own commit;
 - removes the worktrees of tasks that have ended, keeping any with uncommitted
   work.
 

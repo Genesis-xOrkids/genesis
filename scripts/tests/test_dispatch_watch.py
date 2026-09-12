@@ -127,7 +127,7 @@ def test_each_pending_task_gets_a_session_in_a_worktree_of_its_own(
         "-q",
         "--detach",
         str(tasks_dir / "task-4"),
-        "origin/main",
+        "HEAD",
     ]
     (first, first_cwd), _ = [(c, cwd) for c, cwd in machine.commands if c[:2] == ["claude", "--bg"]]
     assert first[:8] == [

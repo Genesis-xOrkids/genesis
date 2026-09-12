@@ -19,7 +19,9 @@ It runs from a checkout of its own, a detached worktree at `origin/main`, and
 refuses to install anywhere else, because it moves that checkout's HEAD. Each
 task's session works in a separate detached worktree beside it, in
 `<checkout>-tasks/task-<id>`, so the watcher following main never moves a
-session's HEAD, and a session committing never moves the watcher's.
+session's HEAD, and a session committing never moves the watcher's. That
+worktree is made from the watcher's own commit, so a task always runs the same
+dispatcher and queue code as the watcher that started it.
 
     git worktree add --detach ../genesis-dispatch origin/main
     cd ../genesis-dispatch
@@ -116,11 +118,17 @@ def prompt(task: dict[str, Any]) -> str:
 
 
 def start_session(task: dict[str, Any]) -> str:
-    """Start a dispatcher session for a task in its own worktree. Returns its short id."""
+    """Start a dispatcher session for a task in its own worktree. Returns its short id.
+
+    The worktree is made from this checkout's HEAD, not from `origin/main`. They
+    are the same commit whenever the watcher dispatches, because it restarts when
+    main moves - but HEAD is the code actually running, so the dispatcher
+    definition and the queue script the session needs are the ones this watcher has.
+    """
     place = workspace(task["id"])
     if not place.exists():
         TASKS.mkdir(parents=True, exist_ok=True)
-        git("worktree", "add", "-q", "--detach", str(place), "origin/main")
+        git("worktree", "add", "-q", "--detach", str(place), "HEAD")
     started = subprocess.run(
         [
             "claude",
