@@ -7,14 +7,19 @@ machine is awake. Every 30 seconds it:
 1. keeps its own checkout at `origin/main`, and exits when that moves so launchd
    restarts it on the new code;
 2. records a heartbeat, so the panel can say whether anything is on duty;
-3. closes tasks whose session has stopped without finishing them;
-4. claims each pending task and starts a background `dispatcher` session for it.
+3. closes tasks this machine claimed whose session stopped without finishing;
+4. claims each pending task and starts a dispatcher session for it, in a
+   worktree of the task's own;
+5. removes the worktrees of tasks that have ended, keeping any with uncommitted
+   work.
 
 Polling costs no tokens: nothing starts a model until there is a task.
 
 It runs from a checkout of its own, a detached worktree at `origin/main`, and
-refuses to install anywhere else. It moves that checkout's HEAD, so running it
-from a branch someone is working on would move theirs.
+refuses to install anywhere else, because it moves that checkout's HEAD. Each
+task's session works in a separate detached worktree beside it, in
+`<checkout>-tasks/task-<id>`, so the watcher following main never moves a
+session's HEAD, and a session committing never moves the watcher's.
 
     git worktree add --detach ../genesis-dispatch origin/main
     cd ../genesis-dispatch
@@ -39,9 +44,11 @@ import time
 from typing import Any
 
 from scripts import task_queue
+from scripts.brain_db import stamp
 from scripts.employees import CLAUDE_AGENTS, agent_id
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
+TASKS = REPO.parent / f"{REPO.name}-tasks"
 POLL_SECONDS = 30
 LABEL = "com.genesis.dispatch-watch"
 LAUNCH_AGENT = pathlib.Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
@@ -53,10 +60,14 @@ LOG = pathlib.Path.home() / "Library/Logs/genesis-dispatch.log"
 STILL_GOING = {"working", "blocked"}
 BACKGROUNDED = re.compile(r"^backgrounded · (\S+)")
 
+# Worktrees this watcher has already reported keeping, so a task whose worktree
+# holds uncommitted work is logged once per run rather than on every poll.
+KEPT: set[int] = set()
+
 
 def log(message: str) -> None:
     """One timestamped line to stdout, which launchd writes to the log file."""
-    print(f"{task_queue.stamp(dt.datetime.now(dt.UTC))} {message}", flush=True)
+    print(f"{stamp(dt.datetime.now(dt.UTC))} {message}", flush=True)
 
 
 def git(*args: str) -> str:
@@ -84,6 +95,16 @@ def assignable() -> set[str]:
     }
 
 
+def session_name(task_id: int) -> str:
+    """The name a task's session is started under, which `claude agents` lists."""
+    return f"task-{int(task_id)}"
+
+
+def workspace(task_id: int) -> pathlib.Path:
+    """Where a task's session works: a detached worktree of its own."""
+    return TASKS / session_name(task_id)
+
+
 def prompt(task: dict[str, Any]) -> str:
     """What the dispatcher session is started with."""
     who = f", for {task['assignee']}" if task["assignee"] else ""
@@ -95,7 +116,11 @@ def prompt(task: dict[str, Any]) -> str:
 
 
 def start_session(task: dict[str, Any]) -> str:
-    """Start a background dispatcher session for a task. Returns its short id."""
+    """Start a dispatcher session for a task in its own worktree. Returns its short id."""
+    place = workspace(task["id"])
+    if not place.exists():
+        TASKS.mkdir(parents=True, exist_ok=True)
+        git("worktree", "add", "-q", "--detach", str(place), "origin/main")
     started = subprocess.run(
         [
             "claude",
@@ -103,12 +128,12 @@ def start_session(task: dict[str, Any]) -> str:
             "--agent",
             task_queue.DISPATCHER,
             "--name",
-            f"task-{task['id']}",
+            session_name(task["id"]),
             "--permission-mode",
             "auto",
             prompt(task),
         ],
-        cwd=REPO,
+        cwd=place,
         capture_output=True,
         text=True,
         check=False,
@@ -120,66 +145,120 @@ def start_session(task: dict[str, Any]) -> str:
     return found.group(1)
 
 
-def sessions() -> dict[str, str]:
-    """Every background session `claude agents` knows, finished ones included, by short id."""
+def sessions() -> list[dict[str, Any]]:
+    """Every background session `claude agents` knows, finished ones included."""
     listed = subprocess.run(
         ["claude", "agents", "--json", "--all"], capture_output=True, text=True, check=False
     )
     if listed.returncode != 0:
         raise SystemExit(f"claude agents failed: {listed.stderr.strip()[:300]}")
-    return {
-        session["id"]: session["state"]
-        for session in json.loads(listed.stdout)
-        if session["kind"] == "background"
-    }
+    return [session for session in json.loads(listed.stdout) if session["kind"] == "background"]
 
 
-def reap(moment: dt.datetime) -> None:
-    """Close every task whose session has stopped without finishing it.
+def find(
+    listing: list[dict[str, Any]], task_id: int, background_id: str | None
+) -> dict[str, Any] | None:
+    """A task's session: by the id recorded for it, or by its name when none was recorded.
+
+    The name is what finds a session whose id never reached the queue - the
+    write failed, or `claude --bg` printed something unexpected.
+    """
+    for session in listing:
+        if background_id is not None and session["id"] == background_id:
+            return session
+        if background_id is None and session.get("name") == session_name(task_id):
+            return session
+    return None
+
+
+def reap(host: str, moment: dt.datetime) -> None:
+    """Close every task this machine claimed whose session stopped without finishing it.
 
     Without this a session that failed, was stopped, or ended its turn without
     calling `finish` would leave its task claimed, and the dispatcher working,
     forever.
     """
-    open_tasks = task_queue.working()
-    if not open_tasks:
+    tasks = task_queue.open_tasks(host)
+    if not tasks:
         return
-    states = sessions()
-    for task in open_tasks:
-        session = task["background_id"]
+    listing = sessions()
+    for task in tasks:
+        session = find(listing, task["id"], task["background_id"])
         if session is None:
-            task_queue.refuse(task["id"], "claimed, but no session was started for it", moment)
-            log(f"task #{task['id']}: claimed with no session, closed")
+            reason = (
+                "claimed, but no session was started for it"
+                if task["background_id"] is None
+                else f"its session {task['background_id']} is no longer listed"
+            )
+            task_queue.close(task["id"], reason, moment)
+            log(f"task #{task['id']}: {reason}; closed")
             continue
-        state = states.get(session)
-        if state in STILL_GOING:
+        if task["background_id"] is None:
+            task_queue.started(task["id"], session["id"])
+        if session["state"] in STILL_GOING:
             continue
-        why = "is no longer listed" if state is None else f"is {state}"
-        task_queue.finish(
-            task["id"],
-            f"its session {session} {why} without finishing the task; see `claude logs {session}`",
-            moment,
+        reason = (
+            f"its session {session['id']} is {session['state']} without finishing the task; "
+            f"see `claude logs {session['id']}`"
         )
-        log(f"task #{task['id']}: session {session} {why}, closed")
+        task_queue.close(task["id"], reason, moment)
+        log(f"task #{task['id']}: {reason}; closed")
 
 
-def dispatch(moment: dt.datetime) -> None:
+def dispatch(host: str, moment: dt.datetime) -> None:
     """Claim every pending task and start a session for each."""
     agents = assignable()
-    while task := task_queue.claim(moment):
+    while task := task_queue.claim(host, moment):
         if task["assignee"] and task["assignee"] not in agents:
             reason = f"no agent is defined as {task['assignee']!r}"
-            task_queue.refuse(task["id"], reason, moment)
-            log(f"task #{task['id']}: {reason}")
+            task_queue.close(task["id"], reason, moment)
+            log(f"task #{task['id']}: {reason}; closed")
             continue
         try:
             session = start_session(task)
         except SystemExit as error:
-            task_queue.refuse(task["id"], str(error), moment)
-            log(f"task #{task['id']}: {error}")
+            # A start that reported failure can still have left a session
+            # running; its name finds it, and it keeps the task.
+            found = find(sessions(), task["id"], None)
+            if found is None:
+                task_queue.close(task["id"], str(error), moment)
+                log(f"task #{task['id']}: {error}; closed")
+                continue
+            session = found["id"]
+        task_queue.started(task["id"], session)
+        log(f"task #{task['id']}: started session {session} in {workspace(task['id'])}")
+
+
+def sweep() -> None:
+    """Remove the worktrees of tasks that have ended, keeping any with uncommitted work.
+
+    A worktree's commits and branches live in the repository, so removing a
+    clean one loses nothing. `git worktree remove` refuses one with uncommitted
+    changes, and that refusal is the rule: the work stays for a person.
+    """
+    places = {
+        int(place.name.removeprefix("task-")): place
+        for place in TASKS.glob("task-*")
+        if place.name.removeprefix("task-").isdigit()
+    }
+    ended = set(places) - task_queue.still_open(sorted(places))
+    if not ended:
+        return
+    going = {session.get("name") for session in sessions() if session["state"] in STILL_GOING}
+    for task_id in sorted(ended):
+        if session_name(task_id) in going:
             continue
-        task_queue.started(task["id"], session, moment)
-        log(f"task #{task['id']}: started session {session}")
+        removed = subprocess.run(
+            ["git", "-C", str(REPO), "worktree", "remove", str(places[task_id])],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if removed.returncode == 0:
+            log(f"task #{task_id}: removed its worktree")
+        elif task_id not in KEPT:
+            KEPT.add(task_id)
+            log(f"task #{task_id}: kept its worktree: {removed.stderr.strip()[:200]}")
 
 
 def run() -> int:
@@ -194,8 +273,9 @@ def run() -> int:
                 return 0
             moment = dt.datetime.now(dt.UTC)
             task_queue.heartbeat(host, moment)
-            reap(moment)
-            dispatch(moment)
+            reap(host, moment)
+            dispatch(host, moment)
+            sweep()
         except SystemExit as error:
             # A failed poll - no network, wrangler logged out - is logged and
             # tried again. The heartbeat stops moving meanwhile, so the panel

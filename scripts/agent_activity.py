@@ -41,7 +41,8 @@ import sys
 import tempfile
 from typing import Any
 
-from scripts.brain_db import literal, query
+from scripts import task_queue
+from scripts.brain_db import literal, query, stamp
 from scripts.employees import defined_ids
 from scripts.log_agent_run import append
 
@@ -52,11 +53,6 @@ PULL_REQUEST = re.compile(r"PR #(\d+)")
 # run an employee. A marker for each session that did open a run lets the rest
 # exit without waiting on the database for nothing to close.
 MARKERS = pathlib.Path(tempfile.gettempdir()) / "genesis-agent-runs"
-
-
-def stamp(moment: dt.datetime) -> str:
-    """A timestamp as the ledger writes one: UTC, to the second, ISO 8601."""
-    return moment.astimezone(dt.UTC).isoformat(timespec="seconds")
 
 
 def sql_value(value: str | None) -> str:
@@ -218,7 +214,8 @@ def drain(moment: dt.datetime) -> int:
     if runs:
         ids = ",".join(str(int(run["id"])) for run in runs)
         query(f"UPDATE agent_runs SET ledgered_at = {literal(stamp(moment))} WHERE id IN ({ids})")
-    return len(runs)
+    # A dispatcher's runs are its tasks, and are drained from the queue.
+    return len(runs) + task_queue.drain(moment)
 
 
 def main() -> int:
