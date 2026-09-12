@@ -1,0 +1,19 @@
+diff --git a/intelligence/agents/stylist/outfits.py b/intelligence/agents/stylist/outfits.py
+new file mode 100644
+--- /dev/null
++++ b/intelligence/agents/stylist/outfits.py
+@@ -0,0 +1,15 @@
++"""Draft the rationale shown under an outfit."""
++
++import anthropic
++
++_client = anthropic.Anthropic()
++
++
++def rationale(profile_summary: str, items: list[str]) -> str:
++    response = _client.messages.create(
++        model="claude-opus-5",
++        max_tokens=1024,
++        messages=[{"role": "user", "content": f"Explain why these suit {profile_summary}: {items}"}],
++    )
++    return response.content[0].text

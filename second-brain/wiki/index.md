@@ -4,7 +4,7 @@ type: entity
 sources: [PLAN.md, ROADMAP.md, CLAUDE.md, README.md]
 related: ["[[log]]"]
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-12
 ---
 
 The catalog of every page in this wiki. Compiled from `raw/` by `/brain:ingest`
@@ -45,6 +45,7 @@ root and are read there; `raw/repo-docs/` holds pointers, not copies.
 - [[embeddings-and-vectors]] — FashionSigLIP in pgvector, and the 30× cost gap that was accepted on purpose
 - [[image-generation]] — the Stability suite, and the AWS default that dies 2026-09-30
 - [[database-choice]] — Aurora planned, Neon in use, Alembic owning the schema
+- [[agent-network]] — the employees that work on this repository, how tasks reach them, and where their runs are recorded
 - [[open-decisions]] — six decisions with written defaults, plus the `[verify]` list
 
 ## Concepts

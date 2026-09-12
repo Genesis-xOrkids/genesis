@@ -1,0 +1,11 @@
+diff --git a/intelligence/tests/test_normalization.py b/intelligence/tests/test_normalization.py
+--- a/intelligence/tests/test_normalization.py
++++ b/intelligence/tests/test_normalization.py
+@@ -210,3 +210,8 @@ def test_a_price_without_a_currency_is_quarantined() -> None:
+     with pytest.raises(ValueError, match="currency"):
+         normalize_price("19.00", currency=None)
++
++
++def test_a_negative_price_is_quarantined() -> None:
++    with pytest.raises(ValueError, match="negative"):
++        normalize_price("-19.00", currency="USD")

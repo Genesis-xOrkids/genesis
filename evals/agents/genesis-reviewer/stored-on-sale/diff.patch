@@ -1,0 +1,9 @@
+diff --git a/api/genesis_api/models/catalog.py b/api/genesis_api/models/catalog.py
+--- a/api/genesis_api/models/catalog.py
++++ b/api/genesis_api/models/catalog.py
+@@ -91,6 +91,8 @@ class Offer(IdMixin, TimestampMixin, Base):
+     price_usd_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+     sale_price_usd_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
++    # Set at ingest, so the stylist can filter to sale items without comparing prices.
++    is_on_sale: Mapped[bool] = mapped_column(nullable=False, default=False)
+     in_stock: Mapped[bool | None] = mapped_column(nullable=True)

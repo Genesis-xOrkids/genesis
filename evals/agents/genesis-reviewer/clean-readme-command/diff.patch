@@ -1,0 +1,9 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -58,6 +58,7 @@ PYTHONPATH=. uv run python scripts/check_database.py   # connectivity, pgvector, schema
+ uv run ruff check api/          # lint
+ uv run ruff format api/         # format
+ uv run mypy api/genesis_api     # types, strict
++uv run mypy intelligence        # types, strict, for the intelligence plane too
+ uv run pytest api/tests -q      # tests
