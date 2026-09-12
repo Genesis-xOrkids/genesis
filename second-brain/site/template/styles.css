@@ -19,11 +19,14 @@ nav{display:flex;align-items:center;gap:26px;padding:16px 30px;border-bottom:1px
 .mark{display:flex;align-items:baseline;gap:8px;cursor:pointer;background:none;border:0;padding:0}
 .mark b{font-family:var(--font-display);font-variation-settings:var(--fraunces-title);font-size:19px;font-weight:600;letter-spacing:-.01em}
 .mark span{font-size:10px;letter-spacing:.17em;text-transform:uppercase;color:var(--text-faint)}
-.mark img{width:22px;height:22px;align-self:center}
-.mark .on-dark{display:none}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mark .on-light{display:none}:root:not([data-theme="light"]) .mark .on-dark{display:block}}
-:root[data-theme="dark"] .mark .on-light{display:none}
-:root[data-theme="dark"] .mark .on-dark{display:block}
+.mark i{width:44px;height:44px;align-self:center;background:var(--genesis-mark) center/contain no-repeat}
+/* The mark again, faint and fixed behind every view. Cards and the nav keep
+   their own grounds, so it shows only where the page is bare. The violet is
+   dark, so on the dark ground it needs twice the opacity to read as strongly. */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.12;
+  background:var(--genesis-mark) center/min(80vmin,720px) no-repeat}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body::before{opacity:.24}}
+:root[data-theme="dark"] body::before{opacity:.24}
 .nlinks{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 .nl{background:none;border:0;padding:6px 13px;border-radius:20px;cursor:pointer;color:var(--text-muted);
   font-size:13.5px;transition:.16s}
