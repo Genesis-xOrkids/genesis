@@ -193,13 +193,13 @@ cp ../../../brand/assets/{favicon-genesis,mark-genesis-violet}.svg template/
 The favicon and the nav mark are vendored the same way. The nav shows the full
 drawing, circuit traces included, in its own violet on both themes; that was
 chosen over the solid and dark-ground files, and it is why the nav mark carries
-about 115 KB. The favicon stays solid, because a tab icon is too small for the
+about 54 KB. The favicon stays solid, because a tab icon is too small for the
 traces. `build.py` swaps each `asset:` reference for a data URI: the page is one
 file on both targets, and the CSP admits images only as `data:`.
 
 The same drawing is also the page's backdrop, faint and fixed behind every view.
 `head.html` inlines it once as `--genesis-mark`, and the nav and the backdrop
-both read that, so the 115 KB is paid once. Text runs over the backdrop on
+both read that, so the 54 KB is paid once. Text runs over the backdrop on
 purpose, which `logo.md`'s clear-space rule would otherwise forbid.
 
 `styles.css` holds only this site's own rules and is written entirely against
