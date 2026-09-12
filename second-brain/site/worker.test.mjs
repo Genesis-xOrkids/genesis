@@ -118,3 +118,65 @@ test("live activity sits behind the same gate, and is read-only", async () => {
   assert.deepEqual(await admitted.json(), { runs: [] });
   assert.equal((await request({ method: "POST", headers })).status, 405);
 });
+
+// A database stand-in for the task routes. It keeps each statement with the
+// values bound to it, and answers from `answers`, matched by opening words.
+function recordingDb(answers = {}) {
+  const calls = [];
+  const prepare = sql => {
+    const run = values => {
+      calls.push({ sql, values });
+      const opening = Object.keys(answers).find(prefix => sql.startsWith(prefix));
+      return { results: opening ? answers[opening] : [] };
+    };
+    return { bind: (...values) => ({ all: async () => run(values) }), all: async () => run([]) };
+  };
+  return { calls, prepare, batch: async statements => Promise.all(statements.map(s => s.all())) };
+}
+
+async function signedIn(path, init, db) {
+  const headers = { "cf-access-jwt-assertion": await token() };
+  return worker.fetch(new Request("https://brain.example" + path, { ...init, headers }), { ...env, BRAIN_DB: db });
+}
+
+test("a task records who asked from the token, never from the page", async () => {
+  const db = recordingDb({ "INSERT INTO tasks": [{ id: 7 }] });
+  const body = JSON.stringify({ text: " Review PR #40 ", assignee: "genesis-reviewer", created_by: "someone@else.example" });
+  const response = await signedIn("/api/tasks", { method: "POST", body }, db);
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { id: 7 });
+  const [insert] = db.calls;
+  assert.deepEqual(insert.values.slice(0, 3), ["Review PR #40", "genesis-reviewer", "owner@example.com"]);
+  assert.match(insert.values[3], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/);
+});
+
+test("a task with no text, or an assignee that is not an agent's name, is refused", async () => {
+  const db = recordingDb();
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: JSON.stringify({ text: "  " }) }, db)).status, 400);
+  const odd = JSON.stringify({ text: "x", assignee: "Robert'); DROP TABLE tasks" });
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: odd }, db)).status, 400);
+  assert.equal(db.calls.length, 0);
+});
+
+test("the queue is read together with the watchers on duty", async () => {
+  const db = recordingDb({ "SELECT id, text": [{ id: 1, text: "t" }], "SELECT host": [{ host: "mac" }] });
+  const response = await signedIn("/api/tasks", { method: "GET" }, db);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { tasks: [{ id: 1, text: "t" }], dispatchers: [{ host: "mac" }] });
+});
+
+test("only a task nobody has picked up can be cancelled", async () => {
+  const pending = recordingDb({ "UPDATE tasks": [{ id: 3 }] });
+  assert.equal((await signedIn("/api/tasks/cancel", { method: "POST", body: JSON.stringify({ id: 3 }) }, pending)).status, 200);
+  assert.match(pending.calls[0].sql, /claimed_at IS NULL AND cancelled_at IS NULL/);
+  const claimed = recordingDb({ "UPDATE tasks": [] });
+  assert.equal((await signedIn("/api/tasks/cancel", { method: "POST", body: JSON.stringify({ id: 3 }) }, claimed)).status, 409);
+});
+
+test("the task routes sit behind the same gate", async () => {
+  const db = recordingDb();
+  const request = new Request("https://brain.example/api/tasks", { method: "POST", body: JSON.stringify({ text: "x" }) });
+  assert.equal((await worker.fetch(request, { ...env, BRAIN_DB: db })).status, 403);
+  assert.equal(db.calls.length, 0);
+});
+

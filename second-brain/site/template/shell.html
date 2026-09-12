@@ -4,6 +4,9 @@
     <button class="nl" data-view="home" aria-current="page">Home</button>
     <button class="nl" data-view="explore">Explore</button>
     <button class="nl" data-view="employees">Employees</button>
+<!--IF:static-->
+    <button class="nl" data-view="dispatch">Dispatch</button>
+<!--ENDIF-->
     <button class="nl" data-view="ask">Ask</button>
     <button class="nl" data-view="capture">Capture</button>
     <button class="nl" data-view="settings">Settings</button>
@@ -98,6 +101,21 @@
     <div class="staff" id="staff"></div>
     <div class="note" id="staffNote"></div>
   </div></section>
+
+<!--IF:static-->
+  <!-- DISPATCH -->
+  <section class="view" id="vDispatch"><div class="wrap">
+    <h2 class="sh">Dispatch a task</h2>
+    <p class="sub">Hand work to the agents. A watcher on the agents' machine picks each task up within half a minute and starts a dispatcher for it, which gives it to the employee best placed to do it &mdash; or to the one you choose. Every task ends with a one-line outcome here, and the work shows on Employees while it runs.</p>
+    <textarea id="taskIn" placeholder="Review the open pull request against the constitution."></textarea>
+    <div class="acts">
+      <select id="taskFor" class="inp" aria-label="Who does it"></select>
+      <button class="btn" id="taskBtn">Dispatch</button>
+      <span class="meta" id="taskHint"></span>
+    </div>
+    <div class="recent" id="taskWrap"></div>
+  </div></section>
+<!--ENDIF-->
 
   <!-- PAGE -->
   <section class="view" id="vPage"><div class="wrap">

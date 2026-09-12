@@ -156,6 +156,7 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 .btn.gh{background:transparent;color:var(--text-muted);border:1px solid var(--line)}
 .btn.gh:hover{background:transparent;border-color:var(--accent);color:var(--text)}
 .acts{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.acts select.inp{width:auto;flex:0 0 auto}
 .sugs{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .sug{background:none;border:1px solid var(--hairline);border-radius:9px;padding:11px 15px;cursor:pointer;
   text-align:left;font-size:14px;color:var(--text-muted);transition:.15s}
