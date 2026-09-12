@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from scripts import agent_activity, log_agent_run
+from scripts import agent_activity, brain_db, log_agent_run
 
 MOMENT = dt.datetime(2026, 9, 12, 14, 30, 5, tzinfo=dt.UTC)
 EMPLOYEES = {"genesis-reviewer", "review"}
@@ -296,3 +296,16 @@ def test_a_drain_ledgers_each_run_once_however_often_it_runs(
 def test_a_drain_with_nothing_finished_marks_nothing(database: Database) -> None:
     assert agent_activity.drain(MOMENT) == 0
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
+
+
+def test_the_session_end_hook_has_as_long_as_one_statement_is_allowed() -> None:
+    """SessionEnd hooks share a 1.5 second budget unless a hook sets its own timeout.
+
+    A wrangler call takes several seconds, so without one the hook is cancelled
+    on exit and the runs it should close stay open - which is what the first live
+    run showed. The hook gets as long as the adapter gives any one statement.
+    """
+    settings = json.loads((agent_activity.REPO / ".claude/settings.json").read_text())
+    (entry,) = settings["hooks"]["SessionEnd"]
+    (hook,) = entry["hooks"]
+    assert hook["timeout"] >= brain_db.TIMEOUT_SECONDS
