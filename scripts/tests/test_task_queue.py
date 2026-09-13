@@ -44,15 +44,16 @@ def database(monkeypatch: pytest.MonkeyPatch) -> Database:
 def test_a_claim_takes_the_oldest_pending_task_for_this_machine_in_one_statement(
     database: Database,
 ) -> None:
-    database.answers["UPDATE tasks SET claimed_at"] = [{"id": 4, "text": "t", "assignee": None}]
-    assert task_queue.claim("mac", MOMENT) == {"id": 4, "text": "t", "assignee": None}
+    claimed = {"id": 4, "request_id": "req-00000004", "text": "t", "assignee": None}
+    database.answers["UPDATE tasks SET claimed_at"] = [claimed]
+    assert task_queue.claim("mac", MOMENT) == claimed
     (statement,) = database.statements
     assert statement.startswith(f"UPDATE tasks SET claimed_at = {AT}, claimed_by = 'mac' ")
     assert "ORDER BY created_at, id LIMIT 1" in statement
     # Checked in the subquery and again on the row, so a task cancelled between
     # the two is not claimed.
     assert statement.count("claimed_at IS NULL AND cancelled_at IS NULL") == 2
-    assert statement.endswith("RETURNING id, text, assignee")
+    assert statement.endswith("RETURNING id, request_id, text, assignee")
 
 
 @pytest.mark.usefixtures("database")
@@ -105,14 +106,16 @@ def test_closing_records_the_watchers_reason_and_never_an_outcome(database: Data
 def test_a_watcher_sees_only_the_open_tasks_it_claimed(database: Database) -> None:
     task_queue.open_tasks("mac")
     (statement,) = database.statements
+    assert statement.startswith("SELECT id, request_id, background_id FROM tasks")
     assert "WHERE claimed_by = 'mac' AND finished_at IS NULL AND closed_at IS NULL" in statement
 
 
 def test_which_tasks_are_still_open_is_asked_in_one_statement(database: Database) -> None:
-    database.answers["SELECT id FROM tasks"] = [{"id": 5}]
-    assert task_queue.still_open([4, 5]) == {5}
+    database.answers["SELECT request_id FROM tasks"] = [{"request_id": "req-00000005"}]
+    assert task_queue.still_open(["req-00000004", "req-00000005"]) == {"req-00000005"}
     (statement,) = database.statements
-    assert "WHERE id IN (4,5) AND finished_at IS NULL AND closed_at IS NULL" in statement
+    assert "WHERE request_id IN ('req-00000004','req-00000005') " in statement
+    assert statement.endswith("AND finished_at IS NULL AND closed_at IS NULL")
 
 
 def test_asking_about_no_tasks_asks_nothing(database: Database) -> None:

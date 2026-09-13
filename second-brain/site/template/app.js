@@ -1240,9 +1240,10 @@ $("#taskFor").innerHTML = '<option value="">Let the dispatcher choose</option>' 
     .map(m => '<option value="' + m.id + '">' + esc(m.invoke) + "</option>").join("");
 // One request id per task being composed. Resending after an error reuses it,
 // so a submit that reached the queue before the error is not queued twice;
-// changing the task, or dispatching it, starts a new one.
+// changing the task or who it is for, or dispatching it, starts a new one.
 let taskRequest = crypto.randomUUID();
 $("#taskIn").addEventListener("input", () => { taskRequest = crypto.randomUUID(); });
+$("#taskFor").addEventListener("change", () => { taskRequest = crypto.randomUUID(); });
 $("#taskBtn").onclick = async () => {
   const text = $("#taskIn").value.trim(); if (!text) return;
   const button = $("#taskBtn");
