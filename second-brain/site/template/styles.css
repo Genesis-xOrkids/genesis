@@ -2,7 +2,7 @@
    brand.css, which is generated in Genesis-xOrkids/brand and vendored beside
    this file - refresh it with a copy, never edit it here.
 
-   Graph categories and employee kinds use the categorical slots (--cat-1..4,
+   Graph categories and the gems' colours use the categorical slots (--cat-1..4,
    --cat-other), not the brand families: the brand is deliberately muted and
    three of its five hues sit close together, which fails colorblind separation
    as a categorical scale. That set is validated in both themes; see color.md in
@@ -181,30 +181,27 @@ textarea::placeholder,.inp::placeholder{color:var(--text-faint)}
 .emp>header{display:flex;align-items:center;gap:13px;margin-bottom:10px}
 .emp>header>div{position:relative}
 /* The gem is the employee's mark: its cut says what kind of thing it is and its
-   colour agrees. Kinds are categorical, so they take the categorical slots -
-   violet for agents, blue for commands, pink for services, the kit's three
-   jewel hues. Each stone's fire (--fire-a, --fire-b) is the other two, lit as
-   two small panels in the studio it reflects, so every gem flashes the family's
-   colours as it turns. This block is the stone's material and nothing more:
-   app.js builds the solid, ray-traces and turns it, and derives the stone's body
-   colour from the one token rather than a ramp step - the tokens' rule is roles
-   only, and a gem has no role of its own. It writes that colour back as
-   --stone, for the shadow and halo below. */
-.emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--lift:3.5px;--stone-l:.62;--kind-l:0}
-/* The kinds' own lightness differs a lot - violet sits at 0.48 against pink's
-   0.58 in light - so a stone that kept its token's lightness read dull beside
-   the others. Every stone is lifted to at least this floor instead, so the
-   three read as equally vivid and differ by hue and cut, not by brightness. */
+   colour agrees - violet agents, white commands, black services. Each stone's
+   fire (--fire-a, --fire-b) is two of the kit's jewel hues, lit as two small
+   panels in the studio it reflects, so every gem flashes colour as it turns.
+   This block is the stone's material and nothing more: app.js builds the solid,
+   ray-traces and turns it, and derives an agent's body colour from the one token
+   rather than a ramp step - the tokens' rule is roles only, and a gem has no
+   role of its own. It writes the body colour back as --stone, for the shadow and
+   halo below. */
+.emp{--gem:var(--cat-4);--fire-a:var(--cat-3);--fire-b:var(--cat-2);--lift:3.5px;--stone-l:.62;--sheen:1}
+/* Violet sits at 0.48 in light, so a stone that kept its token's lightness read
+   dull. It is lifted to at least this floor instead. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .emp{--stone-l:.68}}
 :root[data-theme="dark"] .emp{--stone-l:.68}
-/* Commands are baby-blue shards: far lighter than the kit's blue (0.80
-   against 0.55) at a fixed hue of 231, so they read as clear crystal with an
-   icy tint rather than as sapphire. Hue and chroma are fixed rather than
-   derived: the token's hue differs by theme, and at this lightness sRGB holds
-   only about 0.124 of chroma, so 0.11 is set just inside it rather than boosted
-   past it. */
-.emp[data-kind="command"]{--gem:var(--cat-2);--fire-a:var(--cat-4);--fire-b:var(--cat-3);--kind-l:.8;--hue:231;--chroma:.11}
-.emp[data-kind="service"]{--gem:var(--cat-3);--fire-a:var(--cat-4);--fire-b:var(--cat-2)}
+/* Commands are clear crystal and services are onyx. Neither has a hue, so each
+   pins its body's lightness rather than taking a token: white lets through all
+   the light that enters, so a command shows only the studio and its fire; black
+   absorbs it, so a service shows only what its facets reflect. That alone read
+   as gunmetal, because every facet mirrors the studio's pale sky, so a service
+   also reflects a fifth as much (--sheen) and shows as black lit by its glints. */
+.emp[data-kind="command"]{--lightness:1;--fire-a:var(--cat-4);--fire-b:var(--cat-3)}
+.emp[data-kind="service"]{--lightness:0;--sheen:.2;--fire-a:var(--cat-4);--fire-b:var(--cat-2)}
 .emp.live{--lift:5px}
 .emp .av{position:relative;width:52px;height:52px;flex-shrink:0}
 /* The canvas overhangs the stone's box by 10px a side, so the turning outline

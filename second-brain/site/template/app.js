@@ -334,15 +334,14 @@ function material(card, state) {
     return v;
   };
   const live = state === "live";
+  const lift = live ? .05 : 0;
+  // Colourless kinds pin their lightness; agents boost their token's colour.
   const [gemL, gemC, gemH] = oklch(read("--gem"));
-  const l = Math.max(gemL, need("--stone-l"), need("--kind-l")) + (live ? .05 : 0);
-  // Commands pin their own chroma and hue; the other kinds boost the token's.
-  const c = read("--chroma") ? need("--chroma") : gemC * (live ? 1.6 : 1.5);
-  const h = read("--hue") ? need("--hue") : gemH;
-  const body = inGamut(l, c, h);
+  const body = read("--lightness") ? inGamut(need("--lightness") + lift, 0, 0)
+    : inGamut(Math.max(gemL, need("--stone-l")) + lift, gemC * (live ? 1.6 : 1.5), gemH);
   const fire = name => { const [fl, fc, fh] = oklch(read(name)); return inGamut(fl + .1, fc * 1.5, fh); };
   return {
-    stone: css(body), absorb: body.map(v => -Math.log(Math.max(v, .02)) * DEPTH),
+    stone: css(body), absorb: body.map(v => -Math.log(Math.max(v, .001)) * DEPTH), sheen: need("--sheen"),
     fireA: fire("--fire-a"), fireB: fire("--fire-b"),
   };
 }
@@ -364,7 +363,7 @@ uniform mat3 turn, back;
 uniform vec3 absorb, fireA, fireB;
 uniform vec4 sparks[3];
 uniform vec2 centre;
-uniform float size, unit;
+uniform float size, unit, sheen;
 const float IOR = 2.2;
 const float SPREAD = .07;
 
@@ -396,7 +395,7 @@ vec4 stone(vec2 p) {
   if (chord <= 0.) return vec4(0.);
 
   float f = fresnel(-dot(ray, normal));
-  vec3 light = f * studio(turn * reflect(ray, normal));
+  vec3 light = sheen * f * studio(turn * reflect(ray, normal));
   vec3 at = origin + ray * entry, dir = refract(ray, normal, 1. / IOR), carried = vec3(1. - f);
   for (int bounce = 0; bounce < 5; bounce++) {
     float leave = 1e9;
@@ -491,7 +490,7 @@ function makeStudio() {
   gl.uniform1f(at("unit"), GEM_BOX / GEM_RADIUS / STUDIO_SIZE);
   return {
     canvas, gl, planes: at("planes"), count: at("count"), turn: at("turn"), back: at("back"), centre: at("centre"),
-    absorb: at("absorb"), fireA: at("fireA"), fireB: at("fireB"), sparks: at("sparks"),
+    absorb: at("absorb"), sheen: at("sheen"), fireA: at("fireA"), fireB: at("fireB"), sparks: at("sparks"),
   };
 }
 
@@ -574,6 +573,7 @@ function drawGem(g, now) {
   gl.uniformMatrix3fv(studio.back, false, [0, 1, 2].flatMap(row => columns.map(column => column[row])));
   gl.uniform2f(studio.centre, centreX, centreY);
   gl.uniform3fv(studio.absorb, stone.absorb);
+  gl.uniform1f(studio.sheen, stone.sheen);
   gl.uniform3fv(studio.fireA, stone.fireA);
   gl.uniform3fv(studio.fireB, stone.fireB);
   gl.uniform4fv(studio.sparks, sparks);
