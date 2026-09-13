@@ -1001,7 +1001,20 @@ async function captureNote(text) {
   return "Captured \u2014 /brain:log will file it";
 }
 async function loadActivity() {
-  return (await api("/api/activity")).runs;
+  const { runs, tasks } = await api("/api/activity");
+  return runs.concat(tasks.map(dispatcherRun));
+}
+// A claimed task a session worked is the dispatcher's run: it started when the
+// task was claimed, and ended when the dispatcher finished it or the watcher
+// closed it. Only a finished task carries a report.
+function dispatcherRun(t) {
+  return {
+    agent: "dispatcher",
+    started_at: t.claimed_at,
+    finished_at: t.finished_at ?? t.closed_at,
+    target: t.finished_at ? "task #" + t.id : null,
+    outcome: t.finished_at ? t.outcome : null,
+  };
 }
 async function watchNotes(render) {
   try {
@@ -1193,6 +1206,7 @@ setInterval(() => { if ($("#vEmployees").classList.contains("on")) refreshActivi
 const ON_DUTY_MS = 60000; // twice the watcher's 30-second poll
 function taskState(t) {
   if (t.cancelled_at) return "cancelled";
+  if (t.closed_at) return "closed";
   if (t.finished_at) return "done";
   if (t.claimed_at) return t.background_id ? "working \u00b7 " + t.background_id : "starting";
   return "waiting";
@@ -1209,7 +1223,7 @@ function renderDispatch({ tasks, dispatchers }) {
     ? "<h4>Tasks</h4>" + tasks.map(t =>
       '<div class="rec"><span>' + esc(t.text.slice(0, 160)) + (t.text.length > 160 ? "\u2026" : "") +
       '<br><span class="meta">#' + t.id + " \u00b7 " + esc(t.assignee || "dispatcher chooses") + " \u00b7 " + esc(t.created_by) +
-      (t.outcome ? " \u2014 " + esc(t.outcome) : "") + "</span>" +
+      (t.outcome ? " \u2014 " + esc(t.outcome) : t.closed_reason ? " \u2014 closed: " + esc(t.closed_reason) : "") + "</span>" +
       (t.claimed_at || t.cancelled_at ? "" : ' <button class="btn gh" data-cancel="' + t.id + '">Cancel</button>') +
       "</span><em>" + esc(taskState(t)) + "</em></div>").join("")
     : "";
@@ -1224,12 +1238,25 @@ async function refreshDispatch() {
 $("#taskFor").innerHTML = '<option value="">Let the dispatcher choose</option>' +
   BRAIN.employees.filter(m => m.kind === "agent" && m.id !== "dispatcher")
     .map(m => '<option value="' + m.id + '">' + esc(m.invoke) + "</option>").join("");
+// One request id per task being composed. Resending after an error reuses it,
+// so a submit that reached the queue before the error is not queued twice;
+// changing the task or who it is for, or dispatching it, starts a new one.
+let taskRequest = crypto.randomUUID();
+$("#taskIn").addEventListener("input", () => { taskRequest = crypto.randomUUID(); });
+$("#taskFor").addEventListener("change", () => { taskRequest = crypto.randomUUID(); });
 $("#taskBtn").onclick = async () => {
   const text = $("#taskIn").value.trim(); if (!text) return;
+  const button = $("#taskBtn");
+  button.disabled = true;
   try {
-    const { id } = await api("/api/tasks", { method: "POST", body: JSON.stringify({ text, assignee: $("#taskFor").value || null }) });
+    const { id } = await api("/api/tasks", { method: "POST", body: JSON.stringify({ text, assignee: $("#taskFor").value || null, request_id: taskRequest }) });
+    taskRequest = crypto.randomUUID();
     $("#taskIn").value = ""; toast("Dispatched \u2014 task #" + id + " waits for the watcher"); refreshDispatch();
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    button.disabled = false;
+  }
 };
 $("#taskWrap").addEventListener("click", async e => {
   const button = e.target.closest("[data-cancel]"); if (!button) return;

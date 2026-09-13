@@ -84,12 +84,21 @@ A watcher on the agents' machine claims tasks: `scripts/dispatch_watch.py`, kept
 running by launchd. Every 30 seconds it:
 
 - records a heartbeat in `dispatchers`;
-- closes tasks whose session stopped without finishing them;
-- starts a background `dispatcher` session for each pending task.
+- closes the tasks it claimed whose session stopped without finishing them;
+- starts a background `dispatcher` session for each pending task, in a detached
+  worktree of the task's own, made from the watcher's own commit;
+- removes the worktrees of tasks that have ended, keeping any with uncommitted
+  work.
 
 The dispatcher hands the task to the right employee and finishes it with a
-one-line outcome (`python3 -m scripts.task_queue finish`). Polling costs no
-tokens: nothing starts a model until a task arrives.
+one-line outcome (`python3 -m scripts.task_queue finish`). A task the watcher has
+to give up on is closed with its reason instead, which is never taken for an
+outcome, so it never reaches the ledger. Polling costs no tokens: nothing starts
+a model until a task arrives.
+
+Each dispatch carries a request id the page generates, so a submit that arrives
+twice is one task. Only a person signed in through Access can dispatch; a service
+token cannot.
 
 The watcher runs from a detached worktree of its own, because it keeps that
 checkout at `origin/main` and restarts itself when `main` moves:

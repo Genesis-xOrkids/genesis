@@ -38,6 +38,8 @@ stopped without an outcome, which tells the person nothing.
 ## Limits
 
 - One task per session. Do not look for other tasks.
+- You work in a worktree of your own, detached at the commit the watcher runs,
+  that nothing else touches while the task runs. Commit on a branch, as below.
 - Merging, deploying, deleting, spending money, or posting anywhere outside
   this repository needs the task to ask for it in so many words. When it does
   not, stop before that step and put the question in the outcome.

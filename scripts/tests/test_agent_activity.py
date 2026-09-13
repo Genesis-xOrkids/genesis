@@ -261,6 +261,7 @@ def test_a_drain_ledgers_each_run_once_however_often_it_runs(
 ) -> None:
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
+    monkeypatch.setattr(agent_activity.task_queue, "drain", lambda _moment: 0)
     database.rows = [
         {
             "id": 7,
@@ -293,8 +294,11 @@ def test_a_drain_ledgers_each_run_once_however_often_it_runs(
     )
 
 
-def test_a_drain_with_nothing_finished_marks_nothing(database: Database) -> None:
-    assert agent_activity.drain(MOMENT) == 0
+def test_a_drain_also_drains_the_dispatch_queue(
+    database: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(agent_activity.task_queue, "drain", lambda _moment: 3)
+    assert agent_activity.drain(MOMENT) == 3
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
 
 

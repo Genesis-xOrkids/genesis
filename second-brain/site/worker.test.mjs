@@ -129,7 +129,7 @@ test("live activity sits behind the same gate, and is read-only", async () => {
   const headers = { "cf-access-jwt-assertion": await token() };
   const admitted = await request({ headers });
   assert.equal(admitted.status, 200);
-  assert.deepEqual(await admitted.json(), { runs: [] });
+  assert.deepEqual(await admitted.json(), { runs: [], tasks: [] });
   assert.equal((await request({ method: "POST", headers })).status, 405);
 });
 
@@ -250,13 +250,15 @@ async function signedIn(path, init, db) {
 
 test("a task records who asked from the token, never from the page", async () => {
   const db = recordingDb({ "INSERT INTO tasks": [{ id: 7 }] });
-  const body = JSON.stringify({ text: " Review PR #40 ", assignee: "genesis-reviewer", created_by: "someone@else.example" });
+  const body = JSON.stringify({
+    text: " Review PR #40 ", assignee: "genesis-reviewer", request_id: "req-00000001", created_by: "someone@else.example",
+  });
   const response = await signedIn("/api/tasks", { method: "POST", body }, db);
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { id: 7 });
   const [insert] = db.calls;
-  assert.deepEqual(insert.values.slice(0, 3), ["Review PR #40", "genesis-reviewer", "owner@example.com"]);
-  assert.match(insert.values[3], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/);
+  assert.deepEqual(insert.values.slice(0, 4), ["req-00000001", "Review PR #40", "genesis-reviewer", "owner@example.com"]);
+  assert.match(insert.values[4], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/);
 });
 
 test("a task with no text, or an assignee that is not an agent's name, is refused", async () => {
@@ -287,6 +289,57 @@ test("the task routes sit behind the same gate", async () => {
   const request = new Request("https://brain.example/api/tasks", { method: "POST", body: JSON.stringify({ text: "x" }) });
   assert.equal((await worker.fetch(request, { ...env, BRAIN_DB: db })).status, 403);
   assert.equal(db.calls.length, 0);
+});
+
+test("a task without the page's request id is refused", async () => {
+  const db = recordingDb();
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: JSON.stringify({ text: "x" }) }, db)).status, 400);
+  assert.equal(db.calls.length, 0);
+});
+
+test("a submit sent twice is one task, answered with its id", async () => {
+  const stored = [{ id: 7, text: "Review PR #40", assignee: null }];
+  const db = recordingDb({ "INSERT INTO tasks": [], "SELECT id, text, assignee FROM tasks WHERE request_id": stored });
+  const body = JSON.stringify({ text: "Review PR #40", request_id: "req-00000001" });
+  const response = await signedIn("/api/tasks", { method: "POST", body }, db);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { id: 7 });
+  assert.match(db.calls[0].sql, /ON CONFLICT \(request_id\) DO NOTHING RETURNING id/);
+  assert.deepEqual(db.calls[1].values, ["req-00000001"]);
+});
+
+test("a request id sent again as a different task is refused, not answered as dispatched", async () => {
+  const stored = [{ id: 7, text: "Review PR #40", assignee: null }];
+  const db = recordingDb({ "INSERT INTO tasks": [], "SELECT id, text, assignee FROM tasks WHERE request_id": stored });
+  const reassigned = JSON.stringify({ text: "Review PR #40", assignee: "genesis-reviewer", request_id: "req-00000001" });
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: reassigned }, db)).status, 409);
+  const reworded = JSON.stringify({ text: "Review PR #41", request_id: "req-00000001" });
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: reworded }, db)).status, 409);
+});
+
+test("only a person can dispatch: a service token is refused", async () => {
+  const db = recordingDb();
+  const serviceToken = await token({ email: undefined, common_name: "routine.access" });
+  const request = new Request("https://brain.example/api/tasks", {
+    method: "POST",
+    body: JSON.stringify({ text: "x", request_id: "req-00000001" }),
+    headers: { "cf-access-jwt-assertion": serviceToken },
+  });
+  assert.equal((await worker.fetch(request, { ...env, BRAIN_DB: db })).status, 403);
+  assert.equal(db.calls.length, 0);
+});
+
+test("live activity carries the dispatcher's runs from the queue", async () => {
+  const db = recordingDb({
+    "SELECT agent": [{ agent: "genesis-reviewer" }],
+    "SELECT id, claimed_at": [{ id: 12, claimed_at: "2026-09-12T03:00:00+00:00" }],
+  });
+  const response = await signedIn("/api/activity", { method: "GET" }, db);
+  assert.deepEqual(await response.json(), {
+    runs: [{ agent: "genesis-reviewer" }],
+    tasks: [{ id: 12, claimed_at: "2026-09-12T03:00:00+00:00" }],
+  });
+  assert.match(db.calls[1].sql, /background_id IS NOT NULL OR finished_at IS NOT NULL/);
 });
 
 test("a known key goes on verifying while a refresh waits on a slow Access", async () => {

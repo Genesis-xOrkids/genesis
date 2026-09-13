@@ -15,6 +15,7 @@ share the adapter rather than each carrying a copy of it.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import subprocess
 from typing import Any
@@ -34,6 +35,15 @@ def literal(value: str) -> str:
     if "\x00" in value:
         raise SystemExit("a value contains a NUL byte, which cannot be stored")
     return "'" + value.replace("'", "''") + "'"
+
+
+def stamp(moment: dt.datetime) -> str:
+    """A timestamp as everything writing to the brain writes one: UTC, to the second, ISO 8601.
+
+    The worker writes the same shape, so a time written from the page and one
+    written from here sort and compare as text.
+    """
+    return moment.astimezone(dt.UTC).isoformat(timespec="seconds")
 
 
 def query(sql: str) -> list[dict[str, Any]]:

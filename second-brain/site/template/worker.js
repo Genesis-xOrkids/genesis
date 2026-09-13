@@ -369,7 +369,17 @@ async function activity(request, env) {
       "OR finished_at > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-7 days') " +
       "ORDER BY COALESCE(finished_at, started_at) DESC LIMIT 500"
   ).all();
-  return json({ runs: results ?? [] });
+  // A dispatcher's runs are the tasks a session worked or the dispatcher
+  // finished, chosen the same way: open, finished but not yet ledgered, or
+  // ended within the week. The page turns each into a run.
+  const tasks = await env.BRAIN_DB.prepare(
+    "SELECT id, claimed_at, finished_at, outcome, closed_at FROM tasks " +
+      "WHERE claimed_at IS NOT NULL AND (background_id IS NOT NULL OR finished_at IS NOT NULL) " +
+      "AND ((finished_at IS NULL AND closed_at IS NULL) OR (finished_at IS NOT NULL AND ledgered_at IS NULL) " +
+      "OR COALESCE(finished_at, closed_at) > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-7 days')) " +
+      "ORDER BY claimed_at DESC LIMIT 500"
+  ).all();
+  return json({ runs: results ?? [], tasks: tasks.results ?? [] });
 }
 
 // A timestamp as the scripts on the agents' machine write one - UTC, to the
@@ -381,16 +391,18 @@ function stamp() {
 // The dispatch queue. The page adds tasks and cancels ones nobody has picked up.
 // Everything after that - claiming, the session's id, the outcome - is written
 // by `scripts/task_queue.py` on the machine running the watcher. Who asked is the
-// identity in the verified Access token, never a value the page sends.
+// email in the verified Access token, never a value the page sends.
 const MAX_TASK = 4000;
 const AGENT_NAME = /^[a-z0-9-]{1,64}$/;
+const REQUEST_ID = /^[A-Za-z0-9-]{8,64}$/;
 
 async function tasks(request, env, url, claims) {
   if (request.method === "GET") {
     const [queue, watchers] = await env.BRAIN_DB.batch([
       env.BRAIN_DB.prepare(
-        "SELECT id, text, assignee, created_by, created_at, claimed_at, background_id, cancelled_at, " +
-          "finished_at, outcome FROM tasks ORDER BY created_at DESC, id DESC LIMIT 100"
+        "SELECT id, text, assignee, created_by, created_at, claimed_at, claimed_by, background_id, " +
+          "cancelled_at, finished_at, outcome, closed_at, closed_reason FROM tasks " +
+          "ORDER BY created_at DESC, id DESC LIMIT 100"
       ),
       env.BRAIN_DB.prepare("SELECT host, started_at, last_seen_at FROM dispatchers ORDER BY last_seen_at DESC"),
     ]);
@@ -406,13 +418,31 @@ async function tasks(request, env, url, claims) {
     if (assignee !== null && (typeof assignee !== "string" || !AGENT_NAME.test(assignee))) {
       return problem(400, "An assignee is an agent's name.");
     }
-    // A person's token carries an email; a service token carries its name.
-    const asker = claims.email ?? claims.common_name;
-    if (!asker) return problem(403, "The Access token names nobody to record as asking.");
+    const requestId = typeof body.request_id === "string" ? body.request_id : "";
+    if (!REQUEST_ID.test(requestId)) return problem(400, "A task needs the request id the page generates for it.");
+    // Only a person can dispatch work. A service token carries no email, and
+    // nothing that runs unattended should be able to start an agent session.
+    if (typeof claims.email !== "string" || !claims.email) {
+      return problem(403, "Only a person signed in through Access can dispatch a task.");
+    }
+    // The page generates the request id once per task and sends it again on a
+    // retry, so a submit that arrives twice is one task, answered with its id.
     const { results } = await env.BRAIN_DB.prepare(
-      "INSERT INTO tasks (text, assignee, created_by, created_at) VALUES (?, ?, ?, ?) RETURNING id"
-    ).bind(text, assignee, asker, stamp()).all();
-    return json({ id: results[0].id }, 201);
+      "INSERT INTO tasks (request_id, text, assignee, created_by, created_at) VALUES (?, ?, ?, ?, ?) " +
+        "ON CONFLICT (request_id) DO NOTHING RETURNING id"
+    ).bind(requestId, text, assignee, claims.email, stamp()).all();
+    if (results?.length) return json({ id: results[0].id }, 201);
+    // A repeat must be the same task. The same request id with other text or
+    // another assignee is a change the stored task does not have, and answering
+    // with the stored task's id would say it had been dispatched.
+    const { results: existing } = await env.BRAIN_DB.prepare(
+      "SELECT id, text, assignee FROM tasks WHERE request_id = ?"
+    ).bind(requestId).all();
+    const [stored] = existing;
+    if (stored.text !== text || stored.assignee !== assignee) {
+      return problem(409, "That request was already sent as a different task. Reload the page and dispatch it again.");
+    }
+    return json({ id: stored.id }, 200);
   }
 
   return problem(405, "Use GET or POST.");
