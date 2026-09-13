@@ -191,13 +191,23 @@ test("a task without the page's request id is refused", async () => {
 });
 
 test("a submit sent twice is one task, answered with its id", async () => {
-  const db = recordingDb({ "INSERT INTO tasks": [], "SELECT id FROM tasks WHERE request_id": [{ id: 7 }] });
+  const stored = [{ id: 7, text: "Review PR #40", assignee: null }];
+  const db = recordingDb({ "INSERT INTO tasks": [], "SELECT id, text, assignee FROM tasks WHERE request_id": stored });
   const body = JSON.stringify({ text: "Review PR #40", request_id: "req-00000001" });
   const response = await signedIn("/api/tasks", { method: "POST", body }, db);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { id: 7 });
   assert.match(db.calls[0].sql, /ON CONFLICT \(request_id\) DO NOTHING RETURNING id/);
   assert.deepEqual(db.calls[1].values, ["req-00000001"]);
+});
+
+test("a request id sent again as a different task is refused, not answered as dispatched", async () => {
+  const stored = [{ id: 7, text: "Review PR #40", assignee: null }];
+  const db = recordingDb({ "INSERT INTO tasks": [], "SELECT id, text, assignee FROM tasks WHERE request_id": stored });
+  const reassigned = JSON.stringify({ text: "Review PR #40", assignee: "genesis-reviewer", request_id: "req-00000001" });
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: reassigned }, db)).status, 409);
+  const reworded = JSON.stringify({ text: "Review PR #41", request_id: "req-00000001" });
+  assert.equal((await signedIn("/api/tasks", { method: "POST", body: reworded }, db)).status, 409);
 });
 
 test("only a person can dispatch: a service token is refused", async () => {

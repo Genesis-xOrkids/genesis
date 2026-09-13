@@ -61,7 +61,7 @@ def claim(host: str, moment: dt.datetime) -> dict[str, Any] | None:
         f"UPDATE tasks SET claimed_at = {literal(stamp(moment))}, claimed_by = {literal(host)} "
         "WHERE id = (SELECT id FROM tasks WHERE claimed_at IS NULL AND cancelled_at IS NULL "
         "ORDER BY created_at, id LIMIT 1) "
-        "AND claimed_at IS NULL AND cancelled_at IS NULL RETURNING id, text, assignee"
+        "AND claimed_at IS NULL AND cancelled_at IS NULL RETURNING id, request_id, text, assignee"
     )
     return claimed[0] if claimed else None
 
@@ -104,20 +104,21 @@ def open_tasks(host: str) -> list[dict[str, Any]]:
     runs on, so one watcher never judges another's tasks.
     """
     return query(
-        f"SELECT id, background_id FROM tasks WHERE claimed_by = {literal(host)} "
+        f"SELECT id, request_id, background_id FROM tasks WHERE claimed_by = {literal(host)} "
         "AND finished_at IS NULL AND closed_at IS NULL"
     )
 
 
-def still_open(task_ids: list[int]) -> set[int]:
-    """Which of these tasks are neither finished nor closed."""
-    if not task_ids:
+def still_open(request_ids: list[str]) -> set[str]:
+    """Which of these tasks, by request id, are neither finished nor closed."""
+    if not request_ids:
         return set()
-    listed = ",".join(str(int(task_id)) for task_id in task_ids)
+    listed = ",".join(literal(request_id) for request_id in request_ids)
     rows = query(
-        f"SELECT id FROM tasks WHERE id IN ({listed}) AND finished_at IS NULL AND closed_at IS NULL"
+        f"SELECT request_id FROM tasks WHERE request_id IN ({listed}) "
+        "AND finished_at IS NULL AND closed_at IS NULL"
     )
-    return {int(row["id"]) for row in rows}
+    return {str(row["request_id"]) for row in rows}
 
 
 def drain(moment: dt.datetime) -> int:

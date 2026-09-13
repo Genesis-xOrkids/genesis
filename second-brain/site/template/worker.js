@@ -382,9 +382,17 @@ async function tasks(request, env, url, claims) {
         "ON CONFLICT (request_id) DO NOTHING RETURNING id"
     ).bind(requestId, text, assignee, claims.email, stamp()).all();
     if (results?.length) return json({ id: results[0].id }, 201);
-    const { results: existing } = await env.BRAIN_DB.prepare("SELECT id FROM tasks WHERE request_id = ?")
-      .bind(requestId).all();
-    return json({ id: existing[0].id }, 200);
+    // A repeat must be the same task. The same request id with other text or
+    // another assignee is a change the stored task does not have, and answering
+    // with the stored task's id would say it had been dispatched.
+    const { results: existing } = await env.BRAIN_DB.prepare(
+      "SELECT id, text, assignee FROM tasks WHERE request_id = ?"
+    ).bind(requestId).all();
+    const [stored] = existing;
+    if (stored.text !== text || stored.assignee !== assignee) {
+      return problem(409, "That request was already sent as a different task. Reload the page and dispatch it again.");
+    }
+    return json({ id: stored.id }, 200);
   }
 
   return problem(405, "Use GET or POST.");
