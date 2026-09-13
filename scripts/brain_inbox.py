@@ -16,9 +16,13 @@ reading and writing loses nothing, because unmarked notes are simply read again.
 """
 
 import argparse
+import pathlib
 import sys
 
 from scripts.brain_db import query
+from scripts.pushed import require_pushed
+
+LOG = pathlib.Path(__file__).resolve().parents[1] / "second-brain/wiki/log.md"
 
 
 def main() -> int:
@@ -37,6 +41,9 @@ def main() -> int:
             raise SystemExit(f"--mark takes note ids, not {args.mark!r}") from error
         if not ids:
             raise SystemExit("--mark needs at least one id")
+        # In a cloud session the log is only kept once it is pushed; a note marked
+        # before then would be lost with the checkout.
+        require_pushed(LOG)
         listed = ",".join(str(number) for number in ids)
         query(
             "UPDATE notes SET filed_at = datetime('now') "

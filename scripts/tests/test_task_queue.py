@@ -123,17 +123,21 @@ def test_asking_about_no_tasks_asks_nothing(database: Database) -> None:
     assert database.statements == []
 
 
-def test_a_drain_ledgers_finished_tasks_as_dispatcher_runs_once(
+TASK_RUNS = [
+    {"id": 12, "outcome": "Opened PR #40", "finished_at": "2026-09-12T02:50:00+00:00"},
+    {"id": 13, "outcome": "Reviewed PR #41", "finished_at": "2026-09-12T02:55:00+00:00"},
+]
+
+
+def test_finished_tasks_are_ledgered_as_dispatcher_runs_without_marking(
     database: Database, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
-    database.answers["SELECT id, outcome, finished_at FROM tasks"] = [
-        {"id": 12, "outcome": "Opened PR #40", "finished_at": "2026-09-12T02:50:00+00:00"}
-    ]
-    assert task_queue.drain(MOMENT) == 1
-    # The same rows again, as a drain that failed before marking them would see.
-    assert task_queue.drain(MOMENT) == 1
+    database.answers["SELECT id, outcome, finished_at FROM tasks"] = TASK_RUNS[:1]
+    assert task_queue.ledger() == 1
+    # The same task again, as after a run that failed before marking it.
+    assert task_queue.ledger() == 1
     assert ledger.read_text().splitlines() == [
         "run_at\tagent\ttarget\toutcome",
         "2026-09-12T02:50:00+00:00\tdispatcher\ttask #12\tOpened PR #40",
@@ -141,8 +145,16 @@ def test_a_drain_ledgers_finished_tasks_as_dispatcher_runs_once(
     select = next(sql for sql in database.statements if sql.startswith("SELECT"))
     # Finished only: a closed task has no report to ledger.
     assert "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL" in select
-    marks = [sql for sql in database.statements if sql.startswith("UPDATE")]
-    assert marks == [f"UPDATE tasks SET ledgered_at = {AT} WHERE id IN (12)"] * 2
+    assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
+
+
+def test_only_tasks_the_ledger_holds_are_marked(database: Database) -> None:
+    database.answers["SELECT id, outcome, finished_at FROM tasks"] = TASK_RUNS
+    held = {("2026-09-12T02:50:00+00:00", "dispatcher", "task #12")}
+    assert task_queue.mark(MOMENT, held) == 1
+    assert [sql for sql in database.statements if sql.startswith("UPDATE")] == [
+        f"UPDATE tasks SET ledgered_at = {AT} WHERE id IN (12)"
+    ]
 
 
 def test_a_watcher_start_resets_its_start_and_a_poll_moves_only_last_seen(

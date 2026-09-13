@@ -4,7 +4,7 @@ type: decision
 sources: [.claude/agents/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json]
 related: ["[[agent-runtime]]", "[[evals-as-gates]]", "[[pre-ship-checklist]]", "[[null-means-unknown]]", "[[one-write-door]]", "[[atomic-facts-not-derivations]]"]
 created: 2026-09-12
-last-updated: 2026-09-12
+last-updated: 2026-09-13
 ---
 
 ## What it is
@@ -20,10 +20,10 @@ model gateway ([[agent-runtime]]); this network works on the code.
 | Agent | Does | Started by |
 |---|---|---|
 | `dispatcher` | Takes one task and hands it to the right employee | The watcher, one session per task |
-| `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, or a task |
-| `brain-librarian` | Ingests changed docs, files notes, drains the ledger, lints | A schedule, or a task |
-| `catalog-steward` | Reports ingestion health per storefront | A schedule, or a task |
-| `eval-runner` | Scores an agent against its eval cases | A pull request changing an agent, or a task |
+| `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, or a task; a routine on every pull request is planned |
+| `brain-librarian` | Ingests changed docs, files notes, ledgers finished runs, lints | A task; a daily routine is planned |
+| `catalog-steward` | Reports ingestion health per storefront | A task; a daily routine is planned |
+| `eval-runner` | Scores an agent against its eval cases | A task; a trigger on pull requests that change an agent is planned |
 
 ## How work reaches them
 
@@ -52,8 +52,15 @@ ended when it was finished or closed.
 ## Where the records live
 
 Live state is in D1, behind the site: open runs in `agent_runs`, and the queue
-in `tasks`. History is `.claude/runs.tsv`, in git. The brain-librarian drains
-finished runs into it, the way the notes inbox is drained into the log.
+in `tasks`. History is `.claude/runs.tsv`, in git. The brain-librarian writes
+finished runs into it, the way the notes inbox is filed into the log.
+
+Nothing is marked done in D1 until the pull request holding it is pushed. The
+librarian writes notes and runs into the files, commits, pushes and opens its
+pull request, and only then marks them. A run that fails before that leaves every
+row unmarked, and the next one writes them again. In a cloud session the marking
+commands refuse to run until the files are committed and pushed, because the
+checkout does not outlive the session.
 
 That split was argued twice in a day. PR #24 moved the ledger into D1 to end
 branch conflicts and deploy lag. PR #27 moved it back, fixing the conflicts with

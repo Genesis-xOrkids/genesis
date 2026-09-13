@@ -256,50 +256,87 @@ def test_a_command_run_is_keyed_by_the_moment_it_was_recorded(database: Database
     assert "'PR #12'" in closed
 
 
-def test_a_drain_ledgers_each_run_once_however_often_it_runs(
+REVIEW_RUN = {
+    "id": 7,
+    "agent": "genesis-reviewer",
+    "target": "PR #12",
+    "outcome": "clean",
+    "finished_at": "2026-09-12T14:00:00+00:00",
+}
+COMMAND_RUN = {
+    "id": 8,
+    "agent": "review",
+    "target": "PR #12",
+    "outcome": "relayed",
+    "finished_at": "2026-09-12T14:01:00+00:00",
+}
+HEADER = "run_at\tagent\ttarget\toutcome"
+
+
+def test_the_ledger_is_written_without_marking_and_again_harmlessly(
     database: Database, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
-    monkeypatch.setattr(agent_activity.task_queue, "drain", lambda _moment: 0)
-    database.rows = [
-        {
-            "id": 7,
-            "agent": "genesis-reviewer",
-            "target": "PR #12",
-            "outcome": "clean",
-            "finished_at": "2026-09-12T14:00:00+00:00",
-        },
-        {
-            "id": 8,
-            "agent": "review",
-            "target": "PR #12",
-            "outcome": "relayed",
-            "finished_at": "2026-09-12T14:01:00+00:00",
-        },
-    ]
-    assert agent_activity.drain(MOMENT) == 2
-    # The same rows again, as a drain that failed before marking them would see.
-    assert agent_activity.drain(MOMENT) == 2
-    lines = ledger.read_text().splitlines()
-    assert lines[0] == "run_at\tagent\ttarget\toutcome"
-    assert lines[1:] == [
+    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda: 0)
+    database.rows = [REVIEW_RUN, COMMAND_RUN]
+    assert agent_activity.ledger() == 2
+    # The same rows again, as after a run that failed before marking them.
+    assert agent_activity.ledger() == 2
+    assert ledger.read_text().splitlines() == [
+        HEADER,
         "2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean",
         "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed",
     ]
-    marks = [sql for sql in database.statements if sql.startswith("UPDATE")]
-    assert (
-        marks
-        == ["UPDATE agent_runs SET ledgered_at = '2026-09-12T14:30:05+00:00' WHERE id IN (7,8)"] * 2
+    assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
+
+
+def test_only_runs_the_ledger_holds_are_marked(
+    database: Database, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    ledger = tmp_path / "runs.tsv"
+    ledger.write_text(HEADER + "\n2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean\n")
+    monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
+    monkeypatch.setattr(agent_activity, "LEDGER", ledger)
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    held_by_queue: list[set[tuple[str, str, str]]] = []
+    monkeypatch.setattr(
+        agent_activity.task_queue, "mark", lambda _moment, held: held_by_queue.append(held) or 0
     )
+    # Run 8 finished after the ledger was written, so it stays for the next pass.
+    database.rows = [REVIEW_RUN, COMMAND_RUN]
+    assert agent_activity.mark(MOMENT) == 1
+    assert [sql for sql in database.statements if sql.startswith("UPDATE")] == [
+        "UPDATE agent_runs SET ledgered_at = '2026-09-12T14:30:05+00:00' WHERE id IN (7)"
+    ]
+    assert held_by_queue == [{("2026-09-12T14:00:00+00:00", "genesis-reviewer", "PR #12")}]
 
 
-def test_a_drain_also_drains_the_dispatch_queue(
+def test_marking_waits_for_the_ledger_to_be_pushed(
     database: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(agent_activity.task_queue, "drain", lambda _moment: 3)
-    assert agent_activity.drain(MOMENT) == 3
-    assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
+    def refuse(_path: pathlib.Path) -> None:
+        raise SystemExit(
+            "runs.tsv has changes that are not committed; commit and push it before marking"
+        )
+
+    monkeypatch.setattr(agent_activity, "require_pushed", refuse)
+    with pytest.raises(SystemExit, match="not committed"):
+        agent_activity.mark(MOMENT)
+    assert database.statements == []
+
+
+def test_ledger_and_mark_include_the_dispatch_queue(
+    database: Database, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setattr(log_agent_run, "LEDGER", tmp_path / "runs.tsv")
+    monkeypatch.setattr(agent_activity, "LEDGER", tmp_path / "runs.tsv")
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda: 3)
+    monkeypatch.setattr(agent_activity.task_queue, "mark", lambda _moment, _held: 2)
+    assert agent_activity.ledger() == 3
+    assert agent_activity.mark(MOMENT) == 2
+    assert database.statements[-1].startswith("SELECT")
 
 
 def test_the_session_end_hook_has_as_long_as_one_statement_is_allowed() -> None:

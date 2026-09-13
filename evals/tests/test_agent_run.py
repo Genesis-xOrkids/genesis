@@ -98,6 +98,17 @@ def test_an_unknown_case_name_is_refused(
     assert exit_info.value.code == 2
 
 
+def test_an_agent_with_no_suite_is_refused_by_name(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("sys.argv", ["run", "brain-librarian"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        run.main()
+    assert exit_info.value.code == 2
+    assert "brain-librarian has no eval suite" in capsys.readouterr().err
+
+
 def test_the_agent_under_test_is_the_session_main_agent_and_sees_the_diff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

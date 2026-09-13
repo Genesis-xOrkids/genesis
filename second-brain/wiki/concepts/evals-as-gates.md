@@ -2,9 +2,9 @@
 title: Evals gate prompts the way tests gate code
 type: concept
 sources: [CLAUDE.md, PLAN.md, ROADMAP.md]
-related: ["[[pre-ship-checklist]]", "[[styling-intelligence]]", "[[hybrid-catalog-search]]", "[[model-tiering]]", "[[provenance-creates-rows]]"]
+related: ["[[pre-ship-checklist]]", "[[styling-intelligence]]", "[[hybrid-catalog-search]]", "[[model-tiering]]", "[[provenance-creates-rows]]", "[[agent-network]]"]
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-13
 ---
 
 ## What it is
@@ -70,3 +70,16 @@ Downgrading a model is gated on evals showing parity, never on price alone
 
 Harness for retrieval exists (`evals/retrieval/`, with `dataset.py` and `run.py`)
 and produced the C3 numbers. The stylist rubric harness is S1 and not built.
+
+The agents that work on this repository have suites of their own in
+`evals/agents/`, one folder per agent, run by `evals/agents/run.py` and scored by
+`evals/agents/score.py` against what each case wrote down ([[agent-network]]).
+Only `genesis-reviewer` has one: eight cases, five violations and three clean
+diffs. Its `jsonb-column` target was widened from 1–3 to 1–5 blocking findings
+after the reviewer's first run on 2026-09-12 - the after-the-fact move this page
+warns about - so on 2026-09-13 the gate itself was tested with a seeded
+regression. A reviewer told to ignore the constitution's Data rules failed
+exactly the three Data cases (`jsonb-column`, `stored-on-sale`, `null-as-false`)
+and passed the other five. `brain-librarian`, `catalog-steward`, `eval-runner`
+and `dispatcher` have no suite yet, so a change to their prompts is not gated;
+the runner refuses them by name rather than passing them.

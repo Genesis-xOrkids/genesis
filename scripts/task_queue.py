@@ -13,8 +13,8 @@ Only a finished task has a report, so only a finished task reaches the ledger.
 
 A claimed task that a session worked is the dispatcher's run: it started when
 the task was claimed, and ended when the task was finished or closed. It is not
-copied into `agent_runs`. The Employees tab reads it from here, and `drain`
-moves the finished ones into `.claude/runs.tsv`.
+copied into `agent_runs`. The Employees tab reads it from here, and `ledger`
+writes the finished ones into `.claude/runs.tsv`.
 
 Run as a module from the repository root:
 
@@ -29,7 +29,7 @@ import sys
 from typing import Any
 
 from scripts.brain_db import literal, query, stamp
-from scripts.log_agent_run import append
+from scripts.log_agent_run import append, key
 
 DISPATCHER = "dispatcher"
 
@@ -121,17 +121,15 @@ def still_open(request_ids: list[str]) -> set[str]:
     return {str(row["request_id"]) for row in rows}
 
 
-def drain(moment: dt.datetime) -> int:
-    """Move finished dispatcher runs into `.claude/runs.tsv`, and mark them. Returns how many.
+def ledger() -> int:
+    """Write finished dispatcher runs into `.claude/runs.tsv`. Returns how many are unmarked.
 
-    A closed task has no report, so it stays out of the ledger. Every run goes
-    through `append`, idempotent on `(agent, run_at, target)`, before any is
-    marked, so a drain that fails part-way repeats as no-ops.
+    A closed task has no report, so it stays out of the ledger. Nothing is marked
+    here: `mark` does that once the ledger has been kept. `append` is idempotent
+    on `(agent, run_at, target)`, so writing the same unmarked tasks again adds
+    nothing.
     """
-    runs = query(
-        "SELECT id, outcome, finished_at FROM tasks "
-        "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL ORDER BY finished_at"
-    )
+    runs = _finished_unmarked()
     for run in runs:
         append(
             DISPATCHER,
@@ -139,10 +137,28 @@ def drain(moment: dt.datetime) -> int:
             run["outcome"],
             dt.datetime.fromisoformat(run["finished_at"]),
         )
+    return len(runs)
+
+
+def mark(moment: dt.datetime, held: set[tuple[str, str, str]]) -> int:
+    """Mark as ledgered the finished tasks whose runs are in `held`. Returns how many."""
+    runs = [
+        run
+        for run in _finished_unmarked()
+        if key(DISPATCHER, f"task #{int(run['id'])}", dt.datetime.fromisoformat(run["finished_at"]))
+        in held
+    ]
     if runs:
         listed = ",".join(str(int(run["id"])) for run in runs)
         query(f"UPDATE tasks SET ledgered_at = {literal(stamp(moment))} WHERE id IN ({listed})")
     return len(runs)
+
+
+def _finished_unmarked() -> list[dict[str, Any]]:
+    return query(
+        "SELECT id, outcome, finished_at FROM tasks "
+        "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL ORDER BY finished_at"
+    )
 
 
 def main() -> int:

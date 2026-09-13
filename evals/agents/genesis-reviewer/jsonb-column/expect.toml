@@ -1,5 +1,8 @@
-# One JSONB column breaks several rules at once - no JSON, source field names in
-# the core row, a second home for long-tail attributes, an empty default standing
-# in for unknown - and a correct review may count each as its own finding.
+# Written as [1, 3] before the reviewer first ran. Changed to [1, 5] on
+# 2026-09-12, after that run reported 4 blocking findings, each a distinct rule
+# the diff breaks: no JSON, source field names in the core row, a second home for
+# long-tail attributes, and an empty default standing in for unknown. The target
+# moved after a run, so whether this suite can still fail a reviewer is shown by
+# the seeded regression recorded in the wiki's evals-as-gates page, not assumed.
 blocking = [1, 5]
 must_cite = ["JSON"]
