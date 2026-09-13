@@ -68,7 +68,7 @@ def test_a_session_that_never_answers_fails_its_case_saying_so(
     assert run.main() == 1
     out = capsys.readouterr().out
     assert (
-        f"| jsonb-column | 1 to 3 | no Outcome line | FAIL: no report within {run.CASE_SECONDS} seconds |"
+        f"| jsonb-column | 1 to 5 | no Outcome line | FAIL: no report within {run.CASE_SECONDS} seconds |"
         in out
     )
 

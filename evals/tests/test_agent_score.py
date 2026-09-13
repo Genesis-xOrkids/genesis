@@ -89,4 +89,4 @@ def test_the_command_exits_non_zero_on_a_miss(
     report.write_text("Target: eval jsonb-column\nOutcome: 0 blocking, 0 design, 0 notes")
     monkeypatch.setattr("sys.argv", ["score", str(CASES / "jsonb-column"), str(report)])
     assert score.main() == 1
-    assert "FAIL jsonb-column: 0 blocking, expected 1 to 3" in capsys.readouterr().out
+    assert "FAIL jsonb-column: 0 blocking, expected 1 to 5" in capsys.readouterr().out

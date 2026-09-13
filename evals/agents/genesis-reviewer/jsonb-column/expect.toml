@@ -1,2 +1,5 @@
-blocking = [1, 3]
+# One JSONB column breaks several rules at once - no JSON, source field names in
+# the core row, a second home for long-tail attributes, an empty default standing
+# in for unknown - and a correct review may count each as its own finding.
+blocking = [1, 5]
 must_cite = ["JSON"]

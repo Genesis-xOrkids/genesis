@@ -74,10 +74,16 @@ cannot show: work in progress.
   its own checkout at main. A session sharing that checkout would have its HEAD
   moved under it, and a worktree made from `origin/main` before a change merges
   lacks the dispatcher that change added.
-- **A session is found by its `task-<id>` name** when its id was never recorded.
-  A null there means unknown, not "never started".
-- **A watcher judges only the tasks it claimed** (`claimed_by`): a session id
-  means something only on the machine that runs it.
+- **A task's session and worktree are named by its request id**, not its number.
+  Numbers restart when the `tasks` table is rebuilt, and a repeated name would
+  find an old session or start in an old worktree. The name is also how a
+  session is found when its id was never recorded: a null id means unknown, not
+  "never started".
+- **An ended task's worktree is kept when removing it would lose work**:
+  uncommitted changes, or commits on a detached HEAD that no branch holds.
+- **A watcher judges only the tasks it claimed** (`claimed_by`), under the
+  machine name fixed when it was installed. A session id means something only on
+  the machine that runs it, and a Mac's network hostname changes with the network.
 - **Only a person can dispatch, and a repeated submit is one task.** An
   email-bearing Access token is required, and the page's request id is unique
   ([[one-write-door]]).
@@ -87,13 +93,12 @@ cannot show: work in progress.
 - **Every agent has evals before its prompt changes land** ([[evals-as-gates]]).
   The reviewer's cases are in `evals/agents/genesis-reviewer/`, scored by a
   script rather than by a model.
+- **Scheduled agents run as cloud routines** (decided 2026-09-12): the daily
+  librarian and steward must run with the Mac asleep. That needs a cloud
+  environment holding a D1 token and a read-only database URL.
 
 ## Open questions
 
-- **Where scheduled agents run.** Cloud routines keep running with the laptop
-  closed, but need D1 and database credentials configured in a cloud
-  environment. Running them through the dispatch queue on the agents' machine
-  needs no new credentials, but needs the machine awake.
 - **Whether project hooks run inside cloud routine sessions.** Unverified until
   the first routine runs.
 - **Showing a session that is waiting on a permission prompt** in the Employees
