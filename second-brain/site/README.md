@@ -154,17 +154,17 @@ the site must not go up without it.
 
 **The worker does not trust Access to be in front of it.** Access sends a signed
 JWT with every request it admits, and `_worker.js` verifies that token against
-the team's published signing keys and the audience tag before any `/api/`
-endpoint answers. A request that reached the worker some other way — a hostname
+the team's published signing keys and the audience tag before the page or any
+`/api/` endpoint answers. A request that reached the worker some other way — a hostname
 the Access application does not cover, such as a per-deployment preview URL —
 can put anything in that header, so presence alone would admit it. Without the
-two values set, every endpoint answers 503 rather than admitting on presence.
+two values set, everything answers 503 rather than admitting on presence.
 `worker.test.mjs` covers each refusal against the built worker.
 
 `_headers` sets `X-Robots-Tag: noindex`, a strict CSP, `no-referrer`, and denies
 framing. `robots.txt` disallows everything. Neither is a control — crawlers
-honour them voluntarily — but behind Access nothing unauthenticated reaches
-either file anyway.
+honour them voluntarily — but the worker refuses both files to anyone
+without a verified Access token anyway.
 
 ## Seeing a change before it ships
 
@@ -181,15 +181,16 @@ fully exercised with nothing deployed:
 
 ```sh
 ./build.py --target static
-npx wrangler pages dev
+python3 -m http.server --directory dist --bind 127.0.0.1 8788    # http://localhost:8788, this machine only
 ```
 
-Ask, Capture and Settings will not work there, and cannot be made to: every
-`/api/` endpoint wants a JWT signed by Access, and only a hostname Access fronts
-ever carries one. `pages dev` does not read `[vars]` from `wrangler.toml` either,
-so the refusal you actually see is the 503 for an unset `ACCESS_AUD` rather than
-the 403 for a missing token. Those refusals are exercised in `worker.test.mjs`,
-not in a browser.
+That serves the page as a plain file, without the worker. `wrangler pages dev`
+runs the worker, and the worker refuses the page itself to any request without
+a token signed by Access, which a local hostname never carries.
+
+Ask, Capture and Settings do not work locally, and cannot be made to: every
+`/api/` endpoint wants that same token. Those refusals are exercised in
+`worker.test.mjs`, not in a browser.
 
 **On a preview host, for everything else.** One command publishes the working
 tree — no branch, no commit, no pull request:
