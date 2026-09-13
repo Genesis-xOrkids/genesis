@@ -172,7 +172,7 @@ fully exercised with nothing deployed:
 
 ```sh
 ./build.py --target static
-python3 -m http.server --directory dist 8788    # http://localhost:8788
+python3 -m http.server --directory dist --bind 127.0.0.1 8788    # http://localhost:8788, this machine only
 ```
 
 That serves the page as a plain file, without the worker. `wrangler pages dev`

@@ -288,3 +288,55 @@ test("the task routes sit behind the same gate", async () => {
   assert.equal((await worker.fetch(request, { ...env, BRAIN_DB: db })).status, 403);
   assert.equal(db.calls.length, 0);
 });
+
+test("a known key goes on verifying while a refresh waits on a slow Access", async () => {
+  const instance = await freshWorker();
+  const start = Date.now();
+  keyServer = async () => Response.json({ keys: [published] });
+  keyFetches = 0;
+  assert.equal((await at(start, async () => ask(instance, await token()))).status, 200);
+
+  keyServer = () => new Promise(() => {});
+  assert.equal((await at(start + HOUR + MINUTE, async () => ask(instance, await token()))).status, 200);
+  assert.equal(keyFetches, 2);
+});
+
+test("a fetch of the keys that never settles holds a request only until its timeout, then is replaced", async () => {
+  const instance = await freshWorker();
+  const start = Date.now();
+  keyServer = () => new Promise(() => {});
+  keyFetches = 0;
+  const began = performance.now();
+  const held = await at(start, async () => ask(instance, await token()));
+  assert.equal(held.status, 503);
+  assert.match((await held.json()).error, /did not finish within 5s/);
+  assert.ok(performance.now() - began < 7000);
+
+  keyServer = async () => Response.json({ keys: [published] });
+  assert.equal((await at(start + MINUTE + 1000, async () => ask(instance, await token()))).status, 200);
+  assert.equal(keyFetches, 2);
+});
+
+test("a failed fetch of the keys is logged when it happens", async () => {
+  const instance = await freshWorker();
+  keyServer = async () => new Response("down", { status: 503 });
+  const logged = [];
+  const realError = console.error;
+  console.error = (...parts) => logged.push(parts.join(" "));
+  try {
+    assert.equal((await ask(instance, await token())).status, 503);
+  } finally {
+    console.error = realError;
+  }
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /Access signing keys could not be fetched: .*answered 503/);
+});
+
+test("a fetch of the keys is kept alive past the request that started it", async () => {
+  const instance = await freshWorker();
+  keyServer = async () => Response.json({ keys: [published] });
+  const kept = [];
+  const request = new Request("https://brain.example/api/config", { headers: { "cf-access-jwt-assertion": await token() } });
+  assert.equal((await instance.fetch(request, env, { waitUntil: promise => kept.push(promise) })).status, 200);
+  assert.equal(kept.length, 1);
+});

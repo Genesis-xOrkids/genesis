@@ -27,11 +27,15 @@ const ACCESS_HEADER = "cf-access-jwt-assertion";
 // most once a minute whatever prompted it - keys past their hour, a key id the
 // cache has not seen, or a fetch that failed - so neither made-up key ids nor an
 // outage at Access can turn requests into fetches, and requests that arrive
-// together share one. When a refresh fails, keys fetched within the last day go
-// on verifying tokens, so a blip at Access does not lock signed-in readers out.
+// together share one. A request waits on that fetch only when the keys on hand
+// cannot answer it, and never past the fetch's timeout, so a slow Access holds
+// up no request a cached key can verify. When a refresh fails, keys fetched
+// within the last day go on verifying tokens, so a blip at Access does not lock
+// signed-in readers out, and the failure is logged when it happens.
 const KEYS_TTL_MS = 60 * 60 * 1000;
 const KEYS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const FETCH_INTERVAL_MS = 60 * 1000;
+const FETCH_TIMEOUT_MS = 5 * 1000;
 const signingKeys = { byKid: new Map(), loadedAt: 0, attemptedAt: 0, loading: null, lastError: null };
 
 function base64UrlBytes(part) {
@@ -40,7 +44,7 @@ function base64UrlBytes(part) {
 }
 
 async function loadSigningKeys(teamDomain) {
-  const response = await fetch(teamDomain + "/cdn-cgi/access/certs");
+  const response = await fetch(teamDomain + "/cdn-cgi/access/certs", { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!response.ok) throw new Error("Access signing keys answered " + response.status);
   const { keys } = await response.json();
   const byKid = new Map();
@@ -58,20 +62,44 @@ async function loadSigningKeys(teamDomain) {
 
 // The key a token names, or undefined when Access has published no such key.
 // Throws when there are no keys young enough to trust at all.
-async function signingKey(kid, teamDomain) {
+async function signingKey(kid, teamDomain, ctx) {
   const now = Date.now();
+  // A fetch still pending past its timeout will never settle: the request whose
+  // continuation would have cleared it was cancelled. It is abandoned, so it
+  // neither blocks the next fetch nor holds any request.
+  if (signingKeys.loading && now - signingKeys.attemptedAt > FETCH_TIMEOUT_MS) signingKeys.loading = null;
   const wanted = now - signingKeys.loadedAt > KEYS_TTL_MS || !signingKeys.byKid.has(kid);
   if (wanted && !signingKeys.loading && now - signingKeys.attemptedAt >= FETCH_INTERVAL_MS) {
     signingKeys.attemptedAt = now;
-    // A failed fetch is not reported by whichever request happened to start
-    // it: whether the keys on hand are still good enough is decided below, the
-    // same way for every request.
-    signingKeys.loading = loadSigningKeys(teamDomain)
+    // A failed fetch is logged, not reported by whichever request happened to
+    // start it: whether the keys on hand are still good enough is decided below,
+    // the same way for every request.
+    const loading = loadSigningKeys(teamDomain)
       .then(() => { signingKeys.lastError = null; })
-      .catch(error => { signingKeys.lastError = String(error); })
-      .finally(() => { signingKeys.loading = null; });
+      .catch(error => {
+        signingKeys.lastError = String(error);
+        console.error("Access signing keys could not be fetched: " + signingKeys.lastError);
+      })
+      .finally(() => { if (signingKeys.loading === loading) signingKeys.loading = null; });
+    signingKeys.loading = loading;
+    // The runtime stops a request's work once it answers or is cancelled, and
+    // other requests may be waiting on this fetch, so it is kept alive past this
+    // request. The runtime always passes a context; the Node tests do not.
+    if (ctx) ctx.waitUntil(loading);
   }
-  if (signingKeys.loading) await signingKeys.loading;
+  const usable = signingKeys.byKid.size > 0 && now - signingKeys.loadedAt <= KEYS_MAX_AGE_MS;
+  if (signingKeys.loading && (!usable || !signingKeys.byKid.has(kid))) {
+    let timer;
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), FETCH_TIMEOUT_MS); });
+    try {
+      const settled = await Promise.race([signingKeys.loading.then(() => true), timeout]);
+      if (!settled && !signingKeys.lastError) {
+        signingKeys.lastError = "the fetch did not finish within " + FETCH_TIMEOUT_MS / 1000 + "s";
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   if (!signingKeys.byKid.size || Date.now() - signingKeys.loadedAt > KEYS_MAX_AGE_MS) {
     throw new Error("no usable signing keys (" + (signingKeys.lastError ?? "none fetched yet") + "); retried within a minute");
   }
@@ -83,7 +111,7 @@ async function signingKey(kid, teamDomain) {
 // another application's audience, another team, or outside its validity window.
 // Throws only when no signing keys young enough to trust can be had, which is
 // not the token's fault and is answered differently.
-async function verifyAccessToken(token, env) {
+async function verifyAccessToken(token, env, ctx) {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   let header, claims, signature;
@@ -96,7 +124,7 @@ async function verifyAccessToken(token, env) {
   }
   if (header.alg !== "RS256") return null;
 
-  const key = await signingKey(header.kid, env.ACCESS_TEAM_DOMAIN);
+  const key = await signingKey(header.kid, env.ACCESS_TEAM_DOMAIN, ctx);
   if (!key) return null;
 
   const signed = new TextEncoder().encode(parts[0] + "." + parts[1]);
@@ -414,7 +442,7 @@ const ROUTES = {
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const route = ROUTES[url.pathname];
 
@@ -429,7 +457,7 @@ export default {
     const token = request.headers.get(ACCESS_HEADER);
     let claims;
     try {
-      claims = token ? await verifyAccessToken(token, env) : null;
+      claims = token ? await verifyAccessToken(token, env, ctx) : null;
     } catch (error) {
       return problem(503, "Could not load the Access signing keys: " + String(error).slice(0, 200));
     }
