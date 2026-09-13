@@ -74,6 +74,33 @@ Finished runs are drained nightly into `.claude/runs.tsv`, the git ledger, and
 marked `ledgered_at`. The page merges the two on the ledger's own key, so a run
 shows once, whichever side it is on.
 
+## Dispatching tasks
+
+The Dispatch view hands work to the agents. `POST /api/tasks` writes a task to
+D1's `tasks` table and records who asked from the verified Access token. A task
+nobody has picked up can be cancelled.
+
+A watcher on the agents' machine claims tasks: `scripts/dispatch_watch.py`, kept
+running by launchd. Every 30 seconds it:
+
+- records a heartbeat in `dispatchers`;
+- closes tasks whose session stopped without finishing them;
+- starts a background `dispatcher` session for each pending task.
+
+The dispatcher hands the task to the right employee and finishes it with a
+one-line outcome (`python3 -m scripts.task_queue finish`). Polling costs no
+tokens: nothing starts a model until a task arrives.
+
+The watcher runs from a detached worktree of its own, because it keeps that
+checkout at `origin/main` and restarts itself when `main` moves:
+
+```sh
+git worktree add --detach ../genesis-dispatch origin/main
+cd ../genesis-dispatch && python3 -m scripts.dispatch_watch install
+```
+
+It logs to `~/Library/Logs/genesis-dispatch.log`; `uninstall` removes it.
+
 ## exclude.txt, and what it does not do
 
 `exclude.txt` decides which pages leave this machine. It holds back the security

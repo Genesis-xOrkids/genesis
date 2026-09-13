@@ -344,12 +344,73 @@ async function activity(request, env) {
   return json({ runs: results ?? [] });
 }
 
+// A timestamp as the scripts on the agents' machine write one - UTC, to the
+// second, ISO 8601 - so a task's times sort and compare with the times they add.
+function stamp() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00");
+}
+
+// The dispatch queue. The page adds tasks and cancels ones nobody has picked up.
+// Everything after that - claiming, the session's id, the outcome - is written
+// by `scripts/task_queue.py` on the machine running the watcher. Who asked is the
+// identity in the verified Access token, never a value the page sends.
+const MAX_TASK = 4000;
+const AGENT_NAME = /^[a-z0-9-]{1,64}$/;
+
+async function tasks(request, env, url, claims) {
+  if (request.method === "GET") {
+    const [queue, watchers] = await env.BRAIN_DB.batch([
+      env.BRAIN_DB.prepare(
+        "SELECT id, text, assignee, created_by, created_at, claimed_at, background_id, cancelled_at, " +
+          "finished_at, outcome FROM tasks ORDER BY created_at DESC, id DESC LIMIT 100"
+      ),
+      env.BRAIN_DB.prepare("SELECT host, started_at, last_seen_at FROM dispatchers ORDER BY last_seen_at DESC"),
+    ]);
+    return json({ tasks: queue.results ?? [], dispatchers: watchers.results ?? [] });
+  }
+
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    if (!text) return problem(400, "A task needs some text.");
+    if (text.length > MAX_TASK) return problem(400, "That task is too long.");
+    const assignee = body.assignee ?? null;
+    if (assignee !== null && (typeof assignee !== "string" || !AGENT_NAME.test(assignee))) {
+      return problem(400, "An assignee is an agent's name.");
+    }
+    // A person's token carries an email; a service token carries its name.
+    const asker = claims.email ?? claims.common_name;
+    if (!asker) return problem(403, "The Access token names nobody to record as asking.");
+    const { results } = await env.BRAIN_DB.prepare(
+      "INSERT INTO tasks (text, assignee, created_by, created_at) VALUES (?, ?, ?, ?) RETURNING id"
+    ).bind(text, assignee, asker, stamp()).all();
+    return json({ id: results[0].id }, 201);
+  }
+
+  return problem(405, "Use GET or POST.");
+}
+
+async function cancelTask(request, env) {
+  if (request.method !== "POST") return problem(405, "Use POST.");
+  const body = await request.json().catch(() => null);
+  if (!Number.isInteger(body?.id)) return problem(400, "Name the task to cancel.");
+  // Only a task nobody has claimed. A claimed task already has a session
+  // working on it, and marking the row cancelled would not stop that session.
+  const { results } = await env.BRAIN_DB.prepare(
+    "UPDATE tasks SET cancelled_at = ? WHERE id = ? AND claimed_at IS NULL AND cancelled_at IS NULL RETURNING id"
+  ).bind(stamp(), body.id).all();
+  if (!results?.length) return problem(409, "That task was already picked up or cancelled, or does not exist.");
+  return json({ cancelled: body.id });
+}
+
 const ROUTES = {
   "/api/ask": ask,
   "/api/notes": notes,
   "/api/notes/filed": filed,
   "/api/config": settings,
   "/api/activity": activity,
+  "/api/tasks": tasks,
+  "/api/tasks/cancel": cancelTask,
 };
 
 export default {
@@ -380,7 +441,7 @@ export default {
       return problem(503, "No database is bound. Create the D1 database and set database_id in wrangler.toml.");
     }
     try {
-      return await route(request, env, url);
+      return await route(request, env, url, claims);
     } catch (error) {
       return problem(500, "That request failed: " + String(error).slice(0, 200));
     }
