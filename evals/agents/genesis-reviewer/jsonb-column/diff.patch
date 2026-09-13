@@ -1,0 +1,12 @@
+diff --git a/api/genesis_api/models/catalog.py b/api/genesis_api/models/catalog.py
+--- a/api/genesis_api/models/catalog.py
++++ b/api/genesis_api/models/catalog.py
+@@ -12,6 +12,7 @@ from sqlalchemy import ForeignKey, Integer, String, Text
++from sqlalchemy.dialects.postgresql import JSONB
+ from sqlalchemy.orm import Mapped, mapped_column, relationship
+@@ -48,6 +49,10 @@ class Product(IdMixin, TimestampMixin, Base):
+     title: Mapped[str] = mapped_column(Text, nullable=False)
+     description: Mapped[str | None] = mapped_column(Text, nullable=True)
++    # Everything the source sends that we have no column for yet, kept so nothing
++    # is lost while the taxonomy catches up.
++    extra_attributes: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)

@@ -108,3 +108,26 @@ The drain reaches D1 through `wrangler`, not through the site's own HTTPS
 endpoint. Going over HTTPS would have meant an Access service token created,
 added to the site's policy, and kept in three environment variables; wrangler
 uses the Cloudflare login already on the machine and needs none of it.
+
+## 2026-09-12 — the agent network
+
+Recorded as [[agent-network]]: the employees that work on this repository, how a
+task reaches them, and where their runs are recorded.
+
+What it covers, built across PRs #31, #35, #37, #38, #40 and #41:
+- a site that verifies the Access token itself;
+- one set of hooks recording every agent's runs live in D1;
+- a dispatch queue that a watcher on the agents' machine turns into dispatcher
+  sessions, each in a worktree of its own.
+
+#38 merged before its review fixes. #41 carries them, plus a defect in the
+worktree base that only a live run showed: a worktree made from `origin/main`
+lacked the dispatcher that the unmerged change added.
+
+The roster's last three agents are new: `brain-librarian`, `catalog-steward` and
+`eval-runner`. The reviewer now has eight eval cases scored by a script, not by a
+model.
+
+Still open: whether scheduled agents run as cloud routines or through the queue
+on the agents' machine. Routines need credentials configured in a cloud
+environment; the queue needs the machine awake.

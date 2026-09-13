@@ -122,7 +122,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["api/tests", "intelligence/tests", "scripts/tests"]
+testpaths = ["api/tests", "intelligence/tests", "scripts/tests", "evals/tests"]
 pythonpath = ["."]
 
 [dependency-groups]

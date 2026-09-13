@@ -1,0 +1,9 @@
+diff --git a/intelligence/catalog/fx.py b/intelligence/catalog/fx.py
+--- a/intelligence/catalog/fx.py
++++ b/intelligence/catalog/fx.py
+@@ -41,7 +41,7 @@ class FxRates:
+     def to_usd_cents(self, amount: Decimal, currency: str) -> int:
+-        """Convert an amount to US cents at the recored rate."""
++        """Convert an amount to US cents at the recorded rate."""
+         if currency == "USD":
+             return int((amount * 100).to_integral_value())

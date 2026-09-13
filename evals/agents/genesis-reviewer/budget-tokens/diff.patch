@@ -1,0 +1,11 @@
+diff --git a/intelligence/model_gateway/gateway.py b/intelligence/model_gateway/gateway.py
+--- a/intelligence/model_gateway/gateway.py
++++ b/intelligence/model_gateway/gateway.py
+@@ -236,7 +236,8 @@ def build_request(
+         "system": system_blocks,
+         "messages": messages,
+-        "thinking": {"type": "adaptive"},
++        # Cap reasoning so long reports stay inside the per-session budget.
++        "thinking": {"type": "enabled", "budget_tokens": 4000},
+         "output_config": {"effort": config.effort.value},
+     }
