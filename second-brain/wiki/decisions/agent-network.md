@@ -94,8 +94,14 @@ cannot show: work in progress.
   The reviewer's cases are in `evals/agents/genesis-reviewer/`, scored by a
   script rather than by a model.
 - **Scheduled agents run as cloud routines** (decided 2026-09-12): the daily
-  librarian and steward must run with the Mac asleep. That needs a cloud
-  environment holding a D1 token and a read-only database URL.
+  librarian and steward must run with the Mac asleep.
+- **A cloud session reaches D1 and Neon over HTTPS, holding no keys.** Its
+  traffic leaves through an HTTP(S) proxy, so a Postgres connection cannot open,
+  and there is no wrangler login. Where Claude Code sets `CLAUDE_CODE_REMOTE`,
+  `brain_db` calls D1's HTTP API and `catalog_health` calls Neon's SQL endpoint.
+  The agent proxy attaches the Cloudflare token and the read-only connection
+  string, stored as the cloud environment's API credentials. On a machine,
+  nothing changes: wrangler's login and the database URL.
 
 ## Open questions
 
