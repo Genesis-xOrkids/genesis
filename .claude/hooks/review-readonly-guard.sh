@@ -100,29 +100,58 @@ check_segment() {
         diff|log|show|status|merge-base|rev-parse|rev-list|blame|ls-files|ls-tree|cat-file|for-each-ref)
           ;;
         grep)
-          # -O and --open-files-in-pager run a program on the matches.
+          # -O and --open-files-in-pager run a program on the matches, and git
+          # accepts any unambiguous prefix of a long option, so --op is enough.
           for word in "${words[@]:1}"; do
-            if [[ "$word" == --open-files-in-pager* || "$word" =~ ^-[^-]*O ]]; then
+            if [[ "$word" == --op* || "$word" =~ ^-[^-]*O ]]; then
               deny "git grep -O/--open-files-in-pager runs a program: $segment"
             fi
           done
           ;;
         branch)
-          # Listing only. A name creates a branch, and these flags change one,
-          # alone or combined (-dr).
+          # Listing only, by what is allowed rather than what writes: git takes
+          # abbreviated long options (--del is --delete) and options before a
+          # name (-q topic creates topic), so a list of writing flags always
+          # falls behind what git parses. A bare word is a pattern only once
+          # something has put the command in list mode; otherwise it names a
+          # branch to create. A flag's value that starts with a dash is checked
+          # as a flag, so --merged -D cannot smuggle -D past as a value.
+          listing=0
+          value_next=0
           for word in "${words[@]:1}"; do
-            if [[ "$word" =~ ^-[^-]*[dDmMcCftu] ]]; then
-              deny "git branch $word changes a branch: $segment"
+            if [[ $value_next -eq 1 && "$word" != -* ]]; then
+              value_next=0
+              continue
             fi
+            value_next=0
             case "$word" in
-              --delete|--move|--copy|--force|--track*|--no-track|--set-upstream-to*|--unset-upstream|--edit-description|--create-reflog)
-                deny "git branch $word changes a branch: $segment"
+              --list|--contains=*|--no-contains=*|--merged=*|--no-merged=*|--points-at=*)
+                listing=1
+                ;;
+              --contains|--no-contains|--merged|--no-merged|--points-at)
+                listing=1
+                value_next=1
+                ;;
+              --sort|--format)
+                value_next=1
+                ;;
+              --all|--remotes|--verbose|--show-current|--ignore-case|--no-color|--no-column|--no-abbrev|--omit-empty|--color=*|--column=*|--sort=*|--format=*|--abbrev=*)
+                ;;
+              -*)
+                if [[ ! "$word" =~ ^-[arvli]+$ ]]; then
+                  deny "git branch $word is not a listing option: $segment"
+                fi
+                if [[ "$word" == *l* ]]; then
+                  listing=1
+                fi
+                ;;
+              *)
+                if [[ $listing -eq 0 ]]; then
+                  deny "git branch $word names a branch to create: $segment"
+                fi
                 ;;
             esac
           done
-          if [[ ${#words[@]} -gt 1 && "${words[1]}" != -* ]]; then
-            deny "git branch with a name creates a branch: $segment"
-          fi
           ;;
         *)
           deny "git subcommand '$sub' is not in the read-only allowlist: $segment"
