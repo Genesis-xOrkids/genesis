@@ -84,5 +84,6 @@ and passed the other five. `brain-librarian`, `catalog-steward`, `eval-runner`,
 `dispatcher`, `genesis-builder` and `storefront-scout` have no suite yet, so a
 change to their prompts is not gated; the runner refuses them by name rather
 than passing them. The last two end in a pull request rather than in a report
-with counts, so what stands in for a suite is the review and the continuous
-integration that pull request gets ([[agent-network]]).
+with counts, which is why no suite was written for them - but nothing else
+gates their prompts either, because neither the reviewer nor CI reads an agent
+definition ([[agent-network]]).

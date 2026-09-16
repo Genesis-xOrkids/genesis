@@ -47,7 +47,9 @@ under-represented.
 All four gaps are breadth rather than depth, so they move together by adding
 storefronts. The workflow exists: `probe_storefronts.py` vets candidates without
 adding them, `seed_storefronts.py --file storefronts.txt` registers those that
-pass, `ingest_catalog.py` runs. Twelve of twenty candidates probed ingestible on
+pass, `ingest_catalog.py` runs. `storefront-scout` ([[agent-network]]) owns
+the first half of it: it probes candidates and opens a pull request adding the
+ones that pass, and a person runs the seed and the ingest after that merges. Twelve of twenty candidates probed ingestible on
 the first pass, so roughly ten more registered storefronts should clear every
 target.
 

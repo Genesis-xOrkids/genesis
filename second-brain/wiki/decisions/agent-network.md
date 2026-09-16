@@ -20,7 +20,7 @@ model gateway ([[agent-runtime]]); this network works on the code.
 | Agent | Does | Started by |
 |---|---|---|
 | `dispatcher` | Takes one task and hands it to the right employee | The watcher, one session per task |
-| `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, or a task; a routine on every pull request is planned |
+| `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, `/build`, the dispatcher's build loop, or a task; a routine on every pull request is planned |
 | `brain-librarian` | Ingests changed docs, files notes, ledgers finished runs, lints | A task; a daily routine is planned |
 | `catalog-steward` | Reports ingestion health per storefront | A task; a daily routine is planned |
 | `eval-runner` | Scores an agent against its eval cases | A task; a trigger on pull requests that change an agent is planned |
@@ -49,8 +49,14 @@ A build is three employees in a line, driven from outside the builder:
 2. `genesis-reviewer` reviews that pull request, and the `SubagentStop` hook
    posts its report there.
 3. The caller sends the Blocking findings back to the builder, which fixes
-   them on the same branch, says what it left alone, and marks the pull request
-   ready.
+   them on the same branch, comments on the pull request saying what it changed
+   and what it left alone, and marks it ready.
+
+The builder's own run row stops at the pull request it opened: `agent_activity`
+records a run and posts its report when it first stops, and ignores a second
+stop for the same run so a report cannot be posted twice. The fix pass is
+therefore recorded by the builder's comment and by `/build`'s own row, not by
+the hooks.
 
 The caller drives the loop for two reasons. A subagent running in the
 background cannot start another agent, so the builder cannot call the reviewer.
@@ -122,9 +128,12 @@ cannot show: work in progress.
 - **Every agent has evals before its prompt changes land** ([[evals-as-gates]]).
   The reviewer's cases are in `evals/agents/genesis-reviewer/`, scored by a
   script rather than by a model. A suite scores a report against what its case
-  expects, so it fits an agent whose output is a report. An agent whose output
-  is a pull request is gated by the review and the continuous integration that
-  pull request gets.
+  expects, so it fits an agent whose output is a report. `genesis-builder` and
+  `storefront-scout` end in a pull request instead, and have no suite, so a
+  change to either prompt is ungated: that is a gap, not a substitution.
+  Neither CI nor the reviewer reads an agent definition, so an instruction
+  deleted from one ships green, and the work it was holding up goes wrong on
+  some later pull request where nobody is looking for it.
 - **Creators work in a worktree of their own** (`isolation: worktree`), for the
   same reason a dispatched task gets one: a session that moves a shared
   checkout's HEAD breaks whatever else is working in it.

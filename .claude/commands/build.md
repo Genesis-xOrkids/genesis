@@ -36,18 +36,32 @@ not record it here.
 
 ## 3. Review what it opened
 
-When it returns a pull request, invoke the Agent tool with `subagent_type:
-"genesis-reviewer"` and that number. Relay its findings to the user verbatim -
-severity, `path:line`, citation, and its "checked and clean" list - rather than
-summarizing them away. The hook has already posted the report to the pull
-request; do not post it again.
+Capture the diff yourself first, and show it to the user, the way `/review`
+does and for its reason - here the branch is still moving, because the builder
+pushes fixes onto it, so the reviewer has to judge the same bytes the user was
+shown rather than whatever the branch holds a moment later:
+
+```sh
+gh pr diff <number>
+```
+
+Then invoke the Agent tool with `subagent_type: "genesis-reviewer"`, giving it
+the pull request number and that exact diff text. Relay its findings to the
+user verbatim - severity, `path:line`, citation, and its "checked and clean"
+list - rather than summarizing them away. The hook has already posted the
+report to the pull request; do not post it again.
 
 ## 4. Carry the findings back
 
 Send the findings to the builder with SendMessage, addressed to the name you
 gave it, quoted as the reviewer wrote them. It fixes every Blocking finding,
-fixes a Design finding once it has reproduced it, and says on the pull request
-what it left alone.
+fixes a Design finding once it has reproduced it, and comments on the pull
+request saying what it changed and what it left alone.
+
+That comment is the only record of this pass. The hooks record a run and post
+its report when it first stops, and `scripts/agent_activity.finish` ignores a
+second stop for the same run, so the builder's row keeps the outcome it had
+when it opened the pull request.
 
 Review again only when the fixes touched something the first review did not
 see. Two passes are the ceiling: a third is the reviewer rewriting the work
@@ -65,6 +79,7 @@ python3 -m scripts.agent_activity record --agent build \
 ```
 
 The outcome says what this command drove, not what the review found: those
-counts belong to the reviewer's row.
+counts belong to the reviewer's row. Because the builder's own row stops at the
+pull request it opened, this row is where the loop's end state is recorded.
 
 Merging is the user's. Nothing here merges anything.
