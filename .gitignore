@@ -23,3 +23,6 @@ second-brain/site/dist/
 
 # wrangler local state
 .wrangler/
+
+# worktrees Claude Code makes for isolated agents and background sessions
+.claude/worktrees/

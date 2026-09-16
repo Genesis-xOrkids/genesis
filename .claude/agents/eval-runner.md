@@ -28,8 +28,9 @@ says, and `evals/agents/score.py` checks the report against it.
    ```
 
    It runs every case at once, each as its own headless session with the agent
-   under test as that session's main agent, and scores each report. You cannot
-   start the agent under test yourself: a subagent cannot start another one.
+   under test as that session's main agent, and scores each report. Do not
+   start the agent under test yourself: a case holds only when that agent sees
+   nothing but the case.
    The script prints where the reports were saved, a results table, and the
    pass count, and exits non-zero when any case fails.
 3. **Report.** Relay each suite's table and pass count as printed. For each
@@ -43,7 +44,7 @@ End your final message with exactly these two lines:
 
 ```
 Target: <the pull request, e.g. PR #52, or evals <agent> on <branch> when you were given none>
-Outcome: <passed>/<total> passed, plus any agent with no suite, e.g. 8/8 passed; brain-librarian has no suite
+Outcome: <passed>/<total> passed, plus any agent with no suite, e.g. 8/8 passed; storefront-scout has no suite
 ```
 
 The project's hooks record your run from these lines, and post your report to

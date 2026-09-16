@@ -1,7 +1,7 @@
 ---
 title: The agent network — who works on this repository, and how
 type: decision
-sources: [.claude/agents/, .claude/commands/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json]
+sources: [.claude/agents/, .claude/commands/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json, docs/agent-network-plan.md]
 related: ["[[agent-runtime]]", "[[evals-as-gates]]", "[[pre-ship-checklist]]", "[[null-means-unknown]]", "[[one-write-door]]", "[[atomic-facts-not-derivations]]"]
 created: 2026-09-12
 last-updated: 2026-09-16
@@ -10,8 +10,8 @@ last-updated: 2026-09-16
 ## What it is
 
 The employees that work on this repository: agents defined in `.claude/agents/`
-that take tasks, review changes, and keep the second brain and the catalog
-honest, and that show what they are doing on the site's Employees tab. These
+that take tasks, build and review changes, and show what they are doing on the
+site's Employees tab. These
 are not the product's agents. The stylist and studio run on AgentCore behind the
 model gateway ([[agent-runtime]]); this network works on the code.
 
@@ -21,8 +21,6 @@ model gateway ([[agent-runtime]]); this network works on the code.
 |---|---|---|
 | `dispatcher` | Takes one task and hands it to the right employee | The watcher, one session per task |
 | `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, `/build`, the dispatcher's build loop, or a task; a routine on every pull request is planned |
-| `brain-librarian` | Ingests changed docs, files notes, ledgers finished runs, lints | A task; a daily routine is planned |
-| `catalog-steward` | Reports ingestion health per storefront | A task; a daily routine is planned |
 | `eval-runner` | Scores an agent against its eval cases | A task; a trigger on pull requests that change an agent is planned |
 | `genesis-builder` | Turns one spec into one reviewed pull request | `/build`, or a task |
 | `storefront-scout` | Proves candidate storefronts, and adds those that pass to the registry | A task, or by hand |
@@ -58,10 +56,11 @@ stop for the same run so a report cannot be posted twice. The fix pass is
 therefore recorded by the builder's comment and by `/build`'s own row, not by
 the hooks.
 
-The caller drives the loop for two reasons. A subagent running in the
-background cannot start another agent, so the builder cannot call the reviewer.
-And an author grading its own work is not a review. Two review passes are the
-ceiling; a third is the reviewer rewriting the work.
+The caller drives the loop because an author grading its own work is not a
+review. A subagent can start agents of its own (checked live 2026-09-16), so the
+builder could call the reviewer; it is not asked to, so the review stays
+independent of the work. Two review passes are the ceiling; a third is the
+reviewer rewriting the work.
 
 Nothing in the line merges. The person who asked for the work does that.
 
@@ -80,12 +79,15 @@ ended when it was finished or closed.
 ## Where the records live
 
 Live state is in D1, behind the site: open runs in `agent_runs`, and the queue
-in `tasks`. History is `.claude/runs.tsv`, in git. The brain-librarian writes
-finished runs into it, the way the notes inbox is filed into the log.
+in `tasks`. History is `.claude/runs.tsv`, in git. `python3 -m
+scripts.agent_activity ledger` writes finished runs into it, the way the notes
+inbox is filed into the log. Since the librarian was removed (2026-09-16) a
+person runs it, until a lead closes out its own projects
+(`docs/agent-network-plan.md` §4.1).
 
-Nothing is marked done in D1 until the pull request holding it is pushed. The
-librarian writes notes and runs into the files, commits, pushes and opens its
-pull request, and only then marks them. A run that fails before that leaves every
+Nothing is marked done in D1 until the pull request holding it is pushed.
+Whoever drains the notes and runs writes them into the files, commits and
+pushes, and only then marks them. A drain that fails before that leaves every
 row unmarked, and the next one writes them again. In a cloud session the marking
 commands refuse to run until the files are committed and pushed, because the
 checkout does not outlive the session.
@@ -136,20 +138,26 @@ cannot show: work in progress.
   some later pull request where nobody is looking for it.
 - **Creators work in a worktree of their own** (`isolation: worktree`), for the
   same reason a dispatched task gets one: a session that moves a shared
-  checkout's HEAD breaks whatever else is working in it.
+  checkout's HEAD breaks whatever else is working in it. The worktree is made
+  from `origin/main`, and Claude Code refuses any edit or git command aimed at
+  the main checkout (both checked live 2026-09-16), so the agents no longer
+  check where they are.
 - **The scout stops at the registry.** `storefronts.txt` is input. Registering
   those domains and ingesting them writes to the hosted catalog, so a person
   runs `seed_storefronts.py` and `ingest_catalog.py` after the pull request
   merges.
-- **Scheduled agents run as cloud routines** (decided 2026-09-12): the daily
-  librarian and steward must run with the Mac asleep.
-- **A cloud session reaches D1 and Neon over HTTPS, holding no keys.** Its
-  traffic leaves through an HTTP(S) proxy, so a Postgres connection cannot open,
-  and there is no wrangler login. Where Claude Code sets `CLAUDE_CODE_REMOTE`,
-  `brain_db` calls D1's HTTP API and `catalog_health` calls Neon's SQL endpoint.
-  The agent proxy attaches the Cloudflare token and the read-only connection
-  string, stored as the cloud environment's API credentials. On a machine,
-  nothing changes: wrangler's login and the database URL.
+- **Scheduled agents run as cloud routines** (decided 2026-09-12), because they
+  must run with the Mac asleep. None is scheduled. The two it was decided for,
+  the librarian and the steward, were removed on 2026-09-16 before a routine
+  was created: the librarian's inbox had received one note, and the steward
+  reported the freshness of an ingestion nothing schedules
+  (`docs/agent-network-plan.md` §2.2).
+- **A cloud session reaches D1 over HTTPS, holding no keys.** Its traffic leaves
+  through an HTTP(S) proxy, and there is no wrangler login. Where Claude Code
+  sets `CLAUDE_CODE_REMOTE`, `brain_db` calls D1's HTTP API, and the agent proxy
+  attaches the Cloudflare token stored as the cloud environment's API
+  credential. On a machine, nothing changes: wrangler's login. Reading Neon the
+  same way went with `catalog_health`, its only reader, on 2026-09-16.
 
 ## Open questions
 

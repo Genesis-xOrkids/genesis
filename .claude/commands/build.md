@@ -5,8 +5,7 @@ argument-hint: "<a spec, a path to one, or a roadmap milestone such as A1>"
 
 Turn **$ARGUMENTS** into a reviewed pull request, through the two agents that
 do it: `genesis-builder` writes, `genesis-reviewer` checks. The loop lives here
-rather than inside the builder, because a subagent running in the background
-cannot start another agent, and because an author grading its own work is not a
+rather than inside the builder, because an author grading its own work is not a
 review.
 
 ## 1. Resolve the spec, and show it

@@ -48,31 +48,19 @@ output, with the date it was measured. Never state a count you did not read.
 
 ## Each run
 
-1. **Check you are in a checkout of your own before touching a branch.**
-   `isolation: worktree` is meant to give you one, and a dispatched task's
-   session already has one, but neither is a thing to assume:
-
-   ```sh
-   git rev-parse --show-toplevel
-   git worktree list
-   ```
-
-   In the repository's main checkout, stop and say so: switching branches there
-   moves the HEAD of every other session working in it.
-2. **Branch from the commit you were started at**, which is the code that
-   dispatched you. When that commit is already an ancestor of `origin/main`
-   (`git merge-base --is-ancestor HEAD origin/main`), branch from `origin/main`
-   instead, because you are behind what has merged.
+1. **Branch in the worktree you were given.** `isolation: worktree` gives you a
+   checkout of your own, made from `origin/main`, and Claude Code refuses any
+   edit or git command aimed at the main checkout.
 
    ```sh
    git fetch origin
-   git checkout -b feat/<slug>
+   git checkout -b feat/<slug> origin/main
    ```
-3. **Choose candidates.** Read `storefronts.txt` first: a domain already there
+2. **Choose candidates.** Read `storefronts.txt` first: a domain already there
    is not a candidate. The probe reads Shopify's public product feed, so a
    brand on another platform fails however good a fit it is. Judge the
    storefront, not the brand's reputation.
-4. **Probe them**, every candidate in one run:
+3. **Probe them**, every candidate in one run:
 
    ```sh
    PYTHONPATH=. uv run python scripts/probe_storefronts.py <domain> [<domain> ...]
@@ -82,12 +70,12 @@ output, with the date it was measured. Never state a count you did not read.
    pull request unedited. A `blocked`, `disallowed` or `no-metadata` verdict is
    a fact about that source, not a defect on our side and not a reason to try
    the same domain a different way.
-5. **Add only what passed.** Append each `ok` domain to `storefronts.txt` in
+4. **Add only what passed.** Append each `ok` domain to `storefronts.txt` in
    the file's own format - the domain, then `# Retailer (CUR)` - taking the
    retailer name and currency from the probe's own "add with" lines rather than
    from the brand's site, because the storefront states them and a typo here
    misprices a retailer. Keep the header comment true.
-6. **Open one pull request.** The title says what it adds, in a sentence. The
+5. **Open one pull request.** The title says what it adds, in a sentence. The
    body carries the probe table in full, a line per rejected domain naming its
    verdict, and what the registry now totals. Say plainly that nothing reaches
    the catalog until someone runs, in this order:
@@ -96,7 +84,7 @@ output, with the date it was measured. Never state a count you did not read.
    PYTHONPATH=. uv run python scripts/seed_storefronts.py --file storefronts.txt
    PYTHONPATH=. uv run python scripts/ingest_catalog.py
    ```
-7. **Open nothing when nothing passed.** Report the table and stop.
+6. **Open nothing when nothing passed.** Report the table and stop.
 
 ## Report
 

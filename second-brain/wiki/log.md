@@ -150,3 +150,26 @@ marking commands refuse to run until the files are pushed.
 The same review found three agents without eval suites, and an eval target
 widened after a run. A seeded regression now shows the reviewer's suite fails a
 reviewer that ignores the Data rules ([[evals-as-gates]]).
+
+## 2026-09-16 — a plan for the agent network, and a smaller roster
+
+`docs/agent-network-plan.md` (#46) measures the network and plans its next
+shape: a lead that plans a task and sees it through, a verifier that
+demonstrates acceptance criteria, and cost recorded per run. [[agent-network]]
+records the network as each step lands.
+
+Removed before either ever ran: `brain-librarian` and `catalog-steward`, with
+their scripts `catalog_health.py` and `app_sql.py`. The librarian's inbox had
+received one note since it opened, and ten runs were waiting for the ledger. The
+steward reported the freshness of an ingestion nothing schedules, and measured
+none of C2's targets.
+
+Checked live, correcting what the repository said: a subagent can start agents
+of its own, and `isolation: worktree` gives an agent a checkout made from
+`origin/main` that Claude Code keeps out of the main checkout. The build loop
+stays with its caller, now for independence alone.
+
+Of the ten reviewer runs recorded since 2026-09-11, four were cut off by the
+subscription's session limit, and a fifth failed on a billing error on
+2026-09-13. Nothing had recorded that fifth run's end, so it was closed by hand
+at the moment it failed.
