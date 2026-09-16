@@ -96,6 +96,10 @@ to give up on is closed with its reason instead, which is never taken for an
 outcome, so it never reaches the ledger. Polling costs no tokens: nothing starts
 a model until a task arrives.
 
+A task that changes the repository goes to `genesis-builder`, and the dispatcher
+has `genesis-reviewer` review the pull request it opens, sending the blocking
+findings back to be fixed before it finishes the task.
+
 Each dispatch carries a request id the page generates, so a submit that arrives
 twice is one task. Only a person signed in through Access can dispatch; a service
 token cannot.
