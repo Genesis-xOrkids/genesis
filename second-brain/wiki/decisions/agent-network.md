@@ -96,6 +96,20 @@ a union merge driver, because history must be reproducible from a clone and
 need no network to exist. The live layer came later, for the one thing git
 cannot show: work in progress.
 
+Each run also records what it spent and what it saw (2026-09-16). The
+`SubagentStop` hook sums the tokens the subagent's own transcript reported,
+counting each response once and skipping Claude Code's `<synthetic>` notices
+(`scripts/transcript_usage.py`), and a review's `Commit:` line names the commit
+it reviewed. The watcher does the same for a task's session once it has stopped.
+Cache writes are kept by lifetime, because a one-hour write costs twice input and
+a five-minute one a quarter more. Cost is never stored: `scripts/agent_report.py`
+prices the sums with the product's own price table
+(`intelligence/model_gateway/pricing.py`). Tokens that cannot be read - a missing
+transcript, more than one model - stay null and the session is told why, because
+a run priced at zero would read as free ([[null-means-unknown]]). The ledger
+carries the same columns; rows written before them are shorter, and their
+missing cells are unknown too.
+
 ## Decisions, and why
 
 - **A task ends one of two ways, in separate columns.** The dispatcher's

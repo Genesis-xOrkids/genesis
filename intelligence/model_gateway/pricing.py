@@ -7,7 +7,9 @@ in billing, not here, because this table's job is to be the honest list price.
 
 Cache economics, which is why the gateway bothers with breakpoints: a 5-minute
 cache write costs 1.25x base input and a read costs 0.1x, so caching pays for
-itself after a single hit.
+itself after a single hit. A 1-hour write costs 2x. The gateway writes 5-minute
+entries; the agents that work on this repository write both, and their runs are
+priced from this same table (`scripts/agent_report.py`).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ class ModelPrice:
     output_usd: Decimal
     cache_read_usd: Decimal
     cache_write_5m_usd: Decimal
+    cache_write_1h_usd: Decimal
 
 
 # Keyed by the bare model id. Provider prefixes are stripped before lookup so
@@ -34,18 +37,21 @@ MODEL_PRICES: dict[str, ModelPrice] = {
         output_usd=Decimal("25"),
         cache_read_usd=Decimal("0.50"),
         cache_write_5m_usd=Decimal("6.25"),
+        cache_write_1h_usd=Decimal("10"),
     ),
     "claude-sonnet-5": ModelPrice(
         input_usd=Decimal("2"),
         output_usd=Decimal("10"),
         cache_read_usd=Decimal("0.20"),
         cache_write_5m_usd=Decimal("2.50"),
+        cache_write_1h_usd=Decimal("4"),
     ),
     "claude-haiku-4-5": ModelPrice(
         input_usd=Decimal("1"),
         output_usd=Decimal("5"),
         cache_read_usd=Decimal("0.10"),
         cache_write_5m_usd=Decimal("1.25"),
+        cache_write_1h_usd=Decimal("2"),
     ),
 }
 
@@ -83,12 +89,14 @@ def cost_usd(
     output_tokens: int,
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
+    cache_write_1h_tokens: int = 0,
 ) -> Decimal:
     """Cost of one call, from its reported usage.
 
     ``input_tokens`` is the uncached remainder: the API reports cache reads and
     writes separately, and counting them twice would overstate every cached
-    conversation.
+    conversation. ``cache_write_tokens`` are 5-minute writes and
+    ``cache_write_1h_tokens`` 1-hour writes, because the two are priced apart.
     """
     price = price_for(model)
     return (
@@ -96,4 +104,5 @@ def cost_usd(
         + Decimal(output_tokens) * price.output_usd
         + Decimal(cache_read_tokens) * price.cache_read_usd
         + Decimal(cache_write_tokens) * price.cache_write_5m_usd
+        + Decimal(cache_write_1h_tokens) * price.cache_write_1h_usd
     ) / _MILLION

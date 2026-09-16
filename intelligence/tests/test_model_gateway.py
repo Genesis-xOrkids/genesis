@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from intelligence.model_gateway import (
+    MODEL_PRICES,
     ModelGateway,
     ModelGatewayError,
     Platform,
@@ -230,6 +231,16 @@ def test_cached_reads_are_priced_at_a_tenth_of_input() -> None:
     uncached = cost_usd("claude-opus-5", input_tokens=1_000_000, output_tokens=0)
     cached = cost_usd("claude-opus-5", input_tokens=0, output_tokens=0, cache_read_tokens=1_000_000)
     assert cached == uncached / 10
+
+
+def test_cache_writes_are_priced_by_how_long_they_last() -> None:
+    """A 5-minute write is 1.25x input and a 1-hour write 2x, on every priced model."""
+    for model, price in MODEL_PRICES.items():
+        uncached = cost_usd(model, input_tokens=1_000_000, output_tokens=0)
+        five_minute = cost_usd(model, input_tokens=0, output_tokens=0, cache_write_tokens=1_000_000)
+        one_hour = cost_usd(model, input_tokens=0, output_tokens=0, cache_write_1h_tokens=1_000_000)
+        assert (five_minute, one_hour) == (uncached * Decimal("1.25"), uncached * 2), model
+        assert price.cache_write_1h_usd == price.input_usd * 2
 
 
 def test_bedrock_prefixed_ids_price_identically() -> None:

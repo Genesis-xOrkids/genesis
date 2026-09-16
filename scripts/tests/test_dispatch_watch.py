@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from scripts import dispatch_watch
+from scripts import dispatch_watch, transcript_usage
 
 MOMENT = dt.datetime(2026, 9, 12, 3, 0, 0, tzinfo=dt.UTC)
 
@@ -34,7 +34,9 @@ class Queue:
         self.pending: list[dict[str, Any]] = []
         self.open: list[dict[str, Any]] = []
         self.open_requests: set[str] = set()
+        self.to_measure: list[dict[str, Any]] = []
         self.done: list[tuple[str, int, str]] = []
+        self.spent: list[tuple[int, transcript_usage.Usage]] = []
 
     def claim(self, _host: str, _moment: dt.datetime) -> dict[str, Any] | None:
         return self.pending.pop(0) if self.pending else None
@@ -50,6 +52,12 @@ class Queue:
 
     def still_open(self, request_ids: list[str]) -> set[str]:
         return self.open_requests & set(request_ids)
+
+    def unmeasured(self, request_ids: list[str]) -> list[dict[str, Any]]:
+        return [task for task in self.to_measure if task["request_id"] in request_ids]
+
+    def measured(self, task_id: int, usage: transcript_usage.Usage) -> None:
+        self.spent.append((task_id, usage))
 
 
 class Machine:
@@ -89,7 +97,7 @@ class Machine:
 @pytest.fixture
 def queue(monkeypatch: pytest.MonkeyPatch) -> Queue:
     stand_in = Queue()
-    for name in ("claim", "started", "close", "open_tasks", "still_open"):
+    for name in ("claim", "started", "close", "open_tasks", "still_open", "unmeasured", "measured"):
         monkeypatch.setattr(dispatch_watch.task_queue, name, getattr(stand_in, name))
     return stand_in
 
@@ -338,6 +346,72 @@ def test_ended_tasks_lose_their_worktrees_unless_work_would_be_lost(
     assert out.count("task-req-dirty: kept its worktree: fatal: contains modified") == 1
     assert (
         out.count("task-req-unpushed: kept its worktree: its HEAD is on no branch or remote") == 1
+    )
+
+
+def test_an_ended_tasks_stopped_session_is_measured_once_and_an_unreadable_one_said_once(
+    queue: Queue,
+    machine: Machine,
+    tasks_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    projects = tmp_path / "projects"
+    (projects / "-tasks-task-req-done").mkdir(parents=True)
+    (projects / "-tasks-task-req-done" / "full-done.jsonl").write_text(
+        json.dumps(
+            {
+                "message": {
+                    "id": "msg_1",
+                    "role": "assistant",
+                    "model": "claude-sonnet-5",
+                    "usage": {
+                        "input_tokens": 4,
+                        "cache_creation_input_tokens": 50,
+                        "cache_creation": {
+                            "ephemeral_5m_input_tokens": 0,
+                            "ephemeral_1h_input_tokens": 50,
+                        },
+                        "cache_read_input_tokens": 600,
+                        "output_tokens": 70,
+                    },
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(dispatch_watch, "PROJECTS", projects)
+    monkeypatch.setattr(dispatch_watch, "UNMEASURED", set())
+    for request_id in ("req-done", "req-lost", "req-going"):
+        (tasks_dir / f"task-{request_id}").mkdir(parents=True)
+    queue.to_measure = [
+        {"id": 1, "request_id": "req-done", "background_id": "s1"},
+        {"id": 2, "request_id": "req-lost", "background_id": "s2"},
+        {"id": 3, "request_id": "req-going", "background_id": "s3"},
+    ]
+    machine.listing = [
+        {**background("s1", "done", "task-req-done"), "sessionId": "full-done"},
+        {**background("s2", "failed", "task-req-lost"), "sessionId": "full-lost"},
+        {**background("s3", "working", "task-req-going"), "sessionId": "full-going"},
+    ]
+    # Worktrees that hold work stay, so the same tasks come round on the next sweep.
+    machine.remove = lambda _path: completed("", 1, "fatal: contains modified or untracked files")
+
+    dispatch_watch.sweep()
+    dispatch_watch.sweep()
+
+    # The stopped session is measured on each sweep until the task records it; the
+    # stand-in never records it, which is why it appears twice. The working
+    # session is left until it stops.
+    assert queue.spent == [
+        (1, transcript_usage.Usage("claude-sonnet-5", 4, 0, 50, 600, 70)),
+        (1, transcript_usage.Usage("claude-sonnet-5", 4, 0, 50, 600, 70)),
+    ]
+    assert (
+        capsys.readouterr().out.count(
+            "task #2: its tokens are unknown: 0 transcripts carry session id full-lost"
+        )
+        == 1
     )
 
 

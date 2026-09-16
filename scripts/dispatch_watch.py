@@ -10,7 +10,8 @@ machine is awake. Every 30 seconds it:
 3. closes tasks this machine claimed whose session stopped without finishing;
 4. claims each pending task and starts a dispatcher session for it, in a
    worktree of the task's own;
-5. removes the worktrees of tasks that have ended, keeping any whose work
+5. records what each ended task's session spent, from its transcript, and
+   removes the worktrees of tasks that have ended, keeping any whose work
    removing them would lose.
 
 Polling costs no tokens: nothing starts a model until there is a task.
@@ -53,7 +54,7 @@ import sys
 import time
 from typing import Any
 
-from scripts import task_queue
+from scripts import task_queue, transcript_usage
 from scripts.brain_db import stamp
 from scripts.employees import CLAUDE_AGENTS, agent_id
 
@@ -63,6 +64,7 @@ POLL_SECONDS = 30
 LABEL = "com.genesis.dispatch-watch"
 LAUNCH_AGENT = pathlib.Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 LOG = pathlib.Path.home() / "Library/Logs/genesis-dispatch.log"
+PROJECTS = pathlib.Path.home() / ".claude/projects"
 
 # States `claude agents` reports for a session that is still on its task:
 # running, or waiting on a person (a permission prompt, a question). Anything
@@ -75,6 +77,9 @@ REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 # Worktrees this watcher has already reported keeping, so a worktree holding
 # work is logged once per run rather than on every poll.
 KEPT: set[str] = set()
+# Tasks whose tokens this watcher has already reported it could not read, for
+# the same reason.
+UNMEASURED: set[str] = set()
 
 
 def log(message: str) -> None:
@@ -287,6 +292,41 @@ def kept_because(place: pathlib.Path) -> str | None:
     return None
 
 
+def spent(session: dict[str, Any]) -> transcript_usage.Usage:
+    """What a session spent, from its one transcript. Raises `UnmeasuredError` when it cannot say."""
+    session_id = session.get("sessionId")
+    if not session_id:
+        raise transcript_usage.UnmeasuredError(
+            "`claude agents` gave no session id to find its transcript by"
+        )
+    transcripts = sorted(PROJECTS.glob(f"*/{session_id}.jsonl"))
+    if len(transcripts) != 1:
+        raise transcript_usage.UnmeasuredError(
+            f"{len(transcripts)} transcripts carry session id {session_id}"
+        )
+    return transcript_usage.read(transcripts[0])
+
+
+def measure(request_ids: list[str], listing: list[dict[str, Any]]) -> None:
+    """Record what each of these ended tasks' sessions spent, once the session has stopped.
+
+    A stopped session's transcript is whole. A task whose tokens cannot be read
+    keeps them unknown, and the watcher says why once.
+    """
+    for task in task_queue.unmeasured(request_ids):
+        session = find(listing, task["request_id"], task["background_id"])
+        if session is None or session["state"] in STILL_GOING:
+            continue
+        try:
+            usage = spent(session)
+        except transcript_usage.UnmeasuredError as reason:
+            if task["request_id"] not in UNMEASURED:
+                UNMEASURED.add(task["request_id"])
+                log(f"task #{task['id']}: its tokens are unknown: {reason}")
+            continue
+        task_queue.measured(task["id"], usage)
+
+
 def sweep() -> None:
     """Remove the worktrees of tasks that have ended, keeping any whose work would be lost.
 
@@ -302,7 +342,9 @@ def sweep() -> None:
     ended = set(places) - task_queue.still_open(sorted(places))
     if not ended:
         return
-    going = {session.get("name") for session in sessions() if session["state"] in STILL_GOING}
+    listing = sessions()
+    measure(sorted(ended), listing)
+    going = {session.get("name") for session in listing if session["state"] in STILL_GOING}
     for request_id in sorted(ended):
         place = places[request_id]
         if place.name in going:

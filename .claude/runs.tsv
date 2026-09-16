@@ -1,4 +1,4 @@
-run_at	agent	target	outcome
+run_at	agent	target	outcome	commit_sha	model	input_tokens	cache_creation_5m_input_tokens	cache_creation_1h_input_tokens	cache_read_input_tokens	output_tokens
 2026-09-10T06:38:23+00:00	genesis-reviewer	main (c0e8ec4..HEAD, 3 commits pushed directly)	4 blocking, 6 design, 1 note
 2026-09-11T05:08:12+00:00	genesis-reviewer	PR #20	0 blocking, 3 design, 0 notes
 2026-09-11T05:08:12+00:00	review	PR #20	relayed the genesis-reviewer report

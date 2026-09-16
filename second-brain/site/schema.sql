@@ -42,16 +42,31 @@ CREATE TABLE IF NOT EXISTS settings (
 -- `outcome` are null until the agent reports, and stay null for a run that ended
 -- without a report. `(session_id, agent_id)` is the natural key, so a hook that
 -- fires twice records one run.
+--
+-- What a run spent is the tokens its transcript reported, all on one `model`
+-- (`scripts/transcript_usage.py`). Cost is derived where it is read
+-- (`scripts/agent_report.py`) and never stored. Cache writes are kept by how long
+-- they last, because the two lifetimes are priced apart. `commit_sha` is the
+-- commit a run reports it saw: a review's `Commit:` line. Each is null when
+-- unknown - a transcript that could not be read or used more than one model, a
+-- run that named no commit, a run recorded before these columns existed.
 CREATE TABLE IF NOT EXISTS agent_runs (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent        TEXT NOT NULL,
-  session_id   TEXT NOT NULL,
-  agent_id     TEXT NOT NULL,
-  started_at   TEXT,
-  finished_at  TEXT,
-  target       TEXT,
-  outcome      TEXT,
-  ledgered_at  TEXT
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent                           TEXT NOT NULL,
+  session_id                      TEXT NOT NULL,
+  agent_id                        TEXT NOT NULL,
+  started_at                      TEXT,
+  finished_at                     TEXT,
+  target                          TEXT,
+  outcome                         TEXT,
+  ledgered_at                     TEXT,
+  commit_sha                      TEXT,
+  model                           TEXT,
+  input_tokens                    INTEGER,
+  cache_creation_5m_input_tokens  INTEGER,
+  cache_creation_1h_input_tokens  INTEGER,
+  cache_read_input_tokens         INTEGER,
+  output_tokens                   INTEGER
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS unique_agent_runs_session_id_agent_id ON agent_runs (session_id, agent_id);
@@ -79,22 +94,32 @@ CREATE INDEX IF NOT EXISTS ix_agent_runs_finished_at ON agent_runs (finished_at)
 -- chooses. `claimed_by` is the host of the watcher that claimed the task, the
 -- only watcher that judges it. `background_id` is the short id `claude agents`
 -- lists for the session working on the task, null until one is recorded.
+--
+-- What a task's session spent is recorded by the watcher once the session has
+-- stopped, the same way and with the same meaning of null as a run's
+-- (`agent_runs` above).
 CREATE TABLE IF NOT EXISTS tasks (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  request_id     TEXT NOT NULL,
-  text           TEXT NOT NULL,
-  assignee       TEXT,
-  created_by     TEXT NOT NULL,
-  created_at     TEXT NOT NULL,
-  claimed_at     TEXT,
-  claimed_by     TEXT,
-  background_id  TEXT,
-  cancelled_at   TEXT,
-  finished_at    TEXT,
-  outcome        TEXT,
-  closed_at      TEXT,
-  closed_reason  TEXT,
-  ledgered_at    TEXT
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id                      TEXT NOT NULL,
+  text                            TEXT NOT NULL,
+  assignee                        TEXT,
+  created_by                      TEXT NOT NULL,
+  created_at                      TEXT NOT NULL,
+  claimed_at                      TEXT,
+  claimed_by                      TEXT,
+  background_id                   TEXT,
+  cancelled_at                    TEXT,
+  finished_at                     TEXT,
+  outcome                         TEXT,
+  closed_at                       TEXT,
+  closed_reason                   TEXT,
+  ledgered_at                     TEXT,
+  model                           TEXT,
+  input_tokens                    INTEGER,
+  cache_creation_5m_input_tokens  INTEGER,
+  cache_creation_1h_input_tokens  INTEGER,
+  cache_read_input_tokens         INTEGER,
+  output_tokens                   INTEGER
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS unique_tasks_request_id ON tasks (request_id);

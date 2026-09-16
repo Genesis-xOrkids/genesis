@@ -49,6 +49,15 @@ def literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def sql_value(value: str | int | None) -> str:
+    """A nullable value as SQL: an unknown stays NULL rather than '' or 0, and a count is digits."""
+    if value is None:
+        return "NULL"
+    if isinstance(value, int):
+        return str(int(value))
+    return literal(value)
+
+
 def stamp(moment: dt.datetime) -> str:
     """A timestamp as everything writing to the brain writes one: UTC, to the second, ISO 8601.
 

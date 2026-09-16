@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from scripts import agent_activity, brain_db, log_agent_run
+from scripts import agent_activity, brain_db, log_agent_run, transcript_usage
 
 MOMENT = dt.datetime(2026, 9, 12, 14, 30, 5, tzinfo=dt.UTC)
 EMPLOYEES = {"genesis-reviewer", "review"}
@@ -79,14 +79,42 @@ def markers(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.
     return folder
 
 
-def stop(message: str, agent: str = "genesis-reviewer") -> dict[str, Any]:
-    return {
+def stop(
+    message: str, agent: str = "genesis-reviewer", transcript: pathlib.Path | None = None
+) -> dict[str, Any]:
+    event = {
         "hook_event_name": "SubagentStop",
         "session_id": "session-1",
         "agent_id": "agent-1",
         "agent_type": agent,
         "last_assistant_message": message,
     }
+    if transcript is not None:
+        event["agent_transcript_path"] = str(transcript)
+    return event
+
+
+def usage_line(response_id: str, output_tokens: int, written_1h: int) -> str:
+    """One transcript line of an Opus 5 response, in the shape Claude Code writes."""
+    return json.dumps(
+        {
+            "message": {
+                "id": response_id,
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "usage": {
+                    "input_tokens": 3,
+                    "cache_creation_input_tokens": written_1h,
+                    "cache_creation": {
+                        "ephemeral_5m_input_tokens": 0,
+                        "ephemeral_1h_input_tokens": written_1h,
+                    },
+                    "cache_read_input_tokens": 500,
+                    "output_tokens": output_tokens,
+                },
+            }
+        }
+    )
 
 
 # --- reading the report ---
@@ -163,7 +191,8 @@ def test_a_target_with_no_pull_request_posts_nothing(github: GitHub, target: str
     said = agent_activity.hook(
         stop(f"report\nTarget: {target}\nOutcome: no findings"), EMPLOYEES, MOMENT
     )
-    assert said == f"genesis-reviewer run recorded: {target} - no findings"
+    assert said is not None
+    assert said.startswith(f"genesis-reviewer run recorded: {target} - no findings")
     assert github.calls == []
 
 
@@ -181,6 +210,44 @@ def test_a_stop_without_a_report_is_closed_as_ending_without_one(
     (statement,) = database.statements
     assert "NULL" in statement
     assert github.calls == []
+
+
+@pytest.mark.usefixtures("github")
+def test_a_stop_records_what_its_transcript_spent_and_the_commit_it_saw(
+    database: Database, tmp_path: pathlib.Path
+) -> None:
+    transcript = tmp_path / "agent-1.jsonl"
+    transcript.write_text(
+        "\n".join(
+            [usage_line("msg_1", 1, 700), usage_line("msg_1", 90, 700), usage_line("msg_2", 30, 0)]
+        )
+    )
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    report = f"Target: PR #12\nCommit: {commit}\nOutcome: 0 blocking, 0 design, 0 notes"
+    said = agent_activity.hook(stop(report, transcript=transcript), EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "unknown" not in said
+    (statement,) = database.statements
+    # target, outcome, commit, then model and tokens: msg_1 once, from its last line.
+    assert (
+        f"'PR #12', '0 blocking, 0 design, 0 notes', '{commit}', 'claude-opus-5', 6, 0, 700, 1000, 120)"
+        in statement
+    )
+    assert "commit_sha = excluded.commit_sha" in statement
+    assert "output_tokens = excluded.output_tokens" in statement
+
+
+@pytest.mark.usefixtures("github")
+def test_a_stop_whose_spend_or_commit_cannot_be_read_records_them_unknown_and_says_why(
+    database: Database,
+) -> None:
+    report = "Target: PR #12\nCommit: 0123abc\nOutcome: 0 blocking, 0 design, 0 notes"
+    said = agent_activity.hook(stop(report), EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "its Commit line '0123abc' is not a full commit id" in said
+    assert "its tokens are unknown: the stop named no transcript" in said
+    (statement,) = database.statements
+    assert "'0 blocking, 0 design, 0 notes', NULL, NULL, NULL, NULL, NULL, NULL, NULL)" in statement
 
 
 def test_a_repeated_stop_is_not_posted_twice(database: Database, github: GitHub) -> None:
@@ -256,12 +323,15 @@ def test_a_command_run_is_keyed_by_the_moment_it_was_recorded(database: Database
     assert "'PR #12'" in closed
 
 
+UNKNOWN_SPEND = dict.fromkeys(transcript_usage.COLUMNS)
 REVIEW_RUN = {
     "id": 7,
     "agent": "genesis-reviewer",
     "target": "PR #12",
     "outcome": "clean",
     "finished_at": "2026-09-12T14:00:00+00:00",
+    "commit_sha": "a" * 40,
+    **dict(zip(transcript_usage.COLUMNS, ("claude-opus-5", 3, 0, 900, 500, 120), strict=True)),
 }
 COMMAND_RUN = {
     "id": 8,
@@ -269,8 +339,10 @@ COMMAND_RUN = {
     "target": "PR #12",
     "outcome": "relayed",
     "finished_at": "2026-09-12T14:01:00+00:00",
+    "commit_sha": None,
+    **UNKNOWN_SPEND,
 }
-HEADER = "run_at\tagent\ttarget\toutcome"
+HEADER = "\t".join(log_agent_run.COLUMNS)
 
 
 def test_the_ledger_is_written_without_marking_and_again_harmlessly(
@@ -285,8 +357,10 @@ def test_the_ledger_is_written_without_marking_and_again_harmlessly(
     assert agent_activity.ledger() == 2
     assert ledger.read_text().splitlines() == [
         HEADER,
-        "2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean",
-        "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed",
+        f"2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean\t{'a' * 40}"
+        "\tclaude-opus-5\t3\t0\t900\t500\t120",
+        # A command's tokens and commit are unknown: empty cells, never zeros.
+        "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed" + "\t" * 7,
     ]
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
 

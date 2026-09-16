@@ -16,6 +16,10 @@ the task was claimed, and ended when the task was finished or closed. It is not
 copied into `agent_runs`. The Employees tab reads it from here, and `ledger`
 writes the finished ones into `.claude/runs.tsv`.
 
+What a task's session spent is recorded on the task by the watcher, once the
+session has stopped and its transcript is whole (`measured`), and carried into
+the ledger with the task.
+
 Run as a module from the repository root:
 
     python3 -m scripts.task_queue finish 12 --outcome "Opened PR #40 with the fix"
@@ -24,11 +28,13 @@ Run as a module from the repository root:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import sys
 from typing import Any
 
-from scripts.brain_db import literal, query, stamp
+from scripts import transcript_usage
+from scripts.brain_db import literal, query, sql_value, stamp
 from scripts.log_agent_run import append, key
 
 DISPATCHER = "dispatcher"
@@ -121,6 +127,26 @@ def still_open(request_ids: list[str]) -> set[str]:
     return {str(row["request_id"]) for row in rows}
 
 
+def unmeasured(request_ids: list[str]) -> list[dict[str, Any]]:
+    """Which of these tasks have ended with what their session spent still unknown."""
+    if not request_ids:
+        return []
+    listed = ",".join(literal(request_id) for request_id in request_ids)
+    return query(
+        f"SELECT id, request_id, background_id FROM tasks WHERE request_id IN ({listed}) "
+        "AND (finished_at IS NOT NULL OR closed_at IS NOT NULL) AND model IS NULL"
+    )
+
+
+def measured(task_id: int, usage: transcript_usage.Usage) -> None:
+    """Record what a task's session spent, unless it is already recorded."""
+    spent = ", ".join(
+        f"{column} = {sql_value(value)}"
+        for column, value in zip(transcript_usage.COLUMNS, dataclasses.astuple(usage), strict=True)
+    )
+    query(f"UPDATE tasks SET {spent} WHERE id = {int(task_id)} AND model IS NULL")
+
+
 def ledger() -> int:
     """Write finished dispatcher runs into `.claude/runs.tsv`. Returns how many are unmarked.
 
@@ -136,6 +162,8 @@ def ledger() -> int:
             f"task #{int(run['id'])}",
             run["outcome"],
             dt.datetime.fromisoformat(run["finished_at"]),
+            None,
+            transcript_usage.stored(run),
         )
     return len(runs)
 
@@ -156,7 +184,7 @@ def mark(moment: dt.datetime, held: set[tuple[str, str, str]]) -> int:
 
 def _finished_unmarked() -> list[dict[str, Any]]:
     return query(
-        "SELECT id, outcome, finished_at FROM tasks "
+        f"SELECT id, outcome, finished_at, {', '.join(transcript_usage.COLUMNS)} FROM tasks "
         "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL ORDER BY finished_at"
     )
 
