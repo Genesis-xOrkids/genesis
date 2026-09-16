@@ -131,3 +131,22 @@ model.
 Still open: whether scheduled agents run as cloud routines or through the queue
 on the agents' machine. Routines need credentials configured in a cloud
 environment; the queue needs the machine awake.
+
+## 2026-09-13 — the agent network, after review
+
+A correction to the entry above: scheduled agents run as cloud routines, decided
+on 2026-09-12, because they must run while the agents' machine is asleep.
+[[agent-network]] records it.
+
+PRs #40, #41 and #42 merged. The dispatch watcher is installed on the agents'
+machine, and a test task went from the queue to finished in 47 seconds.
+
+Reviewing #42 after it merged found that the librarian marked notes and runs done
+in D1 before pushing them, so a failed push in a cloud session would have lost
+them for good. Writing the ledger is now a separate step from marking it, the
+librarian marks only after its pull request is pushed, and in a cloud session the
+marking commands refuse to run until the files are pushed.
+
+The same review found three agents without eval suites, and an eval target
+widened after a run. A seeded regression now shows the reviewer's suite fails a
+reviewer that ignores the Data rules ([[evals-as-gates]]).

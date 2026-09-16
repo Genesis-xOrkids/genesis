@@ -10,7 +10,7 @@ they change, which is the only way it can show work in progress.
 The rows live in the brain's D1 database rather than in git, because they are
 written from wherever an agent runs - a worktree, a background session, a cloud
 routine - and none of those can append to `.claude/runs.tsv` without a branch of
-its own. The ledger stays in git all the same (PR #27): `drain` moves finished
+its own. The ledger stays in git all the same (PR #27): `ledger` writes finished
 runs into it through the one writer that file has, and marks each row
 `ledgered_at`. That is the same arrangement as the note inbox and its
 `filed_at`: the row records that the run left, rather than a second copy of it
@@ -19,13 +19,14 @@ sitting behind the first.
 A run is an agent's report, not just its exit. An agent ends its final message
 with `Target:` and `Outcome:` lines. A run that ends without them is still
 closed - the Employees tab shows it as ending without a report - but it has
-nothing to put in the ledger, and `drain` leaves it.
+nothing to put in the ledger, and `ledger` leaves it.
 
 Run as a module from the repository root, so `scripts` resolves:
 
     python3 -m scripts.agent_activity hook      # from a hook, event on stdin
     python3 -m scripts.agent_activity record --agent review --target 'PR #31' --outcome '...'
-    python3 -m scripts.agent_activity drain
+    python3 -m scripts.agent_activity ledger   # write finished runs into the ledger
+    python3 -m scripts.agent_activity mark     # mark them, once the ledger is kept
 """
 
 from __future__ import annotations
@@ -44,7 +45,8 @@ from typing import Any
 from scripts import task_queue
 from scripts.brain_db import literal, query, stamp
 from scripts.employees import defined_ids
-from scripts.log_agent_run import append
+from scripts.log_agent_run import LEDGER, append, key, recorded
+from scripts.pushed import require_pushed
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 PULL_REQUEST = re.compile(r"PR #(\d+)")
@@ -192,18 +194,15 @@ def record(agent: str, session_id: str, target: str, outcome: str, moment: dt.da
     finish(agent, session_id, run_id, target, outcome, at)
 
 
-def drain(moment: dt.datetime) -> int:
-    """Move finished, reported runs into `.claude/runs.tsv`. Returns how many.
+def ledger() -> int:
+    """Write finished, reported runs into `.claude/runs.tsv`. Returns how many are unmarked.
 
-    Every run goes through `append`, which is idempotent on `(agent, run_at,
-    target)`, before any row is marked. A drain that fails part-way leaves its
-    rows unmarked, and the next one appends them again as no-ops.
+    Nothing is marked here. The ledger is only kept once it is committed, and in a
+    cloud session pushed, so `mark` runs after that. `append` is idempotent on
+    `(agent, run_at, target)`, so writing unmarked runs again, after a run that
+    failed before marking, adds nothing.
     """
-    runs = query(
-        "SELECT id, agent, target, outcome, finished_at FROM agent_runs "
-        "WHERE ledgered_at IS NULL AND finished_at IS NOT NULL "
-        "AND target IS NOT NULL AND outcome IS NOT NULL ORDER BY finished_at"
-    )
+    runs = _reported_unmarked()
     for run in runs:
         append(
             run["agent"],
@@ -211,11 +210,36 @@ def drain(moment: dt.datetime) -> int:
             run["outcome"],
             dt.datetime.fromisoformat(run["finished_at"]),
         )
+    # A dispatcher's runs are its tasks, and are ledgered from the queue.
+    return len(runs) + task_queue.ledger()
+
+
+def mark(moment: dt.datetime) -> int:
+    """Mark as ledgered the finished runs `.claude/runs.tsv` holds. Returns how many.
+
+    Only runs whose row is in the ledger are marked, so a run that finished after
+    the ledger was written stays unmarked for the next pass. In a cloud session
+    the ledger must be committed and pushed first.
+    """
+    require_pushed(LEDGER)
+    held = recorded()
+    runs = [
+        run
+        for run in _reported_unmarked()
+        if key(run["agent"], run["target"], dt.datetime.fromisoformat(run["finished_at"])) in held
+    ]
     if runs:
         ids = ",".join(str(int(run["id"])) for run in runs)
         query(f"UPDATE agent_runs SET ledgered_at = {literal(stamp(moment))} WHERE id IN ({ids})")
-    # A dispatcher's runs are its tasks, and are drained from the queue.
-    return len(runs) + task_queue.drain(moment)
+    return len(runs) + task_queue.mark(moment, held)
+
+
+def _reported_unmarked() -> list[dict[str, Any]]:
+    return query(
+        "SELECT id, agent, target, outcome, finished_at FROM agent_runs "
+        "WHERE ledgered_at IS NULL AND finished_at IS NOT NULL "
+        "AND target IS NOT NULL AND outcome IS NOT NULL ORDER BY finished_at"
+    )
 
 
 def main() -> int:
@@ -228,7 +252,10 @@ def main() -> int:
     recording.add_argument("--agent", required=True, help="employee id, e.g. review")
     recording.add_argument("--target", required=True, help="what it ran against, e.g. 'PR #31'")
     recording.add_argument("--outcome", required=True, help="what it did, in a few words")
-    commands.add_parser("drain", help="move finished runs into .claude/runs.tsv")
+    commands.add_parser("ledger", help="write finished runs into .claude/runs.tsv, marking nothing")
+    commands.add_parser(
+        "mark", help="mark the finished runs .claude/runs.tsv holds, once it is kept"
+    )
     args = parser.parse_args()
     moment = dt.datetime.now(dt.UTC)
 
@@ -256,8 +283,15 @@ def main() -> int:
         print(f"recorded {args.agent} run: {args.target} - {args.outcome}")
         return 0
 
-    count = drain(moment)
-    print(f"drained {count} run{'s' if count != 1 else ''} into .claude/runs.tsv")
+    if args.command == "ledger":
+        count = ledger()
+        print(
+            f"{count} unmarked run{'s' if count != 1 else ''} in .claude/runs.tsv; mark them once it is pushed"
+        )
+        return 0
+
+    count = mark(moment)
+    print(f"marked {count} run{'s' if count != 1 else ''} ledgered")
     return 0
 
 

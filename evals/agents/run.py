@@ -120,6 +120,8 @@ def main() -> int:
     args = parser.parse_args()
 
     suite = SUITES / args.agent
+    if not suite.is_dir():
+        parser.error(f"{args.agent} has no eval suite: {suite} does not exist")
     every = sorted(folder for folder in suite.iterdir() if folder.is_dir())
     unknown = sorted(set(args.cases) - {folder.name for folder in every})
     if unknown:

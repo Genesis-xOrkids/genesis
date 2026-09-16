@@ -3,7 +3,7 @@
 The ledger is the git record of what agents did: one row per finished run that
 reported a target and an outcome. `scripts/agent_activity.py` records runs live
 in the brain's database as they start and finish, wherever they run, and its
-`drain` moves the finished ones here through `append`. Nothing else writes this
+`ledger` writes the finished ones here through `append`. Nothing else writes this
 file, so there is one answer to what a row looks like and when two runs are the
 same run.
 
@@ -37,21 +37,33 @@ def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[
         if "\t" in value or "\n" in value:
             raise SystemExit(f"{name} contains a tab or newline, which would split the row")
 
-    if run_at.tzinfo is None:
-        raise SystemExit("run_at has no timezone, so the date it lands on is a guess")
-    stamp = run_at.astimezone(dt.UTC).isoformat(timespec="seconds")
-
-    # The key is the run, not the whole line: a re-run that reworded its outcome
-    # is still the same run, and appending it again would double the count the
-    # gallery shows.
-    key = (stamp, agent.strip(), target.strip())
-    fresh = not LEDGER.exists()
-    existing = [] if fresh else LEDGER.read_text(encoding="utf-8").splitlines()[1:]
-    if any(tuple(line.split("\t")[:3]) == key for line in existing):
+    run = key(agent, target, run_at)
+    if run in recorded():
         return LEDGER, False
 
+    fresh = not LEDGER.exists()
     with LEDGER.open("a", encoding="utf-8") as handle:
         if fresh:
             handle.write("\t".join(COLUMNS) + "\n")
-        handle.write("\t".join([stamp, agent.strip(), target.strip(), outcome.strip()]) + "\n")
+        handle.write("\t".join([*run, outcome.strip()]) + "\n")
     return LEDGER, True
+
+
+def key(agent: str, target: str, run_at: dt.datetime) -> tuple[str, str, str]:
+    """What makes two rows the same run: when it finished, who ran, and against what.
+
+    The key is the run, not the whole line: a re-run that reworded its outcome
+    is still the same run, and appending it again would double the count the
+    gallery shows.
+    """
+    if run_at.tzinfo is None:
+        raise SystemExit("run_at has no timezone, so the date it lands on is a guess")
+    return (run_at.astimezone(dt.UTC).isoformat(timespec="seconds"), agent.strip(), target.strip())
+
+
+def recorded() -> set[tuple[str, str, str]]:
+    """The key of every run the ledger holds."""
+    if not LEDGER.exists():
+        return set()
+    lines = LEDGER.read_text(encoding="utf-8").splitlines()[1:]
+    return {(fields[0], fields[1], fields[2]) for fields in (line.split("\t") for line in lines)}

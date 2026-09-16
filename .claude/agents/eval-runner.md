@@ -18,6 +18,9 @@ says, and `evals/agents/score.py` checks the report against it.
    of every agent whose definition in `.claude/agents/` the pull request
    changes. If it changes none, or you were not given a pull request, run
    `genesis-reviewer`'s suite, since that agent reviews every pull request.
+   An agent with no folder there has no suite yet: the script says so and exits.
+   List it in your table as `no suite`, say its prompt change is not gated, and
+   run nothing in its place.
 2. **Run each suite** with one Bash call, and a timeout of 600000 ms:
 
    ```sh
@@ -40,7 +43,7 @@ End your final message with exactly these two lines:
 
 ```
 Target: <the pull request, e.g. PR #52, or evals <agent> on <branch> when you were given none>
-Outcome: <passed>/<total> passed
+Outcome: <passed>/<total> passed, plus any agent with no suite, e.g. 8/8 passed; brain-librarian has no suite
 ```
 
 The project's hooks record your run from these lines, and post your report to
