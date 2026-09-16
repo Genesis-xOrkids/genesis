@@ -231,11 +231,15 @@ judged with its cost beside it. The run record gains the facts cost is computed
 from:
 
 - `agent_runs` gains nullable `model`, `input_tokens`,
-  `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens` and
-  `commit_sha`. The `SubagentStop` hook sums usage over the subagent's transcript
-  (P8), counting each API message once, and reads `commit_sha` from the report's
-  `Commit:` line. A transcript it cannot read leaves the token columns null, which
-  means unknown, never zero.
+  `cache_creation_5m_input_tokens`, `cache_creation_1h_input_tokens`,
+  `cache_read_input_tokens`, `output_tokens` and `commit_sha`. Cache writes are
+  kept by lifetime because a one-hour write costs 2x input and a five-minute one
+  1.25x, and 26 of 50 transcripts on this Mac hold one-hour writes. The
+  `SubagentStop` hook sums usage over the subagent's transcript (P8), counting
+  each API message once and skipping Claude Code's `<synthetic>` notices, and
+  reads `commit_sha` from the report's `Commit:` line. A transcript it cannot
+  read, or one that used more than one model, leaves the token columns null,
+  which means unknown, never zero.
 - `tasks` gains the same token columns for the lead's own session, summed by the
   watcher when the task ends.
 - `.claude/runs.tsv` carries the token columns, so history keeps its cost.
@@ -342,7 +346,6 @@ needs**
 - Correct what `/build`, `genesis-builder.md`, `storefront-scout.md`,
   `eval-runner.md`, `evals/agents/run.py` and `agent-network.md` say about P1 and
   P3.
-- Ignore `.claude/worktrees/`, where isolated agents' worktrees are made.
 - Update `agent-network.md`: the roster, and the cloud-session decision that names
   `catalog_health`.
 - **Check:** the guard's tests pass; the Employees tab on the dev preview shows
