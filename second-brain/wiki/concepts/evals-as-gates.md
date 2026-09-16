@@ -80,6 +80,9 @@ after the reviewer's first run on 2026-09-12 - the after-the-fact move this page
 warns about - so on 2026-09-13 the gate itself was tested with a seeded
 regression. A reviewer told to ignore the constitution's Data rules failed
 exactly the three Data cases (`jsonb-column`, `stored-on-sale`, `null-as-false`)
-and passed the other five. `brain-librarian`, `catalog-steward`, `eval-runner`
-and `dispatcher` have no suite yet, so a change to their prompts is not gated;
-the runner refuses them by name rather than passing them.
+and passed the other five. `brain-librarian`, `catalog-steward`, `eval-runner`,
+`dispatcher`, `genesis-builder` and `storefront-scout` have no suite yet, so a
+change to their prompts is not gated; the runner refuses them by name rather
+than passing them. The last two end in a pull request rather than in a report
+with counts, so what stands in for a suite is the review and the continuous
+integration that pull request gets ([[agent-network]]).

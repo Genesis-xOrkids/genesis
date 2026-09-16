@@ -1,10 +1,10 @@
 ---
 title: The agent network — who works on this repository, and how
 type: decision
-sources: [.claude/agents/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json]
+sources: [.claude/agents/, .claude/commands/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json]
 related: ["[[agent-runtime]]", "[[evals-as-gates]]", "[[pre-ship-checklist]]", "[[null-means-unknown]]", "[[one-write-door]]", "[[atomic-facts-not-derivations]]"]
 created: 2026-09-12
-last-updated: 2026-09-13
+last-updated: 2026-09-16
 ---
 
 ## What it is
@@ -24,6 +24,8 @@ model gateway ([[agent-runtime]]); this network works on the code.
 | `brain-librarian` | Ingests changed docs, files notes, ledgers finished runs, lints | A task; a daily routine is planned |
 | `catalog-steward` | Reports ingestion health per storefront | A task; a daily routine is planned |
 | `eval-runner` | Scores an agent against its eval cases | A task; a trigger on pull requests that change an agent is planned |
+| `genesis-builder` | Turns one spec into one reviewed pull request | `/build`, or a task |
+| `storefront-scout` | Proves candidate storefronts, and adds those that pass to the registry | A task, or by hand |
 
 ## How work reaches them
 
@@ -36,6 +38,26 @@ hands the work to a specialist through the Agent tool and finishes the task with
 one line.
 
 Polling costs no tokens; nothing starts a model until a task arrives.
+
+## How a build runs
+
+A build is three employees in a line, driven from outside the builder:
+
+1. `/build`, or the dispatcher when the task was dispatched, resolves the spec
+   and hands it to `genesis-builder`, which works in a worktree of its own and
+   opens a draft pull request.
+2. `genesis-reviewer` reviews that pull request, and the `SubagentStop` hook
+   posts its report there.
+3. The caller sends the Blocking findings back to the builder, which fixes
+   them on the same branch, says what it left alone, and marks the pull request
+   ready.
+
+The caller drives the loop for two reasons. A subagent running in the
+background cannot start another agent, so the builder cannot call the reviewer.
+And an author grading its own work is not a review. Two review passes are the
+ceiling; a third is the reviewer rewriting the work.
+
+Nothing in the line merges. The person who asked for the work does that.
 
 ## The invariant
 
@@ -99,7 +121,17 @@ cannot show: work in progress.
   carry any header.
 - **Every agent has evals before its prompt changes land** ([[evals-as-gates]]).
   The reviewer's cases are in `evals/agents/genesis-reviewer/`, scored by a
-  script rather than by a model.
+  script rather than by a model. A suite scores a report against what its case
+  expects, so it fits an agent whose output is a report. An agent whose output
+  is a pull request is gated by the review and the continuous integration that
+  pull request gets.
+- **Creators work in a worktree of their own** (`isolation: worktree`), for the
+  same reason a dispatched task gets one: a session that moves a shared
+  checkout's HEAD breaks whatever else is working in it.
+- **The scout stops at the registry.** `storefronts.txt` is input. Registering
+  those domains and ingesting them writes to the hosted catalog, so a person
+  runs `seed_storefronts.py` and `ingest_catalog.py` after the pull request
+  merges.
 - **Scheduled agents run as cloud routines** (decided 2026-09-12): the daily
   librarian and steward must run with the Mac asleep.
 - **A cloud session reaches D1 and Neon over HTTPS, holding no keys.** Its
