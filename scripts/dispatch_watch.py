@@ -10,9 +10,10 @@ machine is awake. Every 30 seconds it:
 3. closes tasks this machine claimed whose session stopped without finishing;
 4. claims each pending task and starts a dispatcher session for it, in a
    worktree of the task's own;
-5. records what each ended task's session spent, from its transcript, and
-   removes the worktrees of tasks that have ended, keeping any whose work
-   removing them would lose.
+5. removes the worktrees of tasks that have ended, keeping any whose work
+   removing them would lose;
+6. records what finished agent runs and ended tasks' sessions spent, read from
+   their transcripts on this machine once they are whole.
 
 Polling costs no tokens: nothing starts a model until there is a task.
 
@@ -54,7 +55,7 @@ import sys
 import time
 from typing import Any
 
-from scripts import task_queue, transcript_usage
+from scripts import agent_activity, task_queue, transcript_usage
 from scripts.brain_db import stamp
 from scripts.employees import CLAUDE_AGENTS, agent_id
 
@@ -77,8 +78,8 @@ REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 # Worktrees this watcher has already reported keeping, so a worktree holding
 # work is logged once per run rather than on every poll.
 KEPT: set[str] = set()
-# Tasks whose tokens this watcher has already reported it could not read, for
-# the same reason.
+# Runs and tasks whose tokens this watcher has already reported it could not
+# read, for the same reason.
 UNMEASURED: set[str] = set()
 
 
@@ -292,19 +293,22 @@ def kept_because(place: pathlib.Path) -> str | None:
     return None
 
 
-def spent(session: dict[str, Any]) -> transcript_usage.Usage:
-    """What a session spent, from its one transcript. Raises `UnmeasuredError` when it cannot say."""
-    session_id = session.get("sessionId")
-    if not session_id:
-        raise transcript_usage.UnmeasuredError(
-            "`claude agents` gave no session id to find its transcript by"
-        )
-    transcripts = sorted(PROJECTS.glob(f"*/{session_id}.jsonl"))
+def spent(pattern: str, what: str) -> transcript_usage.Usage:
+    """What the one transcript under Claude Code's projects matching `pattern` recorded.
+
+    Raises `UnmeasuredError` when there is not exactly one, or it cannot say.
+    """
+    transcripts = sorted(PROJECTS.glob(pattern))
     if len(transcripts) != 1:
-        raise transcript_usage.UnmeasuredError(
-            f"{len(transcripts)} transcripts carry session id {session_id}"
-        )
+        raise transcript_usage.UnmeasuredError(f"{len(transcripts)} transcripts found for {what}")
     return transcript_usage.read(transcripts[0])
+
+
+def unknown_once(key: str, message: str) -> None:
+    """Log why something's tokens are unknown, once per run of the watcher."""
+    if key not in UNMEASURED:
+        UNMEASURED.add(key)
+        log(message)
 
 
 def measure(request_ids: list[str], listing: list[dict[str, Any]]) -> None:
@@ -318,13 +322,35 @@ def measure(request_ids: list[str], listing: list[dict[str, Any]]) -> None:
         if session is None or session["state"] in STILL_GOING:
             continue
         try:
-            usage = spent(session)
+            session_id = session.get("sessionId")
+            if not session_id:
+                raise transcript_usage.UnmeasuredError("`claude agents` gave it no session id")
+            usage = spent(f"*/{session_id}.jsonl", f"session {session_id}")
         except transcript_usage.UnmeasuredError as reason:
-            if task["request_id"] not in UNMEASURED:
-                UNMEASURED.add(task["request_id"])
-                log(f"task #{task['id']}: its tokens are unknown: {reason}")
+            unknown_once(
+                task["request_id"], f"task #{task['id']}: its tokens are unknown: {reason}"
+            )
             continue
         task_queue.measured(task["id"], usage)
+
+
+def measure_runs(moment: dt.datetime) -> None:
+    """Record what each settled agent run spent, from its transcript on this machine.
+
+    A run is asked about only once it has been finished a while, because the
+    response that ends it reaches its transcript after the stop is recorded
+    (`agent_activity.unmeasured`).
+    """
+    for run in agent_activity.unmeasured(moment):
+        try:
+            usage = spent(
+                f"*/{run['session_id']}/subagents/agent-{run['agent_id']}.jsonl",
+                f"agent {run['agent_id']}",
+            )
+        except transcript_usage.UnmeasuredError as reason:
+            unknown_once(f"run {run['id']}", f"run #{run['id']}: its tokens are unknown: {reason}")
+            continue
+        agent_activity.measured(run["id"], usage)
 
 
 def sweep() -> None:
@@ -380,6 +406,7 @@ def run(host: str) -> int:
             reap(host, moment)
             dispatch(host, moment)
             sweep()
+            measure_runs(moment)
         except SystemExit as error:
             # A failed poll - no network, wrangler logged out - is logged and
             # tried again. The heartbeat stops moving meanwhile, so the panel

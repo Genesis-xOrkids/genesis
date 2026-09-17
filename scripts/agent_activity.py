@@ -21,11 +21,12 @@ with `Target:` and `Outcome:` lines. A run that ends without them is still
 closed - the Employees tab shows it as ending without a report - but it has
 nothing to put in the ledger, and `ledger` leaves it.
 
-A run also records what it spent and what it saw. The stop names the subagent's
-own transcript, and the tokens it reported are summed there
-(`scripts/transcript_usage.py`); a review's `Commit:` line names the commit it
-reviewed. Either is recorded as unknown, with the reason told to the session,
-when the transcript cannot say or the line is not a full commit id.
+A run also records what it saw and what it spent. A review's `Commit:` line
+names the commit it reviewed, recorded at the stop, or recorded as unknown with
+the reason told to the session when it is not a full commit id. What it spent is
+not read here: the response that ends a subagent is written to its transcript
+after this hook fires, so the watcher measures a run once it has been finished a
+minute (`unmeasured`, `measured`, and `scripts/dispatch_watch.py`).
 
 Run as a module from the repository root, so `scripts` resolves:
 
@@ -50,7 +51,7 @@ import tempfile
 from typing import Any
 
 from scripts import task_queue, transcript_usage
-from scripts.brain_db import literal, query, sql_value, stamp
+from scripts.brain_db import assignments, literal, query, sql_value, stamp
 from scripts.employees import defined_ids
 from scripts.log_agent_run import LEDGER, append, key, recorded
 from scripts.pushed import require_pushed
@@ -59,7 +60,12 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 PULL_REQUEST = re.compile(r"PR #(\d+)")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 # What a stop reports beside its finishing time, in the order `finish` writes it.
-REPORTED = ("target", "outcome", "commit_sha", *transcript_usage.COLUMNS)
+REPORTED = ("target", "outcome", "commit_sha")
+# A run is measured once its transcript has had time to take its last response,
+# and looked for no longer than a day: a run from another machine has no
+# transcript here to find.
+SETTLED = dt.timedelta(minutes=1)
+MEASURABLE_FOR = dt.timedelta(days=1)
 
 # SessionEnd fires for every session in this repository, and most of them never
 # run an employee. A marker for each session that did open a run lets the rest
@@ -96,21 +102,19 @@ def finish(
     outcome: str | None,
     finished_at: str,
     commit_sha: str | None,
-    usage: transcript_usage.Usage | None,
 ) -> bool:
-    """Close a run with what the agent reported and spent. Returns whether this closed it.
+    """Close a run with what the agent reported. Returns whether this closed it.
 
     A stop whose start was never written still records the run, with its start
     time unknown. A second stop for a run already closed changes nothing and
     returns False, which is what keeps a report from being posted twice: a row
     can be deduplicated after the fact, a pull request comment cannot.
     """
-    spent = dataclasses.astuple(usage) if usage else (None,) * len(transcript_usage.COLUMNS)
     closed = query(
         f"INSERT INTO agent_runs (agent, session_id, agent_id, finished_at, {', '.join(REPORTED)}) "
         f"VALUES ({literal(agent)}, {literal(session_id)}, {literal(agent_id)}, "
         f"{literal(finished_at)}, "
-        + ", ".join(sql_value(value) for value in (target, outcome, commit_sha, *spent))
+        + ", ".join(sql_value(value) for value in (target, outcome, commit_sha))
         + ") ON CONFLICT (session_id, agent_id) DO UPDATE SET finished_at = excluded.finished_at, "
         + ", ".join(f"{column} = excluded.{column}" for column in REPORTED)
         + " WHERE agent_runs.finished_at IS NULL RETURNING id"
@@ -179,25 +183,15 @@ def hook(event: dict[str, Any], employees: set[str], moment: dt.datetime) -> str
 
     message = event["last_assistant_message"]
     target, outcome = report_field(message, "Target"), report_field(message, "Outcome")
-    commit, unknowns = report_field(message, "Commit"), []
+    commit, unknown = report_field(message, "Commit"), ""
     if commit is not None and not COMMIT.fullmatch(commit):
-        unknowns.append(f"its Commit line {commit!r} is not a full commit id")
+        unknown = f"; its Commit line {commit!r} is not a full commit id"
         commit = None
-    usage: transcript_usage.Usage | None = None
-    transcript = event.get("agent_transcript_path")
-    if not transcript:
-        unknowns.append("its tokens are unknown: the stop named no transcript")
-    else:
-        try:
-            usage = transcript_usage.read(pathlib.Path(transcript))
-        except transcript_usage.UnmeasuredError as reason:
-            unknowns.append(f"its tokens are unknown: {reason}")
     finished = finish(
-        agent, event["session_id"], event["agent_id"], target, outcome, stamp(moment), commit, usage
+        agent, event["session_id"], event["agent_id"], target, outcome, stamp(moment), commit
     )
     if not finished:
         return f"{agent} run was already recorded"
-    unknown = "".join(f"; {note}" for note in unknowns)
     if target is None or outcome is None:
         return f"{agent} finished without Target/Outcome lines, so it is recorded as ending without a report{unknown}"
 
@@ -218,7 +212,29 @@ def record(agent: str, session_id: str, target: str, outcome: str, moment: dt.da
     at = stamp(moment)
     run_id = f"{agent}@{at}"
     start(agent, session_id, run_id, at)
-    finish(agent, session_id, run_id, target, outcome, at, None, None)
+    finish(agent, session_id, run_id, target, outcome, at, None)
+
+
+def unmeasured(moment: dt.datetime) -> list[dict[str, Any]]:
+    """Finished subagent runs whose spend is unknown, settled and not yet a day old.
+
+    A command's run (`record`) is not a subagent's and has no transcript of its
+    own - its tokens are its session's - so it is never asked about.
+    """
+    return query(
+        "SELECT id, session_id, agent_id FROM agent_runs WHERE model IS NULL "
+        f"AND finished_at < {literal(stamp(moment - SETTLED))} "
+        f"AND finished_at > {literal(stamp(moment - MEASURABLE_FOR))} "
+        "AND agent_id NOT LIKE '%@%'"
+    )
+
+
+def measured(run_id: int, usage: transcript_usage.Usage) -> None:
+    """Record what a run spent, unless it is already recorded."""
+    query(
+        f"UPDATE agent_runs SET {assignments(dataclasses.asdict(usage))} "
+        f"WHERE id = {int(run_id)} AND model IS NULL"
+    )
 
 
 def ledger() -> int:
@@ -265,7 +281,8 @@ def mark(moment: dt.datetime) -> int:
 
 def _reported_unmarked() -> list[dict[str, Any]]:
     return query(
-        f"SELECT id, agent, finished_at, {', '.join(REPORTED)} FROM agent_runs "
+        f"SELECT id, agent, finished_at, {', '.join((*REPORTED, *transcript_usage.COLUMNS))} "
+        "FROM agent_runs "
         "WHERE ledgered_at IS NULL AND finished_at IS NOT NULL "
         "AND target IS NOT NULL AND outcome IS NOT NULL ORDER BY finished_at"
     )

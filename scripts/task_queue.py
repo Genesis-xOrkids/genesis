@@ -34,7 +34,7 @@ import sys
 from typing import Any
 
 from scripts import transcript_usage
-from scripts.brain_db import literal, query, sql_value, stamp
+from scripts.brain_db import assignments, literal, query, stamp
 from scripts.log_agent_run import append, key
 
 DISPATCHER = "dispatcher"
@@ -140,11 +140,10 @@ def unmeasured(request_ids: list[str]) -> list[dict[str, Any]]:
 
 def measured(task_id: int, usage: transcript_usage.Usage) -> None:
     """Record what a task's session spent, unless it is already recorded."""
-    spent = ", ".join(
-        f"{column} = {sql_value(value)}"
-        for column, value in zip(transcript_usage.COLUMNS, dataclasses.astuple(usage), strict=True)
+    query(
+        f"UPDATE tasks SET {assignments(dataclasses.asdict(usage))} "
+        f"WHERE id = {int(task_id)} AND model IS NULL"
     )
-    query(f"UPDATE tasks SET {spent} WHERE id = {int(task_id)} AND model IS NULL")
 
 
 def ledger() -> int:

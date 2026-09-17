@@ -135,11 +135,12 @@ def test_the_tasks_to_measure_are_the_ended_ones_whose_spend_is_unknown(
 
 
 def test_a_measurement_is_written_once_and_never_over_another(database: Database) -> None:
-    task_queue.measured(5, transcript_usage.Usage("claude-sonnet-5", 10, 0, 2000, 8000, 400))
+    task_queue.measured(5, transcript_usage.Usage("claude-sonnet-5", 10, 0, 2000, 8000, 400, 0))
     assert database.statements == [
         "UPDATE tasks SET model = 'claude-sonnet-5', input_tokens = 10, "
         "cache_creation_5m_input_tokens = 0, cache_creation_1h_input_tokens = 2000, "
-        "cache_read_input_tokens = 8000, output_tokens = 400 WHERE id = 5 AND model IS NULL"
+        "cache_read_input_tokens = 8000, output_tokens = 400, partial_responses = 0 "
+        "WHERE id = 5 AND model IS NULL"
     ]
 
 
@@ -149,7 +150,7 @@ def test_asking_about_no_tasks_asks_nothing(database: Database) -> None:
 
 
 SPENT = dict(
-    zip(transcript_usage.COLUMNS, ("claude-sonnet-5", 10, 0, 2000, 8000, 400), strict=True)
+    zip(transcript_usage.COLUMNS, ("claude-sonnet-5", 10, 0, 2000, 8000, 400, 0), strict=True)
 )
 TASK_RUNS = [
     {"id": 12, "outcome": "Opened PR #40", "finished_at": "2026-09-12T02:50:00+00:00", **SPENT},
@@ -176,7 +177,7 @@ def test_finished_tasks_are_ledgered_as_dispatcher_runs_without_marking(
         "\t".join(log_agent_run.COLUMNS),
         # A task names no commit; its session's tokens are the watcher's measurement.
         "2026-09-12T02:50:00+00:00\tdispatcher\ttask #12\tOpened PR #40\t"
-        "\tclaude-sonnet-5\t10\t0\t2000\t8000\t400",
+        "\tclaude-sonnet-5\t10\t0\t2000\t8000\t400\t0",
     ]
     select = next(sql for sql in database.statements if sql.startswith("SELECT"))
     # Finished only: a closed task has no report to ledger.

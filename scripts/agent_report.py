@@ -2,18 +2,19 @@
 
     uv run python -m scripts.agent_report
 
-The hooks record the tokens each agent run reported (`scripts/agent_activity.py`),
-and the watcher those of each dispatched task's session
-(`scripts/dispatch_watch.py`). This sums them in the database and prices the sums
-with the product's own price table, so an agent's cost and a model call's cost
-come from one list of prices. That table's package loads the gateway and its
-dependencies, which is why this runs under `uv`, while the hooks, which run
-under a bare `python3`, never import it.
+The watcher records the tokens each agent run and each dispatched task's session
+spent, from their transcripts (`scripts/dispatch_watch.py`). This sums them in the
+database and prices the sums with the product's own price table, so an agent's
+cost and a model call's cost come from one list of prices. That table's package
+loads the gateway and its dependencies, which is why this runs under `uv`, while
+the watcher and the hooks, which run under a bare `python3`, never import it.
 
 Prices are list rates; on a subscription the dollars are relative weight, not a
 bill. A run whose tokens are unknown is counted but not priced, and neither is a
 run on a model the table has no price for: the report says how many of each there
-were rather than pricing them at zero.
+were rather than pricing them at zero. Output is counted as far as each response's
+transcript recorded it, so where a response never got its final count the report
+says how many, and the output beside it is a lower bound.
 """
 
 from __future__ import annotations
@@ -26,10 +27,11 @@ from intelligence.model_gateway.pricing import UnknownModelError, cost_usd
 from scripts import task_queue, transcript_usage
 from scripts.brain_db import query
 
-TOKENS = transcript_usage.COLUMNS[1:]
+# Every count a transcript measures: the tokens, then the responses left partial.
+COUNTS = transcript_usage.COLUMNS[1:]
 SUMS = (
     "COUNT(*) AS runs, SUM(outcome IS NOT NULL) AS reported, SUM(model IS NOT NULL) AS measured, "
-    + ", ".join(f"SUM({column}) AS {column}" for column in TOKENS)
+    + ", ".join(f"SUM({column}) AS {column}" for column in COUNTS)
 )
 AGENT_RUNS = (
     f"SELECT agent, model, {SUMS} FROM agent_runs WHERE finished_at IS NOT NULL "
@@ -51,6 +53,7 @@ HEADER = (
     "Cache writes, 1 hour",
     "Cache reads",
     "Output",
+    "Partial responses",
     "Cost at list price",
 )
 
@@ -72,11 +75,11 @@ def report(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "No finished runs are recorded yet."
     lines = ["| " + " | ".join(HEADER) + " |", "|" + "---|" * len(HEADER)]
-    total, unknown, unpriced = Decimal(0), 0, 0
+    total, unknown, unpriced, partial = Decimal(0), 0, 0, 0
     for row in rows:
         if row["model"] is None:
             unknown += row["runs"]
-            cells = [row["agent"], "unknown", *_counts(row, 3), *["-"] * len(TOKENS), "-"]
+            cells = [row["agent"], "unknown", *_counts(row, 3), *["-"] * len(COUNTS), "-"]
         else:
             try:
                 cost = price(row)
@@ -86,7 +89,8 @@ def report(rows: list[dict[str, Any]]) -> str:
             else:
                 total += cost
                 spent = f"${cost:,.2f}"
-            cells = [row["agent"], row["model"], *_counts(row, 3 + len(TOKENS)), spent]
+            partial += row["partial_responses"]
+            cells = [row["agent"], row["model"], *_counts(row, 3 + len(COUNTS)), spent]
         lines.append("| " + " | ".join(cells) + " |")
 
     left_out = [
@@ -97,12 +101,17 @@ def report(rows: list[dict[str, Any]]) -> str:
     lines += ["", f"Total at list prices: ${total:,.2f}."]
     if left_out:
         lines.append(f"Not in the total: {', '.join(left_out)}.")
+    if partial:
+        lines.append(
+            f"Output is a lower bound: {partial:,} response{'' if partial == 1 else 's'} "
+            "never got a final count in their transcript."
+        )
     return "\n".join(lines)
 
 
 def _counts(row: dict[str, Any], how_many: int) -> list[str]:
     """The row's counts after agent and model, in `HEADER` order, with thousands separated."""
-    columns = ("runs", "reported", "measured", *TOKENS)[:how_many]
+    columns = ("runs", "reported", "measured", *COUNTS)[:how_many]
     return [f"{row[column]:,}" for column in columns]
 
 

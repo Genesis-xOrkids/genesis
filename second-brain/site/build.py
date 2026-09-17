@@ -257,14 +257,23 @@ def read_runs() -> list[dict]:
     path = REPO / ".claude/runs.tsv"
     if not path.exists():
         return []
+    lines = path.read_text().splitlines()
+    header = lines[0].split("\t") if lines else []
+    if header[:4] != ["run_at", "agent", "target", "outcome"]:
+        raise SystemExit(f"{path}:1: the header must begin run_at, agent, target, outcome")
     runs = []
-    for number, line in enumerate(path.read_text().splitlines()[1:], start=2):
+    for number, line in enumerate(lines[1:], start=2):
         if not line.strip():
             continue
+        # The page shows the report, the first four columns. What a run saw and
+        # spent follows them, and a row written before those columns existed
+        # stops at the report: its missing cells are unknown, not malformed.
         fields = line.split("\t")
-        if len(fields) != 4:
-            raise SystemExit(f"{path}:{number}: expected 4 tab-separated fields, got {len(fields)}")
-        run_at, agent, target, outcome = fields
+        if not 4 <= len(fields) <= len(header):
+            raise SystemExit(
+                f"{path}:{number}: expected 4 to {len(header)} tab-separated fields, got {len(fields)}"
+            )
+        run_at, agent, target, outcome = fields[:4]
         # `at` and `target` are the ledger's own key beside the agent, so the
         # page can recognise a live activity row that has since been ledgered
         # and show that run once.

@@ -79,42 +79,14 @@ def markers(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.
     return folder
 
 
-def stop(
-    message: str, agent: str = "genesis-reviewer", transcript: pathlib.Path | None = None
-) -> dict[str, Any]:
-    event = {
+def stop(message: str, agent: str = "genesis-reviewer") -> dict[str, Any]:
+    return {
         "hook_event_name": "SubagentStop",
         "session_id": "session-1",
         "agent_id": "agent-1",
         "agent_type": agent,
         "last_assistant_message": message,
     }
-    if transcript is not None:
-        event["agent_transcript_path"] = str(transcript)
-    return event
-
-
-def usage_line(response_id: str, output_tokens: int, written_1h: int) -> str:
-    """One transcript line of an Opus 5 response, in the shape Claude Code writes."""
-    return json.dumps(
-        {
-            "message": {
-                "id": response_id,
-                "role": "assistant",
-                "model": "claude-opus-5",
-                "usage": {
-                    "input_tokens": 3,
-                    "cache_creation_input_tokens": written_1h,
-                    "cache_creation": {
-                        "ephemeral_5m_input_tokens": 0,
-                        "ephemeral_1h_input_tokens": written_1h,
-                    },
-                    "cache_read_input_tokens": 500,
-                    "output_tokens": output_tokens,
-                },
-            }
-        }
-    )
 
 
 # --- reading the report ---
@@ -213,41 +185,49 @@ def test_a_stop_without_a_report_is_closed_as_ending_without_one(
 
 
 @pytest.mark.usefixtures("github")
-def test_a_stop_records_what_its_transcript_spent_and_the_commit_it_saw(
-    database: Database, tmp_path: pathlib.Path
+def test_a_stop_records_the_commit_it_saw_and_leaves_what_it_spent_to_the_watcher(
+    database: Database,
 ) -> None:
-    transcript = tmp_path / "agent-1.jsonl"
-    transcript.write_text(
-        "\n".join(
-            [usage_line("msg_1", 1, 700), usage_line("msg_1", 90, 700), usage_line("msg_2", 30, 0)]
-        )
-    )
     commit = "0123456789abcdef0123456789abcdef01234567"
     report = f"Target: PR #12\nCommit: {commit}\nOutcome: 0 blocking, 0 design, 0 notes"
-    said = agent_activity.hook(stop(report, transcript=transcript), EMPLOYEES, MOMENT)
+    said = agent_activity.hook(stop(report), EMPLOYEES, MOMENT)
     assert said is not None
-    assert "unknown" not in said
+    assert "not a full commit id" not in said
     (statement,) = database.statements
-    # target, outcome, commit, then model and tokens: msg_1 once, from its last line.
-    assert (
-        f"'PR #12', '0 blocking, 0 design, 0 notes', '{commit}', 'claude-opus-5', 6, 0, 700, 1000, 120)"
-        in statement
-    )
+    assert f"'PR #12', '0 blocking, 0 design, 0 notes', '{commit}')" in statement
     assert "commit_sha = excluded.commit_sha" in statement
-    assert "output_tokens = excluded.output_tokens" in statement
+    # The response that ends a run reaches its transcript after the stop.
+    assert "output_tokens" not in statement
 
 
 @pytest.mark.usefixtures("github")
-def test_a_stop_whose_spend_or_commit_cannot_be_read_records_them_unknown_and_says_why(
+def test_a_commit_line_that_is_not_a_full_commit_id_is_recorded_unknown_and_said(
     database: Database,
 ) -> None:
     report = "Target: PR #12\nCommit: 0123abc\nOutcome: 0 blocking, 0 design, 0 notes"
     said = agent_activity.hook(stop(report), EMPLOYEES, MOMENT)
     assert said is not None
     assert "its Commit line '0123abc' is not a full commit id" in said
-    assert "its tokens are unknown: the stop named no transcript" in said
     (statement,) = database.statements
-    assert "'0 blocking, 0 design, 0 notes', NULL, NULL, NULL, NULL, NULL, NULL, NULL)" in statement
+    assert "'0 blocking, 0 design, 0 notes', NULL)" in statement
+
+
+def test_runs_are_measured_once_settled_within_a_day_and_never_a_commands(
+    database: Database,
+) -> None:
+    agent_activity.unmeasured(MOMENT)
+    (asked,) = database.statements
+    assert "WHERE model IS NULL AND finished_at < '2026-09-12T14:29:05+00:00'" in asked
+    assert "AND finished_at > '2026-09-11T14:30:05+00:00'" in asked
+    assert asked.endswith("AND agent_id NOT LIKE '%@%'")
+
+    agent_activity.measured(7, transcript_usage.Usage("claude-opus-5", 3, 0, 900, 500, 120, 1))
+    assert database.statements[-1] == (
+        "UPDATE agent_runs SET model = 'claude-opus-5', input_tokens = 3, "
+        "cache_creation_5m_input_tokens = 0, cache_creation_1h_input_tokens = 900, "
+        "cache_read_input_tokens = 500, output_tokens = 120, partial_responses = 1 "
+        "WHERE id = 7 AND model IS NULL"
+    )
 
 
 def test_a_repeated_stop_is_not_posted_twice(database: Database, github: GitHub) -> None:
@@ -331,7 +311,7 @@ REVIEW_RUN = {
     "outcome": "clean",
     "finished_at": "2026-09-12T14:00:00+00:00",
     "commit_sha": "a" * 40,
-    **dict(zip(transcript_usage.COLUMNS, ("claude-opus-5", 3, 0, 900, 500, 120), strict=True)),
+    **dict(zip(transcript_usage.COLUMNS, ("claude-opus-5", 3, 0, 900, 500, 120, 1), strict=True)),
 }
 COMMAND_RUN = {
     "id": 8,
@@ -358,9 +338,9 @@ def test_the_ledger_is_written_without_marking_and_again_harmlessly(
     assert ledger.read_text().splitlines() == [
         HEADER,
         f"2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean\t{'a' * 40}"
-        "\tclaude-opus-5\t3\t0\t900\t500\t120",
+        "\tclaude-opus-5\t3\t0\t900\t500\t120\t1",
         # A command's tokens and commit are unknown: empty cells, never zeros.
-        "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed" + "\t" * 7,
+        "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed" + "\t" * 8,
     ]
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
 

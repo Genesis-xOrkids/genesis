@@ -26,6 +26,7 @@ def response(
     written_5m: int = 0,
     written_1h: int = 0,
     read: int = 0,
+    stop_reason: str | None = "tool_use",
 ) -> dict[str, Any]:
     return {
         "type": "assistant",
@@ -33,6 +34,7 @@ def response(
             "id": response_id,
             "role": "assistant",
             "model": model,
+            "stop_reason": stop_reason,
             "usage": {
                 "input_tokens": input_tokens,
                 "cache_creation_input_tokens": written_5m + written_1h,
@@ -61,9 +63,13 @@ def test_each_response_is_counted_once_from_its_last_line(tmp_path: pathlib.Path
         tmp_path,
         {"type": "user", "message": {"role": "user", "content": "review this"}},
         # One response over two lines: the first carries a streaming count.
-        response("msg_1", 1, written_5m=1000),
+        response("msg_1", 1, written_5m=1000, stop_reason=None),
         response("msg_1", 250, written_5m=1000),
         response("msg_2", 80, written_1h=40, read=1000),
+        # One whose final line never came: its output is counted as far as it
+        # streamed, and the response is counted as partial.
+        response("msg_4", 6, read=1000, stop_reason=None),
+        response("msg_4", 6, read=1000, stop_reason=None),
         {
             "type": "assistant",
             "message": {
@@ -74,7 +80,7 @@ def test_each_response_is_counted_once_from_its_last_line(tmp_path: pathlib.Path
             },
         },
     )
-    assert transcript_usage.read(path) == Usage("claude-opus-5", 4, 1000, 40, 1000, 330)
+    assert transcript_usage.read(path) == Usage("claude-opus-5", 6, 1000, 40, 2000, 336, 1)
 
 
 @pytest.mark.parametrize(
@@ -120,7 +126,7 @@ def test_a_row_with_no_model_holds_unknown_tokens_and_ledger_cells_stay_empty() 
     assert transcript_usage.stored(unknown) is None
     assert transcript_usage.cells(None) == [""] * len(transcript_usage.COLUMNS)
 
-    known = dict(zip(transcript_usage.COLUMNS, ("claude-opus-5", 1, 2, 3, 4, 5), strict=True))
+    known = dict(zip(transcript_usage.COLUMNS, ("claude-opus-5", 1, 2, 3, 4, 5, 0), strict=True))
     usage = transcript_usage.stored(known)
-    assert usage == Usage("claude-opus-5", 1, 2, 3, 4, 5)
-    assert transcript_usage.cells(usage) == ["claude-opus-5", "1", "2", "3", "4", "5"]
+    assert usage == Usage("claude-opus-5", 1, 2, 3, 4, 5, 0)
+    assert transcript_usage.cells(usage) == ["claude-opus-5", "1", "2", "3", "4", "5", "0"]

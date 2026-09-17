@@ -404,15 +404,68 @@ def test_an_ended_tasks_stopped_session_is_measured_once_and_an_unreadable_one_s
     # stand-in never records it, which is why it appears twice. The working
     # session is left until it stops.
     assert queue.spent == [
-        (1, transcript_usage.Usage("claude-sonnet-5", 4, 0, 50, 600, 70)),
-        (1, transcript_usage.Usage("claude-sonnet-5", 4, 0, 50, 600, 70)),
+        (1, transcript_usage.Usage("claude-sonnet-5", 4, 0, 50, 600, 70, 1)),
+        (1, transcript_usage.Usage("claude-sonnet-5", 4, 0, 50, 600, 70, 1)),
     ]
     assert (
         capsys.readouterr().out.count(
-            "task #2: its tokens are unknown: 0 transcripts carry session id full-lost"
+            "task #2: its tokens are unknown: 0 transcripts found for session full-lost"
         )
         == 1
     )
+
+
+def test_a_settled_runs_transcript_is_measured_and_a_missing_one_said_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    projects = tmp_path / "projects"
+    subagents = projects / "-Users-ty-genesis" / "session-1" / "subagents"
+    subagents.mkdir(parents=True)
+    (subagents / "agent-a1.jsonl").write_text(
+        json.dumps(
+            {
+                "message": {
+                    "id": "msg_1",
+                    "role": "assistant",
+                    "model": "claude-opus-5",
+                    "stop_reason": "end_turn",
+                    "usage": {
+                        "input_tokens": 2,
+                        "cache_creation_input_tokens": 300,
+                        "cache_creation": {
+                            "ephemeral_5m_input_tokens": 300,
+                            "ephemeral_1h_input_tokens": 0,
+                        },
+                        "cache_read_input_tokens": 9000,
+                        "output_tokens": 400,
+                    },
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(dispatch_watch, "PROJECTS", projects)
+    monkeypatch.setattr(dispatch_watch, "UNMEASURED", set())
+    settled = [
+        {"id": 7, "session_id": "session-1", "agent_id": "a1"},
+        {"id": 8, "session_id": "session-elsewhere", "agent_id": "a2"},
+    ]
+    recorded: list[tuple[int, transcript_usage.Usage]] = []
+    monkeypatch.setattr(dispatch_watch.agent_activity, "unmeasured", lambda _moment: settled)
+    monkeypatch.setattr(
+        dispatch_watch.agent_activity,
+        "measured",
+        lambda run_id, usage: recorded.append((run_id, usage)),
+    )
+
+    dispatch_watch.measure_runs(MOMENT)
+    dispatch_watch.measure_runs(MOMENT)
+
+    # The stand-in never records a measurement, so the settled run comes round again.
+    assert recorded == [(7, transcript_usage.Usage("claude-opus-5", 2, 300, 0, 9000, 400, 0))] * 2
+    out = capsys.readouterr().out
+    assert out.count("run #8: its tokens are unknown: 0 transcripts found for agent a2") == 1
 
 
 # --- the checkout, and installing ---

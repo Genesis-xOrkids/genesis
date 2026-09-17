@@ -43,13 +43,16 @@ CREATE TABLE IF NOT EXISTS settings (
 -- without a report. `(session_id, agent_id)` is the natural key, so a hook that
 -- fires twice records one run.
 --
--- What a run spent is the tokens its transcript reported, all on one `model`
+-- What a run spent is the tokens its transcript recorded, all on one `model`,
+-- measured by the watcher once the run has been finished a minute
 -- (`scripts/transcript_usage.py`). Cost is derived where it is read
 -- (`scripts/agent_report.py`) and never stored. Cache writes are kept by how long
--- they last, because the two lifetimes are priced apart. `commit_sha` is the
--- commit a run reports it saw: a review's `Commit:` line. Each is null when
--- unknown - a transcript that could not be read or used more than one model, a
--- run that named no commit, a run recorded before these columns existed.
+-- they last, because the two lifetimes are priced apart. `partial_responses`
+-- counts the responses whose final line the transcript never got, whose output is
+-- counted as far as it streamed. `commit_sha` is the commit a run reports it saw:
+-- a review's `Commit:` line. Each is null when unknown - a transcript that could
+-- not be read or used more than one model, a run that named no commit, a run from
+-- another machine, a run recorded before these columns existed.
 CREATE TABLE IF NOT EXISTS agent_runs (
   id                              INTEGER PRIMARY KEY AUTOINCREMENT,
   agent                           TEXT NOT NULL,
@@ -66,7 +69,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   cache_creation_5m_input_tokens  INTEGER,
   cache_creation_1h_input_tokens  INTEGER,
   cache_read_input_tokens         INTEGER,
-  output_tokens                   INTEGER
+  output_tokens                   INTEGER,
+  partial_responses               INTEGER
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS unique_agent_runs_session_id_agent_id ON agent_runs (session_id, agent_id);
@@ -119,7 +123,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   cache_creation_5m_input_tokens  INTEGER,
   cache_creation_1h_input_tokens  INTEGER,
   cache_read_input_tokens         INTEGER,
-  output_tokens                   INTEGER
+  output_tokens                   INTEGER,
+  partial_responses               INTEGER
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS unique_tasks_request_id ON tasks (request_id);
