@@ -232,16 +232,19 @@ from:
 
 - `agent_runs` gains nullable `model`, `input_tokens`,
   `cache_creation_5m_input_tokens`, `cache_creation_1h_input_tokens`,
-  `cache_read_input_tokens`, `output_tokens` and `commit_sha`. Cache writes are
-  kept by lifetime because a one-hour write costs 2x input and a five-minute one
-  1.25x, and 26 of 50 transcripts on this Mac hold one-hour writes. The
-  `SubagentStop` hook sums usage over the subagent's transcript (P8), counting
-  each API message once and skipping Claude Code's `<synthetic>` notices, and
-  reads `commit_sha` from the report's `Commit:` line. A transcript it cannot
-  read, or one that used more than one model, leaves the token columns null,
-  which means unknown, never zero.
-- `tasks` gains the same token columns for the lead's own session, summed by the
-  watcher when the task ends.
+  `cache_read_input_tokens`, `output_tokens`, `partial_responses` and
+  `commit_sha`. Cache writes are kept by lifetime because a one-hour write costs
+  2x input and a five-minute one 1.25x, and 26 of 50 transcripts on this Mac hold
+  one-hour writes. `commit_sha` comes from the report's `Commit:` line at the stop.
+  The tokens do not: the response that ends a subagent reaches its transcript
+  after `SubagentStop` fires, so the watcher reads the transcript (P8) a minute
+  later, counting each response once and skipping Claude Code's `<synthetic>`
+  notices. 1.5% of responses never get their final line, so their output counts
+  only as far as it streamed; `partial_responses` records how many. A transcript
+  it cannot read, or one that used more than one model, leaves the token columns
+  null, which means unknown, never zero.
+- `tasks` gains the same token columns for the lead's own session, measured by
+  the watcher when the task ends.
 - `.claude/runs.tsv` carries the token columns, so history keeps its cost.
 - Cost is derived when it is read, with `intelligence/model_gateway/pricing.py`,
   the price table the product already uses, and never stored. On a subscription
