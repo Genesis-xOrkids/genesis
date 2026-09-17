@@ -189,8 +189,9 @@ Outcome: <counts by severity, e.g. 2 blocking, 1 design, 0 notes - or no finding
 
 `Commit:` is the head commit you were given, or the commit the branch or range
 ends at. Leave that one line off when what you reviewed belongs to no commit,
-such as a working-tree diff or a pasted patch. A review counts for the commit it
-saw and no later one, so the line must name exactly the bytes you reviewed.
+such as a working-tree diff or a pasted patch: the checkout's own HEAD is not
+what a patch was reviewed at. A review counts for the commit it saw and no later
+one, so the line must name exactly the bytes you reviewed.
 
 You cannot record your own run, so the project's `SubagentStop` hook reads these
 lines when you finish and records the run (`scripts/agent_activity.py`). Leave

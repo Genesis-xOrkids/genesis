@@ -49,6 +49,17 @@ def test_a_missing_citation_fails_by_name() -> None:
     ]
 
 
+def test_a_report_that_names_a_commit_for_a_patch_fails() -> None:
+    """A case is a patch; a review that names the checkout's HEAD claims bytes it never saw."""
+    report = (
+        "No JSON/JSONB.\nTarget: eval jsonb-column\n"
+        "Commit: 3b1d7e1f9c304908843891e6f10464f91573f1cf\nOutcome: 1 blocking, 0 design, 0 notes"
+    )
+    assert score.score(report, EXPECT) == [
+        "names a commit, but the case is a patch that belongs to no commit"
+    ]
+
+
 def test_a_design_range_is_checked_only_when_the_case_gives_one() -> None:
     bounded = score.Expectation(blocking=(0, 0), design=(0, 1), must_cite=())
     assert score.score("Outcome: 0 blocking, 3 design, 0 notes", bounded) == [

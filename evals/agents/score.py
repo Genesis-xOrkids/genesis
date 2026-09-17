@@ -7,6 +7,9 @@ a correct review of it says (`expect.toml`):
     design = [0, 4]          # optional: the same for design findings
     must_cite = ["JSON"]     # optional: text the report must contain
 
+Every case is a patch that belongs to no commit, so a correct report also names
+no commit: a `Commit:` line would claim the review saw bytes it did not.
+
 The agent under test does the judging. This only checks its report against what
 the case wrote down before the agent ran. Nothing here asks a model whether a
 report is good, so rewording the agent's instructions cannot move the target,
@@ -25,6 +28,7 @@ import tomllib
 from dataclasses import dataclass
 
 OUTCOME = re.compile(r"^[*_]*Outcome:[*_]*[ \t]*(.+?)[ \t]*$", re.M)
+COMMIT = re.compile(r"^[*_]*Commit:", re.M)
 FIELDS = {"blocking", "design", "must_cite"}
 
 
@@ -108,6 +112,8 @@ def score(report: str, expectation: Expectation) -> list[str]:
         low, high = expectation.design
         if not low <= counts.design <= high:
             misses.append(f"{counts.design} design, expected {low} to {high}")
+    if COMMIT.search(report):
+        misses.append("names a commit, but the case is a patch that belongs to no commit")
     lowered = report.lower()
     misses.extend(
         f"does not cite {phrase!r}"
