@@ -4,10 +4,9 @@
     python3 -m evals.agents.run genesis-reviewer jsonb-column clean-test-case
 
 Each case runs as its own headless session with the agent under test as that
-session's main agent. A subagent cannot start another subagent, so the
-eval-runner, itself a subagent, runs this rather than the agent. A main agent is
-also not recorded as a run, so an eval does not add eight reviews to the
-Employees tab; the eval-runner's own run is the record.
+session's main agent, so the agent sees nothing but the case. A main agent is
+not recorded as a run, so an eval does not add eight reviews to the Employees
+tab; the eval-runner's own run is the record.
 
 Cases run at the same time, so the whole suite fits in one tool call. A session
 that has not answered within the time limit fails its case, saying so.

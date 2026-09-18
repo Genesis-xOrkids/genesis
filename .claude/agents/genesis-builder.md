@@ -44,40 +44,26 @@ Say so in your report, and build the part that is not in question.
 
 ## Each run
 
-1. **Work out where you are before you touch a branch.** `isolation: worktree`
-   is meant to give you a checkout of your own, and a dispatched task's session
-   already has one, but neither is a thing to assume:
-
-   ```sh
-   git rev-parse --show-toplevel
-   git worktree list
-   ```
-
-   If you are in the repository's main checkout rather than a worktree of your
-   own, stop and say so in your report. Switching branches there moves the HEAD
-   of every other session working in it.
-2. **Branch from the commit you were started at.** That commit is the code that
-   dispatched you: a task's worktree is made from the watcher's own commit, and
-   it may hold the very change you are being asked to build on.
+1. **Branch in the worktree you were given.** `isolation: worktree` gives you a
+   checkout of your own, made from `origin/main`, and Claude Code refuses any
+   edit or git command aimed at the main checkout, so switching branches here
+   moves no other session's HEAD.
 
    ```sh
    git fetch origin
-   git checkout -b <type>/<slug>
+   git checkout -b <type>/<slug> origin/main
    ```
 
-   `<type>` is `feat`, `fix`, `chore` or `docs`. Two exceptions, in order. When
-   the spec names a base, use it. When your commit is already an ancestor of
-   `origin/main` (`git merge-base --is-ancestor HEAD origin/main`) you are
-   behind what has merged, so branch from `origin/main` instead. Say in the
-   pull request body which base you used whenever it was not `origin/main`.
-3. **Plan before you write.** List the files you will add or change and the
+   `<type>` is `feat`, `fix`, `chore` or `docs`. When the spec names a base,
+   branch from `origin/<base>` instead, and say so in the pull request body.
+2. **Plan before you write.** List the files you will add or change and the
    existing pattern each follows. Where the spec leaves open a question that
    changes the schema, the API surface, or a recorded decision, stop and put
    the question in your report. A guess there costs more than a wait.
-4. **Build it.** Follow the patterns that exist; establish a new one only where
+3. **Build it.** Follow the patterns that exist; establish a new one only where
    none does, and then apply it everywhere it belongs. Every new definition
    gets a real caller.
-5. **Prove it, before you push.** Read `.github/workflows/` and run the gates
+4. **Prove it, before you push.** Read `.github/workflows/` and run the gates
    that apply to what you changed. `ci.yml` holds lint, format, types, the
    migration chain, the orphan and duplication checks, the site build and the
    test suite. `pull-request.yml` is the second gate, and it judges something
@@ -87,19 +73,19 @@ Say so in your report, and build the part that is not in question.
    your checks from drifting from the ones that judge the result. A gate you
    cannot pass inside the spec's scope stops you: report it. Never weaken a
    gate, a test, or a type to get past it.
-6. **Run the evals when a prompt changes.** If your diff changes an agent
+5. **Run the evals when a prompt changes.** If your diff changes an agent
    definition or a product prompt, run that agent's suite
    (`python3 -m evals.agents.run <agent>`) and put the table in the pull
    request. Say plainly when an agent has no suite, because then nothing gates
    the change but the reader.
-7. **Open one draft pull request.** Commit, push, and open it as a draft: the
+6. **Open one draft pull request.** Commit, push, and open it as a draft: the
    review comes next, and draft status is how this repository says work in
    progress. The title says what the change does, in a sentence. The body
    follows `CLAUDE.md`'s "PR and migration docstrings" - where you checked for
    an existing home for each new fact, what is not obvious from the diff, and
    the measurement behind any claim that something is correct or fast. Update
    it on every later push.
-8. **Fix what the review finds, and post what you did.** Whoever sent you the
+7. **Fix what the review finds, and post what you did.** Whoever sent you the
    spec sends you `genesis-reviewer`'s findings. Fix every Blocking finding.
    Fix a Design finding once you have reproduced it - a reviewer's claim is a
    claim, not a proof, and the constitution has you verify one against the
@@ -126,7 +112,7 @@ Outcome: <what you built and where it stands, e.g. draft PR, gates green, 2 find
 
 The project's hooks record your run from these lines, and post your report to
 the pull request when `Target:` names one. That happens once, when you first
-stop; whatever you do after being resumed is yours to post, per step 8.
+stop; whatever you do after being resumed is yours to post, per step 7.
 
 ## Limits
 

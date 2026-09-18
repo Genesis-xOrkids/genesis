@@ -5,11 +5,12 @@
 set -uo pipefail
 
 guard="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/review-readonly-guard.sh"
+repo="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 fail=0
 
 run_guard() {
   local cmd="$1"
-  jq -n --arg cmd "$cmd" '{tool_name: "Bash", tool_input: {command: $cmd}}' | "$guard"
+  jq -n --arg cmd "$cmd" --arg cwd "$repo" '{tool_name: "Bash", cwd: $cwd, tool_input: {command: $cmd}}' | "$guard"
 }
 
 expect_allow() {
@@ -53,6 +54,19 @@ expect_allow 'git merge-base main HEAD'
 expect_allow 'git blame -L 10,20 api/models.py'
 expect_allow 'find . -name "*.py"'
 expect_allow 'sed -n "1,20p" CLAUDE.md'
+expect_allow 'git grep -n "is_on_sale" -- api/'
+expect_allow 'git ls-tree -r --name-only origin/main -- .claude'
+expect_allow 'git branch --show-current'
+expect_allow 'git branch -a --contains HEAD'
+expect_allow 'git branch --list "feat/*"'
+expect_allow 'git branch -av --merged main'
+expect_allow 'git branch --sort=-committerdate --format=%(refname:short)'
+expect_allow 'gh pr checks 7'
+expect_allow 'gh run view 123 --log'
+expect_allow 'gh issue view 12'
+expect_allow 'bash second-brain/sync-raw.sh --check'
+expect_allow "$repo/second-brain/sync-raw.sh --check"
+expect_allow "bash $repo/second-brain/sync-raw.sh --check"
 
 echo "--- deny cases ---"
 expect_deny 'echo hi > /tmp/x'
@@ -73,6 +87,24 @@ expect_deny 'python3 -c "import os; os.system(1)"'
 expect_deny 'gh pr merge 7'
 expect_deny 'git diff & rm -rf /tmp'
 expect_deny ''
+expect_deny 'git grep -O vim foo'
+expect_deny 'git grep -nOless foo'
+expect_deny 'git grep --open-files-in-pager=vim foo'
+expect_deny 'git branch new-branch'
+expect_deny 'git branch -D main'
+expect_deny 'git branch -dr origin/main'
+expect_deny 'git branch --track topic origin/topic'
+expect_deny 'git branch -q topic'
+expect_deny 'git branch -v topic'
+expect_deny 'git branch --del main'
+expect_deny 'git branch --mov a b'
+expect_deny 'git branch --merged -D main'
+expect_deny 'git grep --open=less foo'
+expect_deny 'git grep --op less foo'
+expect_deny 'gh issue comment 12 --body hi'
+expect_deny 'gh run rerun 123'
+expect_deny '/tmp/elsewhere/second-brain/sync-raw.sh --check'
+expect_deny 'second-brain/sync-raw.sh'
 
 echo "--- non-Bash tool passthrough ---"
 out="$(jq -n '{tool_name: "Read", tool_input: {file_path: "/etc/passwd"}}' | "$guard")"
