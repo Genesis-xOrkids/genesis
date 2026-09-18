@@ -41,11 +41,16 @@ pushes fixes onto it, so the reviewer has to judge the same bytes the user was
 shown rather than whatever the branch holds a moment later:
 
 ```sh
+gh pr view <number> --json headRefOid --jq .headRefOid
 gh pr diff <number>
+gh pr view <number> --json headRefOid --jq .headRefOid
 ```
 
+When the two commits differ, the builder pushed while you captured, so capture
+again: the commit handed to the reviewer has to be the one its diff shows.
+
 Then invoke the Agent tool with `subagent_type: "genesis-reviewer"`, giving it
-the pull request number and that exact diff text. Relay its findings to the
+the pull request number, that head commit, and that exact diff text. Relay its findings to the
 user verbatim - severity, `path:line`, citation, and its "checked and clean"
 list - rather than summarizing them away. The hook has already posted the
 report to the pull request; do not post it again.

@@ -21,6 +21,13 @@ with `Target:` and `Outcome:` lines. A run that ends without them is still
 closed - the Employees tab shows it as ending without a report - but it has
 nothing to put in the ledger, and `ledger` leaves it.
 
+A run also records what it saw and what it spent. A review's `Commit:` line
+names the commit it reviewed, recorded at the stop, or recorded as unknown with
+the reason told to the session when it is not a full commit id. What it spent is
+not read here: the response that ends a subagent is written to its transcript
+after this hook fires, so the watcher measures a run once it has been finished a
+minute (`unmeasured`, `measured`, and `scripts/dispatch_watch.py`).
+
 Run as a module from the repository root, so `scripts` resolves:
 
     python3 -m scripts.agent_activity hook      # from a hook, event on stdin
@@ -32,6 +39,7 @@ Run as a module from the repository root, so `scripts` resolves:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import json
 import os
@@ -42,24 +50,23 @@ import sys
 import tempfile
 from typing import Any
 
-from scripts import task_queue
-from scripts.brain_db import literal, query, stamp
+from scripts import task_queue, transcript_usage
+from scripts.brain_db import assignments, literal, query, sql_value, stamp
 from scripts.employees import defined_ids
 from scripts.log_agent_run import LEDGER, append, key, recorded
 from scripts.pushed import require_pushed
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 PULL_REQUEST = re.compile(r"PR #(\d+)")
+COMMIT = re.compile(r"[0-9a-f]{40}")
+# What a stop reports beside its finishing time, in the order `finish` writes it.
+REPORTED = ("target", "outcome", "commit_sha")
+
 
 # SessionEnd fires for every session in this repository, and most of them never
 # run an employee. A marker for each session that did open a run lets the rest
 # exit without waiting on the database for nothing to close.
 MARKERS = pathlib.Path(tempfile.gettempdir()) / "genesis-agent-runs"
-
-
-def sql_value(value: str | None) -> str:
-    """A nullable text value as SQL, so an unreported target stays NULL rather than ''."""
-    return "NULL" if value is None else literal(value)
 
 
 def report_field(message: str, label: str) -> str | None:
@@ -90,6 +97,7 @@ def finish(
     target: str | None,
     outcome: str | None,
     finished_at: str,
+    commit_sha: str | None,
 ) -> bool:
     """Close a run with what the agent reported. Returns whether this closed it.
 
@@ -99,12 +107,13 @@ def finish(
     can be deduplicated after the fact, a pull request comment cannot.
     """
     closed = query(
-        "INSERT INTO agent_runs (agent, session_id, agent_id, finished_at, target, outcome) VALUES ("
-        f"{literal(agent)}, {literal(session_id)}, {literal(agent_id)}, {literal(finished_at)}, "
-        f"{sql_value(target)}, {sql_value(outcome)}) "
-        "ON CONFLICT (session_id, agent_id) DO UPDATE SET finished_at = excluded.finished_at, "
-        "target = excluded.target, outcome = excluded.outcome "
-        "WHERE agent_runs.finished_at IS NULL RETURNING id"
+        f"INSERT INTO agent_runs (agent, session_id, agent_id, finished_at, {', '.join(REPORTED)}) "
+        f"VALUES ({literal(agent)}, {literal(session_id)}, {literal(agent_id)}, "
+        f"{literal(finished_at)}, "
+        + ", ".join(sql_value(value) for value in (target, outcome, commit_sha))
+        + ") ON CONFLICT (session_id, agent_id) DO UPDATE SET finished_at = excluded.finished_at, "
+        + ", ".join(f"{column} = excluded.{column}" for column in REPORTED)
+        + " WHERE agent_runs.finished_at IS NULL RETURNING id"
     )
     return bool(closed)
 
@@ -170,12 +179,19 @@ def hook(event: dict[str, Any], employees: set[str], moment: dt.datetime) -> str
 
     message = event["last_assistant_message"]
     target, outcome = report_field(message, "Target"), report_field(message, "Outcome")
-    if not finish(agent, event["session_id"], event["agent_id"], target, outcome, stamp(moment)):
+    commit, unknown = report_field(message, "Commit"), ""
+    if commit is not None and not COMMIT.fullmatch(commit):
+        unknown = f"; its Commit line {commit!r} is not a full commit id"
+        commit = None
+    finished = finish(
+        agent, event["session_id"], event["agent_id"], target, outcome, stamp(moment), commit
+    )
+    if not finished:
         return f"{agent} run was already recorded"
     if target is None or outcome is None:
-        return f"{agent} finished without Target/Outcome lines, so it is recorded as ending without a report"
+        return f"{agent} finished without Target/Outcome lines, so it is recorded as ending without a report{unknown}"
 
-    said = f"{agent} run recorded: {target} - {outcome}"
+    said = f"{agent} run recorded: {target} - {outcome}{unknown}"
     pull_request = PULL_REQUEST.search(target)
     if pull_request:
         said += "; " + post_report(pull_request.group(1), agent, outcome, message)
@@ -186,32 +202,66 @@ def record(agent: str, session_id: str, target: str, outcome: str, moment: dt.da
     """Record a command's run, which no subagent hook sees because it runs in the session itself.
 
     A command has no agent id of its own, so the run is keyed by the moment it
-    was recorded: one call is one run.
+    was recorded: one call is one run. It has no transcript of its own either -
+    its tokens are its session's - so they are unknown here, as is a commit.
     """
     at = stamp(moment)
     run_id = f"{agent}@{at}"
     start(agent, session_id, run_id, at)
-    finish(agent, session_id, run_id, target, outcome, at)
+    finish(agent, session_id, run_id, target, outcome, at, None)
 
 
-def ledger() -> int:
+def unmeasured(moment: dt.datetime) -> list[dict[str, Any]]:
+    """Finished subagent runs whose spend is unknown, settled and not yet a day old.
+
+    A command's run (`record`) is not a subagent's and has no transcript of its
+    own - its tokens are its session's - so it is never asked about.
+    """
+    return query(
+        "SELECT id, session_id, agent_id FROM agent_runs WHERE model IS NULL "
+        f"AND finished_at < {literal(stamp(moment - transcript_usage.SETTLES_AFTER))} "
+        f"AND finished_at > {literal(stamp(moment - transcript_usage.MEASURABLE_FOR))} "
+        "AND agent_id NOT LIKE '%@%'"
+    )
+
+
+def measured(run_id: int, usage: transcript_usage.Usage) -> None:
+    """Record what a run spent, unless it is already recorded or already history.
+
+    A run the ledger holds is never measured again: the ledger's row is never
+    rewritten, so a later measurement here would leave the two disagreeing about
+    the same run.
+    """
+    query(
+        f"UPDATE agent_runs SET {assignments(dataclasses.asdict(usage))} "
+        f"WHERE id = {int(run_id)} AND model IS NULL AND ledgered_at IS NULL"
+    )
+
+
+def ledger(moment: dt.datetime) -> int:
     """Write finished, reported runs into `.claude/runs.tsv`. Returns how many are unmarked.
+
+    A run whose spend could still be measured waits for the next drain, because
+    a ledger row is never rewritten: ledgering it now would freeze empty token
+    cells beside a database row that gets the real numbers a minute later.
 
     Nothing is marked here. The ledger is only kept once it is committed, and in a
     cloud session pushed, so `mark` runs after that. `append` is idempotent on
     `(agent, run_at, target)`, so writing unmarked runs again, after a run that
     failed before marking, adds nothing.
     """
-    runs = _reported_unmarked()
+    runs = _reported_unmarked(moment)
     for run in runs:
         append(
             run["agent"],
             run["target"],
             run["outcome"],
             dt.datetime.fromisoformat(run["finished_at"]),
+            run["commit_sha"],
+            transcript_usage.stored(run),
         )
     # A dispatcher's runs are its tasks, and are ledgered from the queue.
-    return len(runs) + task_queue.ledger()
+    return len(runs) + task_queue.ledger(moment)
 
 
 def mark(moment: dt.datetime) -> int:
@@ -225,7 +275,7 @@ def mark(moment: dt.datetime) -> int:
     held = recorded()
     runs = [
         run
-        for run in _reported_unmarked()
+        for run in _reported_unmarked(moment)
         if key(run["agent"], run["target"], dt.datetime.fromisoformat(run["finished_at"])) in held
     ]
     if runs:
@@ -234,11 +284,20 @@ def mark(moment: dt.datetime) -> int:
     return len(runs) + task_queue.mark(moment, held)
 
 
-def _reported_unmarked() -> list[dict[str, Any]]:
+def _reported_unmarked(moment: dt.datetime) -> list[dict[str, Any]]:
+    """Reported runs the ledger does not hold, whose spend is settled.
+
+    Settled means measured, or past being measurable, or a command's run, which
+    has no transcript of its own to measure.
+    """
     return query(
-        "SELECT id, agent, target, outcome, finished_at FROM agent_runs "
+        f"SELECT id, agent, finished_at, {', '.join((*REPORTED, *transcript_usage.COLUMNS))} "
+        "FROM agent_runs "
         "WHERE ledgered_at IS NULL AND finished_at IS NOT NULL "
-        "AND target IS NOT NULL AND outcome IS NOT NULL ORDER BY finished_at"
+        "AND target IS NOT NULL AND outcome IS NOT NULL "
+        "AND (model IS NOT NULL OR agent_id LIKE '%@%' "
+        f"OR finished_at < {literal(stamp(moment - transcript_usage.MEASURABLE_FOR))}) "
+        "ORDER BY finished_at"
     )
 
 
@@ -284,7 +343,7 @@ def main() -> int:
         return 0
 
     if args.command == "ledger":
-        count = ledger()
+        count = ledger(moment)
         print(
             f"{count} unmarked run{'s' if count != 1 else ''} in .claude/runs.tsv; mark them once it is pushed"
         )

@@ -29,9 +29,9 @@ REPO = SUITES.parents[1]
 CASE_SECONDS = 540
 
 PROMPT = """This is an eval case, not a real pull request. Review the diff below as if
-it had been proposed against this repository at its current commit. Do not fetch
-a pull request, and do not run gh. End your report with `Target: eval {case}` and
-your Outcome line.
+it had been proposed against this repository. It is a patch and belongs to no
+commit. Do not fetch a pull request, and do not run gh. End your report with
+`Target: eval {case}` and your Outcome line.
 
 ```diff
 {diff}```

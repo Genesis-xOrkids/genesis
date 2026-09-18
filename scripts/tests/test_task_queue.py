@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from scripts import log_agent_run, task_queue
+from scripts import log_agent_run, task_queue, transcript_usage
 
 MOMENT = dt.datetime(2026, 9, 12, 3, 0, 0, tzinfo=dt.UTC)
 AT = "'2026-09-12T03:00:00+00:00'"
@@ -118,15 +118,51 @@ def test_which_tasks_are_still_open_is_asked_in_one_statement(database: Database
     assert statement.endswith("AND finished_at IS NULL AND closed_at IS NULL")
 
 
+def test_the_tasks_to_measure_are_the_ended_ones_whose_spend_is_unknown(
+    database: Database,
+) -> None:
+    database.answers["SELECT id, request_id, background_id FROM tasks WHERE request_id"] = [
+        {"id": 5, "request_id": "req-00000005", "background_id": "s5"}
+    ]
+    assert task_queue.unmeasured(["req-00000005"], MOMENT) == [
+        {"id": 5, "request_id": "req-00000005", "background_id": "s5"}
+    ]
+    assert task_queue.unmeasured([], MOMENT) == []
+    (statement,) = database.statements
+    # A minute after it ended, so its session's last response has reached the transcript.
+    assert statement.endswith(
+        "AND coalesce(finished_at, closed_at) < '2026-09-12T02:59:00+00:00' AND model IS NULL"
+    )
+
+
+def test_a_measurement_is_written_once_and_never_over_another(database: Database) -> None:
+    task_queue.measured(5, transcript_usage.Usage("claude-sonnet-5", 10, 0, 2000, 8000, 400, 0))
+    assert database.statements == [
+        "UPDATE tasks SET model = 'claude-sonnet-5', input_tokens = 10, "
+        "cache_creation_5m_input_tokens = 0, cache_creation_1h_input_tokens = 2000, "
+        "cache_read_input_tokens = 8000, output_tokens = 400, partial_responses = 0 "
+        "WHERE id = 5 AND model IS NULL AND ledgered_at IS NULL"
+    ]
+
+
 def test_asking_about_no_tasks_asks_nothing(database: Database) -> None:
     assert task_queue.still_open([]) == set()
     assert database.statements == []
 
 
+SPENT = dict(
+    zip(transcript_usage.COLUMNS, ("claude-sonnet-5", 10, 0, 2000, 8000, 400, 0), strict=True)
+)
 TASK_RUNS = [
-    {"id": 12, "outcome": "Opened PR #40", "finished_at": "2026-09-12T02:50:00+00:00"},
-    {"id": 13, "outcome": "Reviewed PR #41", "finished_at": "2026-09-12T02:55:00+00:00"},
+    {"id": 12, "outcome": "Opened PR #40", "finished_at": "2026-09-12T02:50:00+00:00", **SPENT},
+    {
+        "id": 13,
+        "outcome": "Reviewed PR #41",
+        "finished_at": "2026-09-12T02:55:00+00:00",
+        **dict.fromkeys(transcript_usage.COLUMNS),
+    },
 ]
+TASK_RUNS_SELECT = "SELECT id, outcome, finished_at, model, "
 
 
 def test_finished_tasks_are_ledgered_as_dispatcher_runs_without_marking(
@@ -134,22 +170,26 @@ def test_finished_tasks_are_ledgered_as_dispatcher_runs_without_marking(
 ) -> None:
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
-    database.answers["SELECT id, outcome, finished_at FROM tasks"] = TASK_RUNS[:1]
-    assert task_queue.ledger() == 1
+    database.answers[TASK_RUNS_SELECT] = TASK_RUNS[:1]
+    assert task_queue.ledger(MOMENT) == 1
     # The same task again, as after a run that failed before marking it.
-    assert task_queue.ledger() == 1
+    assert task_queue.ledger(MOMENT) == 1
     assert ledger.read_text().splitlines() == [
-        "run_at\tagent\ttarget\toutcome",
-        "2026-09-12T02:50:00+00:00\tdispatcher\ttask #12\tOpened PR #40",
+        "\t".join(log_agent_run.COLUMNS),
+        # A task names no commit; its session's tokens are the watcher's measurement.
+        "2026-09-12T02:50:00+00:00\tdispatcher\ttask #12\tOpened PR #40\t"
+        "\tclaude-sonnet-5\t10\t0\t2000\t8000\t400\t0",
     ]
     select = next(sql for sql in database.statements if sql.startswith("SELECT"))
     # Finished only: a closed task has no report to ledger.
     assert "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL" in select
+    # A task whose spend could still be measured waits for the next drain.
+    assert "AND (model IS NOT NULL OR finished_at < '2026-09-11T03:00:00+00:00')" in select
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
 
 
 def test_only_tasks_the_ledger_holds_are_marked(database: Database) -> None:
-    database.answers["SELECT id, outcome, finished_at FROM tasks"] = TASK_RUNS
+    database.answers[TASK_RUNS_SELECT] = TASK_RUNS
     held = {("2026-09-12T02:50:00+00:00", "dispatcher", "task #12")}
     assert task_queue.mark(MOMENT, held) == 1
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == [

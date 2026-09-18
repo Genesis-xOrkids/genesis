@@ -98,6 +98,29 @@ a union merge driver, because history must be reproducible from a clone and
 need no network to exist. The live layer came later, for the one thing git
 cannot show: work in progress.
 
+Each run also records what it saw and what it spent (2026-09-16). A review's
+`Commit:` line names the commit it reviewed, recorded at the stop. What a run
+spent is not read at the stop, because the response that ends a subagent reaches
+its transcript after the `SubagentStop` hook fires: the first live check recorded
+a review one response short. The watcher reads the transcript a minute later
+instead, counting each response once and skipping Claude Code's `<synthetic>`
+notices (`scripts/transcript_usage.py`), and does the same for a task's session
+once it has stopped. Cache writes are kept by lifetime, because a one-hour write
+costs twice input and a five-minute one a quarter more. Transcripts are not a
+perfect record: 341 of 22,730 responses on this Mac (measured 2026-09-16) never
+got their final line, so their output is counted as far as it streamed - about
+1.5% of output - and `partial_responses` records how many, rather than letting
+the count pass as exact. Cost is never stored: `scripts/agent_report.py` prices
+the sums with the product's own price table
+(`intelligence/model_gateway/pricing.py`). Tokens that cannot be read - no
+transcript on this machine, more than one model - stay null, because a run
+priced at zero would read as free ([[null-means-unknown]]). The ledger carries
+the same columns; rows written before them are shorter, and their missing cells
+are unknown too. A run reaches the ledger only once its spend is settled -
+measured, or older than a day and so past measuring - and a run the ledger holds
+is never measured again, because a ledger row is never rewritten and the two
+would then disagree about the same run.
+
 ## Decisions, and why
 
 - **A task ends one of two ways, in separate columns.** The dispatcher's

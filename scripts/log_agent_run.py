@@ -12,6 +12,11 @@ history: it has to be reproducible from a clone, and it cannot depend on a
 network or a login to exist. `.gitattributes` merges it with the union driver,
 so branches that each bring rows in never conflict.
 
+Beside each report the ledger keeps the commit the run saw and the tokens it
+spent (`scripts/transcript_usage.py`), so history keeps its cost. An empty cell
+is unknown, never zero, and so is a cell missing from a row written before
+those columns existed: rows are history, and history is never rewritten.
+
 It is kept apart from `second-brain/wiki/log.md`. That log is the append-only
 record of what happened to the wiki, and reviewing a code diff does not touch
 the wiki.
@@ -20,11 +25,20 @@ the wiki.
 import datetime as dt
 import pathlib
 
+from scripts import transcript_usage
+
 LEDGER = pathlib.Path(__file__).resolve().parents[1] / ".claude/runs.tsv"
-COLUMNS = ("run_at", "agent", "target", "outcome")
+COLUMNS = ("run_at", "agent", "target", "outcome", "commit_sha", *transcript_usage.COLUMNS)
 
 
-def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[pathlib.Path, bool]:
+def append(
+    agent: str,
+    target: str,
+    outcome: str,
+    run_at: dt.datetime,
+    commit_sha: str | None,
+    usage: transcript_usage.Usage | None,
+) -> tuple[pathlib.Path, bool]:
     """Write one run to the ledger, creating it with a header if absent.
 
     Returns the ledger path and whether the row is new. Idempotent on
@@ -45,7 +59,8 @@ def append(agent: str, target: str, outcome: str, run_at: dt.datetime) -> tuple[
     with LEDGER.open("a", encoding="utf-8") as handle:
         if fresh:
             handle.write("\t".join(COLUMNS) + "\n")
-        handle.write("\t".join([*run, outcome.strip()]) + "\n")
+        row = [*run, outcome.strip(), commit_sha or "", *transcript_usage.cells(usage)]
+        handle.write("\t".join(row) + "\n")
     return LEDGER, True
 
 

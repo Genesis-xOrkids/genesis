@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from scripts import agent_activity, brain_db, log_agent_run
+from scripts import agent_activity, brain_db, log_agent_run, transcript_usage
 
 MOMENT = dt.datetime(2026, 9, 12, 14, 30, 5, tzinfo=dt.UTC)
 EMPLOYEES = {"genesis-reviewer", "review"}
@@ -163,7 +163,8 @@ def test_a_target_with_no_pull_request_posts_nothing(github: GitHub, target: str
     said = agent_activity.hook(
         stop(f"report\nTarget: {target}\nOutcome: no findings"), EMPLOYEES, MOMENT
     )
-    assert said == f"genesis-reviewer run recorded: {target} - no findings"
+    assert said is not None
+    assert said.startswith(f"genesis-reviewer run recorded: {target} - no findings")
     assert github.calls == []
 
 
@@ -181,6 +182,52 @@ def test_a_stop_without_a_report_is_closed_as_ending_without_one(
     (statement,) = database.statements
     assert "NULL" in statement
     assert github.calls == []
+
+
+@pytest.mark.usefixtures("github")
+def test_a_stop_records_the_commit_it_saw_and_leaves_what_it_spent_to_the_watcher(
+    database: Database,
+) -> None:
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    report = f"Target: PR #12\nCommit: {commit}\nOutcome: 0 blocking, 0 design, 0 notes"
+    said = agent_activity.hook(stop(report), EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "not a full commit id" not in said
+    (statement,) = database.statements
+    assert f"'PR #12', '0 blocking, 0 design, 0 notes', '{commit}')" in statement
+    assert "commit_sha = excluded.commit_sha" in statement
+    # The response that ends a run reaches its transcript after the stop.
+    assert "output_tokens" not in statement
+
+
+@pytest.mark.usefixtures("github")
+def test_a_commit_line_that_is_not_a_full_commit_id_is_recorded_unknown_and_said(
+    database: Database,
+) -> None:
+    report = "Target: PR #12\nCommit: 0123abc\nOutcome: 0 blocking, 0 design, 0 notes"
+    said = agent_activity.hook(stop(report), EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "its Commit line '0123abc' is not a full commit id" in said
+    (statement,) = database.statements
+    assert "'0 blocking, 0 design, 0 notes', NULL)" in statement
+
+
+def test_runs_are_measured_once_settled_within_a_day_and_never_a_commands(
+    database: Database,
+) -> None:
+    agent_activity.unmeasured(MOMENT)
+    (asked,) = database.statements
+    assert "WHERE model IS NULL AND finished_at < '2026-09-12T14:29:05+00:00'" in asked
+    assert "AND finished_at > '2026-09-11T14:30:05+00:00'" in asked
+    assert asked.endswith("AND agent_id NOT LIKE '%@%'")
+
+    agent_activity.measured(7, transcript_usage.Usage("claude-opus-5", 3, 0, 900, 500, 120, 1))
+    assert database.statements[-1] == (
+        "UPDATE agent_runs SET model = 'claude-opus-5', input_tokens = 3, "
+        "cache_creation_5m_input_tokens = 0, cache_creation_1h_input_tokens = 900, "
+        "cache_read_input_tokens = 500, output_tokens = 120, partial_responses = 1 "
+        "WHERE id = 7 AND model IS NULL AND ledgered_at IS NULL"
+    )
 
 
 def test_a_repeated_stop_is_not_posted_twice(database: Database, github: GitHub) -> None:
@@ -256,12 +303,15 @@ def test_a_command_run_is_keyed_by_the_moment_it_was_recorded(database: Database
     assert "'PR #12'" in closed
 
 
+UNKNOWN_SPEND = dict.fromkeys(transcript_usage.COLUMNS)
 REVIEW_RUN = {
     "id": 7,
     "agent": "genesis-reviewer",
     "target": "PR #12",
     "outcome": "clean",
     "finished_at": "2026-09-12T14:00:00+00:00",
+    "commit_sha": "a" * 40,
+    **dict(zip(transcript_usage.COLUMNS, ("claude-opus-5", 3, 0, 900, 500, 120, 1), strict=True)),
 }
 COMMAND_RUN = {
     "id": 8,
@@ -269,8 +319,10 @@ COMMAND_RUN = {
     "target": "PR #12",
     "outcome": "relayed",
     "finished_at": "2026-09-12T14:01:00+00:00",
+    "commit_sha": None,
+    **UNKNOWN_SPEND,
 }
-HEADER = "run_at\tagent\ttarget\toutcome"
+HEADER = "\t".join(log_agent_run.COLUMNS)
 
 
 def test_the_ledger_is_written_without_marking_and_again_harmlessly(
@@ -278,17 +330,23 @@ def test_the_ledger_is_written_without_marking_and_again_harmlessly(
 ) -> None:
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
-    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda: 0)
+    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda _moment: 0)
     database.rows = [REVIEW_RUN, COMMAND_RUN]
-    assert agent_activity.ledger() == 2
+    assert agent_activity.ledger(MOMENT) == 2
     # The same rows again, as after a run that failed before marking them.
-    assert agent_activity.ledger() == 2
+    assert agent_activity.ledger(MOMENT) == 2
     assert ledger.read_text().splitlines() == [
         HEADER,
-        "2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean",
-        "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed",
+        f"2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean\t{'a' * 40}"
+        "\tclaude-opus-5\t3\t0\t900\t500\t120\t1",
+        # A command's tokens and commit are unknown: empty cells, never zeros.
+        "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed" + "\t" * 8,
     ]
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
+    # A reported run whose spend is still worth measuring is left for the next drain.
+    asked = next(sql for sql in database.statements if sql.startswith("SELECT"))
+    assert "AND (model IS NOT NULL OR agent_id LIKE '%@%' " in asked
+    assert "OR finished_at < '2026-09-11T14:30:05+00:00')" in asked
 
 
 def test_only_runs_the_ledger_holds_are_marked(
@@ -332,9 +390,9 @@ def test_ledger_and_mark_include_the_dispatch_queue(
     monkeypatch.setattr(log_agent_run, "LEDGER", tmp_path / "runs.tsv")
     monkeypatch.setattr(agent_activity, "LEDGER", tmp_path / "runs.tsv")
     monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
-    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda: 3)
+    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda _moment: 3)
     monkeypatch.setattr(agent_activity.task_queue, "mark", lambda _moment, _held: 2)
-    assert agent_activity.ledger() == 3
+    assert agent_activity.ledger(MOMENT) == 3
     assert agent_activity.mark(MOMENT) == 2
     assert database.statements[-1].startswith("SELECT")
 

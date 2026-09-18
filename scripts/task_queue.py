@@ -16,6 +16,10 @@ the task was claimed, and ended when the task was finished or closed. It is not
 copied into `agent_runs`. The Employees tab reads it from here, and `ledger`
 writes the finished ones into `.claude/runs.tsv`.
 
+What a task's session spent is recorded on the task by the watcher, once the
+session has stopped and its transcript is whole (`measured`), and carried into
+the ledger with the task.
+
 Run as a module from the repository root:
 
     python3 -m scripts.task_queue finish 12 --outcome "Opened PR #40 with the fix"
@@ -24,11 +28,13 @@ Run as a module from the repository root:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import sys
 from typing import Any
 
-from scripts.brain_db import literal, query, stamp
+from scripts import transcript_usage
+from scripts.brain_db import assignments, literal, query, stamp
 from scripts.log_agent_run import append, key
 
 DISPATCHER = "dispatcher"
@@ -121,21 +127,53 @@ def still_open(request_ids: list[str]) -> set[str]:
     return {str(row["request_id"]) for row in rows}
 
 
-def ledger() -> int:
+def unmeasured(request_ids: list[str], moment: dt.datetime) -> list[dict[str, Any]]:
+    """Which of these tasks ended a while ago with what their session spent still unknown.
+
+    A while, because a session's last response reaches its transcript after the
+    session ends, and a short count is never corrected: a measurement is written
+    once.
+    """
+    if not request_ids:
+        return []
+    listed = ",".join(literal(request_id) for request_id in request_ids)
+    settled = literal(stamp(moment - transcript_usage.SETTLES_AFTER))
+    return query(
+        f"SELECT id, request_id, background_id FROM tasks WHERE request_id IN ({listed}) "
+        f"AND coalesce(finished_at, closed_at) < {settled} AND model IS NULL"
+    )
+
+
+def measured(task_id: int, usage: transcript_usage.Usage) -> None:
+    """Record what a task's session spent, unless it is already recorded or already history.
+
+    A task the ledger holds is never measured again, for the same reason a run
+    is not: the ledger's row is never rewritten.
+    """
+    query(
+        f"UPDATE tasks SET {assignments(dataclasses.asdict(usage))} "
+        f"WHERE id = {int(task_id)} AND model IS NULL AND ledgered_at IS NULL"
+    )
+
+
+def ledger(moment: dt.datetime) -> int:
     """Write finished dispatcher runs into `.claude/runs.tsv`. Returns how many are unmarked.
 
-    A closed task has no report, so it stays out of the ledger. Nothing is marked
-    here: `mark` does that once the ledger has been kept. `append` is idempotent
+    A closed task has no report, so it stays out of the ledger, and a task whose
+    spend could still be measured waits for the next drain: a ledger row is never
+    rewritten. Nothing is marked here: `mark` does that once the ledger has been kept. `append` is idempotent
     on `(agent, run_at, target)`, so writing the same unmarked tasks again adds
     nothing.
     """
-    runs = _finished_unmarked()
+    runs = _finished_unmarked(moment)
     for run in runs:
         append(
             DISPATCHER,
             f"task #{int(run['id'])}",
             run["outcome"],
             dt.datetime.fromisoformat(run["finished_at"]),
+            None,
+            transcript_usage.stored(run),
         )
     return len(runs)
 
@@ -144,7 +182,7 @@ def mark(moment: dt.datetime, held: set[tuple[str, str, str]]) -> int:
     """Mark as ledgered the finished tasks whose runs are in `held`. Returns how many."""
     runs = [
         run
-        for run in _finished_unmarked()
+        for run in _finished_unmarked(moment)
         if key(DISPATCHER, f"task #{int(run['id'])}", dt.datetime.fromisoformat(run["finished_at"]))
         in held
     ]
@@ -154,10 +192,14 @@ def mark(moment: dt.datetime, held: set[tuple[str, str, str]]) -> int:
     return len(runs)
 
 
-def _finished_unmarked() -> list[dict[str, Any]]:
+def _finished_unmarked(moment: dt.datetime) -> list[dict[str, Any]]:
+    """Finished tasks the ledger does not hold, whose spend is measured or past measuring."""
     return query(
-        "SELECT id, outcome, finished_at FROM tasks "
-        "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL ORDER BY finished_at"
+        f"SELECT id, outcome, finished_at, {', '.join(transcript_usage.COLUMNS)} FROM tasks "
+        "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL "
+        "AND (model IS NOT NULL "
+        f"OR finished_at < {literal(stamp(moment - transcript_usage.MEASURABLE_FOR))}) "
+        "ORDER BY finished_at"
     )
 
 

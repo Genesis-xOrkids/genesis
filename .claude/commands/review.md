@@ -32,9 +32,15 @@ it and by how much).
 ## Then review it
 
 Invoke the Agent tool with `subagent_type: "genesis-reviewer"`. Give it the
-resolved target *and* paste the exact diff text you just captured, so it
-reviews the same bytes the user just saw rather than recomputing the diff a
-moment later against a target that may have moved. Tell it to follow its own
+resolved target, the commit the diff ends at (`gh pr view <N> --json headRefOid
+--jq .headRefOid` for a pull request, `git rev-parse <branch>` for a branch,
+none for a working-tree diff), *and* paste the exact diff text you just
+captured, so it reviews the same bytes the user just saw rather than
+recomputing the diff a moment later against a target that may have moved. The
+commit is what its `Commit:` line reports, and what the run records. Read it
+before you capture the diff and again after: when the two differ, the branch
+moved in between, so capture both again, or the commit handed over is not the
+one the diff shows. Tell it to follow its own
 instructions for orienting in the second brain and reporting.
 
 This agent's report is not shown to the user automatically — when it
