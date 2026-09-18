@@ -33,12 +33,19 @@ Callers record the tokens as unknown and say why - never as zero.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import pathlib
 from dataclasses import astuple, dataclass, fields
 from typing import Any
 
 SYNTHETIC = "<synthetic>"
+# How long after a run or a session ends its transcript needs before it is
+# whole, and how long a measurement is worth waiting for at all: a run from
+# another machine has no transcript here, and looking for one forever would
+# hold its row out of the ledger forever.
+SETTLES_AFTER = dt.timedelta(minutes=1)
+MEASURABLE_FOR = dt.timedelta(days=1)
 
 
 class UnmeasuredError(Exception):

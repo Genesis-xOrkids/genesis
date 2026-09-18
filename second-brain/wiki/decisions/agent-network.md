@@ -114,7 +114,10 @@ the sums with the product's own price table
 transcript on this machine, more than one model - stay null, because a run
 priced at zero would read as free ([[null-means-unknown]]). The ledger carries
 the same columns; rows written before them are shorter, and their missing cells
-are unknown too.
+are unknown too. A run reaches the ledger only once its spend is settled -
+measured, or older than a day and so past measuring - and a run the ledger holds
+is never measured again, because a ledger row is never rewritten and the two
+would then disagree about the same run.
 
 ## Decisions, and why
 

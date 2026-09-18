@@ -61,11 +61,7 @@ PULL_REQUEST = re.compile(r"PR #(\d+)")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 # What a stop reports beside its finishing time, in the order `finish` writes it.
 REPORTED = ("target", "outcome", "commit_sha")
-# A run is measured once its transcript has had time to take its last response,
-# and looked for no longer than a day: a run from another machine has no
-# transcript here to find.
-SETTLED = dt.timedelta(minutes=1)
-MEASURABLE_FOR = dt.timedelta(days=1)
+
 
 # SessionEnd fires for every session in this repository, and most of them never
 # run an employee. A marker for each session that did open a run lets the rest
@@ -223,29 +219,38 @@ def unmeasured(moment: dt.datetime) -> list[dict[str, Any]]:
     """
     return query(
         "SELECT id, session_id, agent_id FROM agent_runs WHERE model IS NULL "
-        f"AND finished_at < {literal(stamp(moment - SETTLED))} "
-        f"AND finished_at > {literal(stamp(moment - MEASURABLE_FOR))} "
+        f"AND finished_at < {literal(stamp(moment - transcript_usage.SETTLES_AFTER))} "
+        f"AND finished_at > {literal(stamp(moment - transcript_usage.MEASURABLE_FOR))} "
         "AND agent_id NOT LIKE '%@%'"
     )
 
 
 def measured(run_id: int, usage: transcript_usage.Usage) -> None:
-    """Record what a run spent, unless it is already recorded."""
+    """Record what a run spent, unless it is already recorded or already history.
+
+    A run the ledger holds is never measured again: the ledger's row is never
+    rewritten, so a later measurement here would leave the two disagreeing about
+    the same run.
+    """
     query(
         f"UPDATE agent_runs SET {assignments(dataclasses.asdict(usage))} "
-        f"WHERE id = {int(run_id)} AND model IS NULL"
+        f"WHERE id = {int(run_id)} AND model IS NULL AND ledgered_at IS NULL"
     )
 
 
-def ledger() -> int:
+def ledger(moment: dt.datetime) -> int:
     """Write finished, reported runs into `.claude/runs.tsv`. Returns how many are unmarked.
+
+    A run whose spend could still be measured waits for the next drain, because
+    a ledger row is never rewritten: ledgering it now would freeze empty token
+    cells beside a database row that gets the real numbers a minute later.
 
     Nothing is marked here. The ledger is only kept once it is committed, and in a
     cloud session pushed, so `mark` runs after that. `append` is idempotent on
     `(agent, run_at, target)`, so writing unmarked runs again, after a run that
     failed before marking, adds nothing.
     """
-    runs = _reported_unmarked()
+    runs = _reported_unmarked(moment)
     for run in runs:
         append(
             run["agent"],
@@ -256,7 +261,7 @@ def ledger() -> int:
             transcript_usage.stored(run),
         )
     # A dispatcher's runs are its tasks, and are ledgered from the queue.
-    return len(runs) + task_queue.ledger()
+    return len(runs) + task_queue.ledger(moment)
 
 
 def mark(moment: dt.datetime) -> int:
@@ -270,7 +275,7 @@ def mark(moment: dt.datetime) -> int:
     held = recorded()
     runs = [
         run
-        for run in _reported_unmarked()
+        for run in _reported_unmarked(moment)
         if key(run["agent"], run["target"], dt.datetime.fromisoformat(run["finished_at"])) in held
     ]
     if runs:
@@ -279,12 +284,20 @@ def mark(moment: dt.datetime) -> int:
     return len(runs) + task_queue.mark(moment, held)
 
 
-def _reported_unmarked() -> list[dict[str, Any]]:
+def _reported_unmarked(moment: dt.datetime) -> list[dict[str, Any]]:
+    """Reported runs the ledger does not hold, whose spend is settled.
+
+    Settled means measured, or past being measurable, or a command's run, which
+    has no transcript of its own to measure.
+    """
     return query(
         f"SELECT id, agent, finished_at, {', '.join((*REPORTED, *transcript_usage.COLUMNS))} "
         "FROM agent_runs "
         "WHERE ledgered_at IS NULL AND finished_at IS NOT NULL "
-        "AND target IS NOT NULL AND outcome IS NOT NULL ORDER BY finished_at"
+        "AND target IS NOT NULL AND outcome IS NOT NULL "
+        "AND (model IS NOT NULL OR agent_id LIKE '%@%' "
+        f"OR finished_at < {literal(stamp(moment - transcript_usage.MEASURABLE_FOR))}) "
+        "ORDER BY finished_at"
     )
 
 
@@ -330,7 +343,7 @@ def main() -> int:
         return 0
 
     if args.command == "ledger":
-        count = ledger()
+        count = ledger(moment)
         print(
             f"{count} unmarked run{'s' if count != 1 else ''} in .claude/runs.tsv; mark them once it is pushed"
         )

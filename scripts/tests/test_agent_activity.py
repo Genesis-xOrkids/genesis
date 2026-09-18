@@ -226,7 +226,7 @@ def test_runs_are_measured_once_settled_within_a_day_and_never_a_commands(
         "UPDATE agent_runs SET model = 'claude-opus-5', input_tokens = 3, "
         "cache_creation_5m_input_tokens = 0, cache_creation_1h_input_tokens = 900, "
         "cache_read_input_tokens = 500, output_tokens = 120, partial_responses = 1 "
-        "WHERE id = 7 AND model IS NULL"
+        "WHERE id = 7 AND model IS NULL AND ledgered_at IS NULL"
     )
 
 
@@ -330,11 +330,11 @@ def test_the_ledger_is_written_without_marking_and_again_harmlessly(
 ) -> None:
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
-    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda: 0)
+    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda _moment: 0)
     database.rows = [REVIEW_RUN, COMMAND_RUN]
-    assert agent_activity.ledger() == 2
+    assert agent_activity.ledger(MOMENT) == 2
     # The same rows again, as after a run that failed before marking them.
-    assert agent_activity.ledger() == 2
+    assert agent_activity.ledger(MOMENT) == 2
     assert ledger.read_text().splitlines() == [
         HEADER,
         f"2026-09-12T14:00:00+00:00\tgenesis-reviewer\tPR #12\tclean\t{'a' * 40}"
@@ -343,6 +343,10 @@ def test_the_ledger_is_written_without_marking_and_again_harmlessly(
         "2026-09-12T14:01:00+00:00\treview\tPR #12\trelayed" + "\t" * 8,
     ]
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
+    # A reported run whose spend is still worth measuring is left for the next drain.
+    asked = next(sql for sql in database.statements if sql.startswith("SELECT"))
+    assert "AND (model IS NOT NULL OR agent_id LIKE '%@%' " in asked
+    assert "OR finished_at < '2026-09-11T14:30:05+00:00')" in asked
 
 
 def test_only_runs_the_ledger_holds_are_marked(
@@ -386,9 +390,9 @@ def test_ledger_and_mark_include_the_dispatch_queue(
     monkeypatch.setattr(log_agent_run, "LEDGER", tmp_path / "runs.tsv")
     monkeypatch.setattr(agent_activity, "LEDGER", tmp_path / "runs.tsv")
     monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
-    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda: 3)
+    monkeypatch.setattr(agent_activity.task_queue, "ledger", lambda _moment: 3)
     monkeypatch.setattr(agent_activity.task_queue, "mark", lambda _moment, _held: 2)
-    assert agent_activity.ledger() == 3
+    assert agent_activity.ledger(MOMENT) == 3
     assert agent_activity.mark(MOMENT) == 2
     assert database.statements[-1].startswith("SELECT")
 

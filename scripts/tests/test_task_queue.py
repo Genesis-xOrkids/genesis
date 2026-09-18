@@ -124,13 +124,14 @@ def test_the_tasks_to_measure_are_the_ended_ones_whose_spend_is_unknown(
     database.answers["SELECT id, request_id, background_id FROM tasks WHERE request_id"] = [
         {"id": 5, "request_id": "req-00000005", "background_id": "s5"}
     ]
-    assert task_queue.unmeasured(["req-00000005"]) == [
+    assert task_queue.unmeasured(["req-00000005"], MOMENT) == [
         {"id": 5, "request_id": "req-00000005", "background_id": "s5"}
     ]
-    assert task_queue.unmeasured([]) == []
+    assert task_queue.unmeasured([], MOMENT) == []
     (statement,) = database.statements
+    # A minute after it ended, so its session's last response has reached the transcript.
     assert statement.endswith(
-        "AND (finished_at IS NOT NULL OR closed_at IS NOT NULL) AND model IS NULL"
+        "AND coalesce(finished_at, closed_at) < '2026-09-12T02:59:00+00:00' AND model IS NULL"
     )
 
 
@@ -140,7 +141,7 @@ def test_a_measurement_is_written_once_and_never_over_another(database: Database
         "UPDATE tasks SET model = 'claude-sonnet-5', input_tokens = 10, "
         "cache_creation_5m_input_tokens = 0, cache_creation_1h_input_tokens = 2000, "
         "cache_read_input_tokens = 8000, output_tokens = 400, partial_responses = 0 "
-        "WHERE id = 5 AND model IS NULL"
+        "WHERE id = 5 AND model IS NULL AND ledgered_at IS NULL"
     ]
 
 
@@ -170,9 +171,9 @@ def test_finished_tasks_are_ledgered_as_dispatcher_runs_without_marking(
     ledger = tmp_path / "runs.tsv"
     monkeypatch.setattr(log_agent_run, "LEDGER", ledger)
     database.answers[TASK_RUNS_SELECT] = TASK_RUNS[:1]
-    assert task_queue.ledger() == 1
+    assert task_queue.ledger(MOMENT) == 1
     # The same task again, as after a run that failed before marking it.
-    assert task_queue.ledger() == 1
+    assert task_queue.ledger(MOMENT) == 1
     assert ledger.read_text().splitlines() == [
         "\t".join(log_agent_run.COLUMNS),
         # A task names no commit; its session's tokens are the watcher's measurement.
@@ -182,6 +183,8 @@ def test_finished_tasks_are_ledgered_as_dispatcher_runs_without_marking(
     select = next(sql for sql in database.statements if sql.startswith("SELECT"))
     # Finished only: a closed task has no report to ledger.
     assert "WHERE finished_at IS NOT NULL AND ledgered_at IS NULL" in select
+    # A task whose spend could still be measured waits for the next drain.
+    assert "AND (model IS NOT NULL OR finished_at < '2026-09-11T03:00:00+00:00')" in select
     assert [sql for sql in database.statements if sql.startswith("UPDATE")] == []
 
 

@@ -311,15 +311,23 @@ def unknown_once(key: str, message: str) -> None:
         log(message)
 
 
-def measure(request_ids: list[str], listing: list[dict[str, Any]]) -> None:
-    """Record what each of these ended tasks' sessions spent, once the session has stopped.
+def measure(request_ids: list[str], listing: list[dict[str, Any]], moment: dt.datetime) -> None:
+    """Record what each of these ended tasks' sessions spent, once it has stopped and settled.
 
-    A stopped session's transcript is whole. A task whose tokens cannot be read
-    keeps them unknown, and the watcher says why once.
+    A task whose tokens cannot be read keeps them unknown, and the watcher says
+    why once - including when its session is no longer listed, which is how a
+    task gets closed and is the last chance to measure it, since the sweep
+    removes its worktree straight after.
     """
-    for task in task_queue.unmeasured(request_ids):
+    for task in task_queue.unmeasured(request_ids, moment):
         session = find(listing, task["request_id"], task["background_id"])
-        if session is None or session["state"] in STILL_GOING:
+        if session is None:
+            unknown_once(
+                task["request_id"],
+                f"task #{task['id']}: its tokens are unknown: its session is no longer listed",
+            )
+            continue
+        if session["state"] in STILL_GOING:
             continue
         try:
             session_id = session.get("sessionId")
@@ -353,7 +361,7 @@ def measure_runs(moment: dt.datetime) -> None:
         agent_activity.measured(run["id"], usage)
 
 
-def sweep() -> None:
+def sweep(moment: dt.datetime) -> None:
     """Remove the worktrees of tasks that have ended, keeping any whose work would be lost.
 
     A worktree stays when its HEAD is on no branch or remote, or when
@@ -369,7 +377,7 @@ def sweep() -> None:
     if not ended:
         return
     listing = sessions()
-    measure(sorted(ended), listing)
+    measure(sorted(ended), listing, moment)
     going = {session.get("name") for session in listing if session["state"] in STILL_GOING}
     for request_id in sorted(ended):
         place = places[request_id]
@@ -405,7 +413,7 @@ def run(host: str) -> int:
             task_queue.heartbeat(host, moment)
             reap(host, moment)
             dispatch(host, moment)
-            sweep()
+            sweep(moment)
             measure_runs(moment)
         except SystemExit as error:
             # A failed poll - no network, wrangler logged out - is logged and

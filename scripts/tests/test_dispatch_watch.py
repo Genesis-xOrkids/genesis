@@ -53,7 +53,7 @@ class Queue:
     def still_open(self, request_ids: list[str]) -> set[str]:
         return self.open_requests & set(request_ids)
 
-    def unmeasured(self, request_ids: list[str]) -> list[dict[str, Any]]:
+    def unmeasured(self, request_ids: list[str], _moment: dt.datetime) -> list[dict[str, Any]]:
         return [task for task in self.to_measure if task["request_id"] in request_ids]
 
     def measured(self, task_id: int, usage: transcript_usage.Usage) -> None:
@@ -325,8 +325,8 @@ def test_ended_tasks_lose_their_worktrees_unless_work_would_be_lost(
         else completed()
     )
 
-    dispatch_watch.sweep()
-    dispatch_watch.sweep()
+    dispatch_watch.sweep(MOMENT)
+    dispatch_watch.sweep(MOMENT)
 
     removals = [
         pathlib.Path(c[-1]).name for c, _ in machine.commands if c[3:5] == ["worktree", "remove"]
@@ -397,8 +397,8 @@ def test_an_ended_tasks_stopped_session_is_measured_once_and_an_unreadable_one_s
     # Worktrees that hold work stay, so the same tasks come round on the next sweep.
     machine.remove = lambda _path: completed("", 1, "fatal: contains modified or untracked files")
 
-    dispatch_watch.sweep()
-    dispatch_watch.sweep()
+    dispatch_watch.sweep(MOMENT)
+    dispatch_watch.sweep(MOMENT)
 
     # The stopped session is measured on each sweep until the task records it; the
     # stand-in never records it, which is why it appears twice. The working
