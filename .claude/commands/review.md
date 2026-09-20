@@ -43,6 +43,11 @@ moved in between, so capture both again, or the commit handed over is not the
 one the diff shows. Tell it to follow its own
 instructions for orienting in the second brain and reporting.
 
+If the reviewer is cut off by a usage limit or an API error, follow `/build`'s
+"When an agent is cut off": say so with the reset time, and either wait and
+carry on, or stop and say what is left. A run that ends that way is recorded
+without a report, and nothing resumes it on its own.
+
 This agent's report is not shown to the user automatically — when it
 finishes, relay its findings to the user verbatim (severity, file:line,
 citations, "checked and clean" list, and any proposed wiki follow-ups),

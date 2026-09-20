@@ -48,9 +48,19 @@ output, with the date it was measured. Never state a count you did not read.
 
 ## Each run
 
-1. **Branch in the worktree you were given.** `isolation: worktree` gives you a
-   checkout of your own, made from `origin/main`, and Claude Code refuses any
-   edit or git command aimed at the main checkout.
+1. **Branch in a checkout of your own.** `isolation: worktree` usually gives you
+   one, made from `origin/main`, but not when you were started with a name while
+   agent teams are on: then you are a teammate in your caller's checkout. Look
+   first with `git rev-parse --show-toplevel`. In the repository's main checkout,
+   make your own and work there, because switching branches in it moves the HEAD
+   of every other session using it:
+
+   ```sh
+   git worktree add ../genesis-worktrees/<slug> -b feat/<slug> origin/main
+   cd ../genesis-worktrees/<slug>
+   ```
+
+   Anywhere else, branch where you are:
 
    ```sh
    git fetch origin

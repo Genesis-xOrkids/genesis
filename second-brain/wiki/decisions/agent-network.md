@@ -67,7 +67,9 @@ Nothing in the line merges. The person who asked for the work does that.
 ## The invariant
 
 All of an employee's work runs as a subagent, so one set of project hooks
-records every employee wherever it runs (`.claude/settings.json`).
+records every employee wherever it runs (`.claude/settings.json`). That holds
+only while a named agent is still a subagent, which is why this repository turns
+agent teams off (see the decisions below).
 `SubagentStart` opens a run; `SubagentStop` closes it with the agent's closing
 `Target:` and `Outcome:` lines, and posts the report to a pull request when the
 target names one; `SessionEnd` closes whatever a session left open.
@@ -159,6 +161,25 @@ would then disagree about the same run.
   Neither CI nor the reviewer reads an agent definition, so an instruction
   deleted from one ships green, and the work it was holding up goes wrong on
   some later pull request where nobody is looking for it.
+- **Agent teams stay off in this repository** (decided 2026-09-19,
+  `.claude/settings.json`). With `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` - set
+  in this machine's user settings - an agent started with a *name* runs as a
+  teammate: a session of its own that the project hooks never see. Found live
+  when `/build` started `genesis-builder` for the first time: the builder's run
+  was recorded nowhere, its report would not have reached the pull request, and
+  its `isolation: worktree` did not apply, so its working directory was the
+  shared checkout. `/build` and the dispatcher both name the agents they start,
+  so the whole build loop was affected. `SessionStart` now says so whenever
+  something turns teams back on, because nothing else shows it.
+- **Creators check where they are before branching** (restored 2026-09-19). PR
+  #47 removed that check because the platform isolates an agent; the teammate
+  case showed the guarantee is conditional, and a wrong answer moves the shared
+  checkout's HEAD under every other session.
+- **An agent cut off by a usage limit is ordinary.** Eight of the first sixteen
+  recorded runs ended without a report - session limits, a billing error, a
+  network drop - so the caller waits for a close reset and messages the agent to
+  carry on, or stops and says what is left
+  (`.claude/commands/build.md`, "When an agent is cut off").
 - **Creators work in a worktree of their own** (`isolation: worktree`), for the
   same reason a dispatched task gets one: a session that moves a shared
   checkout's HEAD breaks whatever else is working in it. The worktree is made

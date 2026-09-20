@@ -71,6 +71,29 @@ Review again only when the fixes touched something the first review did not
 see. Two passes are the ceiling: a third is the reviewer rewriting the work
 rather than reviewing it.
 
+## When an agent is cut off
+
+An agent's result sometimes ends `Agent terminated early due to an API error:
+You've hit your session limit · resets <time>`, or a billing or network error.
+Its run is recorded as ending without a report, and nothing picks the work back
+up on its own. Eight of the first sixteen recorded runs ended this way, so treat
+it as ordinary, not exceptional.
+
+- **Say so, with the reset time.** A silent retry reads as a slow agent.
+- **Wait for a reset that is close, then carry on.** Send the agent a message
+  rather than starting it again: a resumed agent keeps its context, so it does
+  not redo the work. Wait in a background command that ends at the reset, never
+  by polling in the foreground:
+
+  ```sh
+  until [ "$(date -u +%s)" -ge "$RESET_EPOCH" ]; do sleep 60; done
+  ```
+
+- **Stop when the reset is hours away**, and say what is done and what is left,
+  so a person can pick it up.
+- **Twice in one loop means the work is too big for one window.** Split the spec
+  rather than starting a third time.
+
 ## 5. Record this command's run
 
 The builder's run and the reviewer's run record themselves. This command is a

@@ -265,6 +265,48 @@ def test_a_writer_failure_is_reported_and_nothing_is_posted(
     assert github.calls == []
 
 
+# --- sessions starting ---
+
+
+def start_event() -> dict[str, Any]:
+    return {"hook_event_name": "SessionStart", "session_id": "session-1", "reason": "startup"}
+
+
+def test_a_session_start_says_nothing_while_a_named_agent_stays_a_subagent(
+    database: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(agent_activity.TEAMS, "0")
+    assert agent_activity.hook(start_event(), EMPLOYEES, MOMENT) is None
+    monkeypatch.delenv(agent_activity.TEAMS)
+    assert agent_activity.hook(start_event(), EMPLOYEES, MOMENT) is None
+    assert database.statements == []
+
+
+def test_a_session_start_says_when_a_named_agent_would_run_unrecorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(agent_activity.TEAMS, "1")
+    said = agent_activity.hook(start_event(), EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "is not recorded" in said
+    assert "isolation: worktree" in said
+
+
+def test_the_warning_reaches_the_session_as_context_and_the_person_as_a_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(agent_activity.TEAMS, "1")
+    monkeypatch.setattr(agent_activity, "defined_ids", lambda _repo: EMPLOYEES)
+    monkeypatch.setattr("sys.argv", ["agent_activity", "hook"])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(start_event())))
+    assert agent_activity.main() == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["hookSpecificOutput"] == {
+        "hookEventName": "SessionStart",
+        "additionalContext": printed["systemMessage"],
+    }
+
+
 # --- sessions ending ---
 
 
