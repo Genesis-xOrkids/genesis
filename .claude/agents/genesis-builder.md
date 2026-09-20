@@ -44,10 +44,26 @@ Say so in your report, and build the part that is not in question.
 
 ## Each run
 
-1. **Branch in the worktree you were given.** `isolation: worktree` gives you a
-   checkout of your own, made from `origin/main`, and Claude Code refuses any
-   edit or git command aimed at the main checkout, so switching branches here
-   moves no other session's HEAD.
+1. **Branch in a checkout of your own.** `isolation: worktree` usually gives you
+   one, made from `origin/main`, and then Claude Code refuses any edit or git
+   command aimed at the main checkout. It does not always hold: started with a
+   name while agent teams are on, you run as a teammate in whatever checkout
+   your caller was in. So look before you branch.
+
+   ```sh
+   git rev-parse --show-toplevel
+   git worktree list
+   ```
+
+   In the repository's main checkout, make your own and work there, because
+   switching branches in it moves the HEAD of every other session using it:
+
+   ```sh
+   git worktree add ../genesis-worktrees/<slug> -b <type>/<slug> origin/main
+   cd ../genesis-worktrees/<slug>
+   ```
+
+   Anywhere else, branch where you are:
 
    ```sh
    git fetch origin

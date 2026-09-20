@@ -4,7 +4,16 @@ Every employee's work runs as a subagent - a dispatcher session hands a task to
 a specialist, a routine calls one, a person launches one - so one set of project
 hooks sees all of it (`.claude/settings.json`). `SubagentStart` opens a row,
 `SubagentStop` closes it with what the agent reported, and `SessionEnd` closes
-any row its session left open. The hosted Employees tab reads these rows as
+any row its session left open.
+
+That holds only while a named agent is still a subagent. With agent teams on, an
+agent started with a name runs as a teammate instead: a session of its own, which
+these hooks never see. Its run goes unrecorded, its report is never posted, and
+its definition's `isolation: worktree` does not apply, so it works wherever its
+caller was. `/build` and the dispatcher both name the agents they start, so the
+whole build loop runs unrecorded and unisolated. This repository turns teams off
+in `.claude/settings.json`, and `SessionStart` says so when something turns them
+back on, because the failure is otherwise silent. The hosted Employees tab reads these rows as
 they change, which is the only way it can show work in progress.
 
 The rows live in the brain's D1 database rather than in git, because they are
@@ -61,6 +70,7 @@ PULL_REQUEST = re.compile(r"PR #(\d+)")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 # What a stop reports beside its finishing time, in the order `finish` writes it.
 REPORTED = ("target", "outcome", "commit_sha")
+TEAMS = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
 
 
 # SessionEnd fires for every session in this repository, and most of them never
@@ -152,9 +162,24 @@ def post_report(number: str, agent: str, outcome: str, message: str) -> str:
     return f"report posted to PR #{number}"
 
 
+def teams_note() -> str | None:
+    """What to say when agent teams are on, because then naming an employee hides it."""
+    setting = os.environ.get(TEAMS, "0")
+    if setting == "0":
+        return None
+    return (
+        f"{TEAMS} is {setting!r}: an agent started with a name runs as a teammate, so its run "
+        "is not recorded, its report is not posted to the pull request, and its definition's "
+        "`isolation: worktree` does not apply. Set it to 0 in this repository's "
+        ".claude/settings.json, or start agents without a name."
+    )
+
+
 def hook(event: dict[str, Any], employees: set[str], moment: dt.datetime) -> str | None:
     """Handle one hook event. Returns what to tell the session, if anything."""
     name = event["hook_event_name"]
+    if name == "SessionStart":
+        return teams_note()
     if name == "SessionEnd":
         marker = MARKERS / event["session_id"]
         if marker.exists():
@@ -163,7 +188,8 @@ def hook(event: dict[str, Any], employees: set[str], moment: dt.datetime) -> str
         return None
     if name not in ("SubagentStart", "SubagentStop"):
         raise SystemExit(
-            f"agent_activity handles SubagentStart, SubagentStop and SessionEnd, not {name}"
+            "agent_activity handles SessionStart, SubagentStart, SubagentStop and SessionEnd, "
+            f"not {name}"
         )
 
     agent = event["agent_type"]
@@ -326,7 +352,21 @@ def main() -> int:
             # A run that happened but could not be written is not the same as
             # nothing to record, so the session is told which.
             said = f"{event.get('agent_type') or 'agent'} activity could not be recorded: {error}"
-        if said:
+        if said and event.get("hook_event_name") == "SessionStart":
+            # Both, so the person reading the terminal and the session itself
+            # each learn that naming an agent would hide it.
+            print(
+                json.dumps(
+                    {
+                        "systemMessage": said,
+                        "hookSpecificOutput": {
+                            "hookEventName": "SessionStart",
+                            "additionalContext": said,
+                        },
+                    }
+                )
+            )
+        elif said:
             print(json.dumps({"systemMessage": said}))
         return 0
 
