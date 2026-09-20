@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved 2026-09-16. Open decisions (§9) take their defaults until answered |
+| **Status** | Phase 0 merged (#46-#48). Phase 1 running. Phases 2 and 3 are gated on what Phase 1 measures (§5) |
 | **Written** | 2026-09-16, against `origin/main` at `2e46867` (#45) and Claude Code 2.1.273 |
 | **Goal** | One prompt in. The network plans, builds, reviews, demonstrates and merges a project of many pull requests while nobody watches |
 | **Related** | `ROADMAP.md` (the work the network exists for), `CLAUDE.md`, `second-brain/wiki/decisions/agent-network.md` (the network as built) |
@@ -83,7 +83,8 @@ was refused both a write and a `git -C` into the main checkout.
 |---|---|---|
 | P1 | A subagent can start subagents of its own, down to three levels below the main conversation. *(sub-agents)* | `/build`, `eval-runner.md`, `agent-network.md` and `evals/agents/run.py` say a subagent cannot. The caller still runs every review, because an author does not grade its own work, not because the platform forbids anything else. |
 | P2 | An agent running as the main thread (`claude --agent`) can limit which agents it starts with `Agent(name, ...)` in its `tools`. *(sub-agents)* | The lead's roster is enforced, not requested. |
-| P3 | `isolation: worktree` branches from `origin/HEAD`, fetching it when older than a day, and Claude Code refuses edits, commands and git redirects aimed at the main checkout. *(worktrees)* | The builder's and scout's checks for a shared checkout, and the builder's "branch from the commit you were started at", guard against what cannot happen. Remove them. |
+| P2b | With `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, an agent the caller *names* launches as a teammate: its own session, which the project hooks never see. *(agent-teams; seen live 2026-09-19)* | Naming is how the build loop messages an agent, so the whole loop ran unrecorded until #52 turned teams off for this repository. Anything that depends on a run being recorded depends on that setting. |
+| P3 | `isolation: worktree` branches from `origin/HEAD`, fetching it when older than a day, and Claude Code refuses edits, commands and git redirects aimed at the main checkout. *(worktrees)* | **Conditional, corrected 2026-09-19.** It holds for a subagent. An agent started with a *name* while agent teams are on runs as a teammate instead, in its caller's checkout, with no isolation and no run recorded - which is what happened on the builder's first run, since `/build` names it. This repository now turns teams off (#52), and the builder and scout check where they are again. |
 | P4 | A background session stays *working* while its background subagents or monitors run, and survives sleep and a closed terminal. *(agent-view)* | A lead can wait on builders, CI and merges without the watcher closing its task. |
 | P5 | `claude --bg --resume <id> "<prompt>"` continues a session in the background under the same id. *(CLI help)* | A stopped lead can be continued with its context. |
 | P6 | A background subagent keeps `Bash`, `Edit`, `Write`, `SendMessage`, `Monitor`, `WebFetch` and MCP tools, and loses `AskUserQuestion`. *(sub-agents)* | Builders cannot ask a person anything. Questions go through the lead. |
@@ -387,6 +388,25 @@ limit*, *a gate the builder could not pass*.
 should have said something, fix the builder's instructions or the item format
 before Phase 3. A lead multiplies whatever steering its builders need.
 
+### The gate between Phase 1 and the rest
+
+**Nothing in Phases 2 and 3 is built until Phase 1 has landed two merged product
+pull requests**, and its intervention list shows the builder needed steering at
+most once per item for a reason the spec could have answered. The verifier and
+the lead were both justified by a builder that works, and until Phase 1 that was
+an assumption.
+
+If Phase 1 shows the opposite - the builder needing steering on most items -
+the network keeps what already works, the reviewer and the run ledger, and the
+building stays in sessions a person drives with `/build`.
+
+**And the currency is pull requests, not dollars.** These agents run on a
+subscription, so the spend is not a bill; what it buys or costs is a slice of a
+usage window, wall-clock, and attention. The stop rule is therefore counted in
+merged work: **if the next five merged pull requests are still tooling, stop
+building tooling.** The last product change merged on 2026-09-06; every pull
+request since has been the network, the site or the brand.
+
 ### Phase 2 — The verifier
 
 **PR 2.1 — Add a verifier that demonstrates acceptance criteria against a running
@@ -523,8 +543,12 @@ Six tooling pull requests in all, held to that by §8 R6.
 
 ## 7. Keeping or cutting an agent
 
-Decided from `agent_report`, never from memory. Set the thresholds from
-Phase 4's first report; until then these are the questions:
+Decided from `agent_report`, never from memory. The figures are tokens, and on a
+subscription tokens are not money: they are a share of a usage window. So an
+agent is judged by what it costs in windows, wall-clock and attention, and the
+dollar figures serve only to compare one agent against another when deciding
+what deserves a slot in a window. Set the thresholds from Phase 4's first
+report; until then these are the questions:
 
 | Agent | Kept while | Measured by |
 |---|---|---|
@@ -546,7 +570,7 @@ Phase 4's first report; until then these are the questions:
 | R3 | Parallel items collide on migrations, generated files or paths | Medium | Medium | One schema-changing item in flight; items own their paths; builders merge `main` and regenerate |
 | R4 | The plan is wrong and the builds are wasted | Medium | High | The lead's suite; the plan is on the issue before anything builds, and a comment re-plans what has not started |
 | R5 | The Mac sleeps or goes offline and nothing is dispatched: 460 polls failed offline in three days | High | Low | Sessions survive sleep (P4); the panel says when nothing is on duty; cloud routines stay deferred |
-| R6 | Tooling takes the product's time again: 65% of usage through 2026-09-15 went to the site and tooling | High | High | Six tooling pull requests. If Phase 3 has not finished after eight, stop building tooling and run projects through `/build` as it is |
+| R6 | Tooling takes the product's time again. Measured 2026-09-19: no product change has merged since 2026-09-06, while roughly thirty pull requests of network, site and brand work have | High | High | The gate before Phase 2 (§5), and the stop rule: if the next five merged pull requests are still tooling, stop building tooling and run projects through `/build` as it is |
 | R7 | Instructions injected through comments, issues, web pages or product copy | Low | High | Everything read is data; the merge gate is mechanical; answers count only from a person |
 | R8 | A platform behaviour in §3 changes | Medium | Medium | Each phase checks the facts it relies on live before building on them |
 
