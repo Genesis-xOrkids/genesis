@@ -25,8 +25,11 @@ runs into it through the one writer that file has, and marks each row
 `filed_at`: the row records that the run left, rather than a second copy of it
 sitting behind the first.
 
-A run is an agent's report, not just its exit. An agent ends its final message
-with `Target:` and `Outcome:` lines. A run that ends without them is still
+A run is an agent's report, not just its exit. An agent ends its report with
+`Target:` and `Outcome:` lines. Usually that report is its final message; when it
+hands back through a tool instead, the final message is a summary and the report
+is in its transcript, so `reported` looks there rather than recording a run that
+plainly reported as having said nothing. A run that ends without them is still
 closed - the Employees tab shows it as ending without a report - but it has
 nothing to put in the ledger, and `ledger` leaves it.
 
@@ -83,6 +86,52 @@ def report_field(message: str, label: str) -> str | None:
     """The last `Label:` line of an agent's final message, markdown emphasis tolerated."""
     found = re.findall(rf"^[*_]*{label}:[*_]*[ \t]*(.+?)[ \t]*$", message, re.M)
     return found[-1] if found else None
+
+
+def reported(event: dict[str, Any]) -> str:
+    """An agent's report: its final message, or its transcript when it handed back through a tool.
+
+    A subagent sometimes ends its turn with a short summary and delivers the
+    report itself through a hand-back tool call, which `last_assistant_message`
+    does not carry. The report is then the last thing in its transcript that
+    states an Outcome - a text block or a tool call's text - and the run would
+    otherwise be recorded as ending without a report while the report existed,
+    and nothing would reach the pull request. Seen on the review of PR #51.
+    """
+    message = event.get("last_assistant_message") or ""
+    if report_field(message, "Outcome") is not None:
+        return message
+    transcript = event.get("agent_transcript_path")
+    if not transcript:
+        return message
+    try:
+        lines = pathlib.Path(transcript).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return message
+    for line in lines:
+        for said in _assistant_text(line):
+            if report_field(said, "Outcome") is not None:
+                message = said
+    return message
+
+
+def _assistant_text(line: str) -> list[str]:
+    """Every string an assistant line of a transcript says, in a tool call or out of one."""
+    try:
+        entry = json.loads(line)
+    except json.JSONDecodeError:
+        return []
+    message = entry.get("message") if isinstance(entry, dict) else None
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return []
+    said = []
+    for block in message.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        if isinstance(block.get("text"), str):
+            said.append(block["text"])
+        said += [value for value in (block.get("input") or {}).values() if isinstance(value, str)]
+    return said
 
 
 def start(agent: str, session_id: str, agent_id: str, started_at: str) -> None:
@@ -203,7 +252,7 @@ def hook(event: dict[str, Any], employees: set[str], moment: dt.datetime) -> str
         start(agent, event["session_id"], event["agent_id"], stamp(moment))
         return None
 
-    message = event["last_assistant_message"]
+    message = reported(event)
     target, outcome = report_field(message, "Target"), report_field(message, "Outcome")
     commit, unknown = report_field(message, "Commit"), ""
     if commit is not None and not COMMIT.fullmatch(commit):

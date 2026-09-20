@@ -265,6 +265,70 @@ def test_a_writer_failure_is_reported_and_nothing_is_posted(
     assert github.calls == []
 
 
+def handed_back(tmp_path: pathlib.Path, report: str) -> pathlib.Path:
+    """A transcript whose final message summarises, with the report in a hand-back call."""
+    path = tmp_path / "agent-1.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in (
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "working"}],
+                    }
+                },
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "SubagentHandback",
+                                "input": {"report": report},
+                            }
+                        ],
+                    }
+                },
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "handed back"}],
+                    }
+                },
+            )
+        )
+    )
+    return path
+
+
+def test_a_report_handed_back_through_a_tool_is_still_recorded_and_posted(
+    database: Database, github: GitHub, tmp_path: pathlib.Path
+) -> None:
+    """The run would otherwise be recorded as saying nothing while the report existed."""
+    event = stop("Handed back: 0 blocking on PR #12.")
+    event["agent_transcript_path"] = str(handed_back(tmp_path, REPORT))
+    said = agent_activity.hook(event, EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "1 blocking, 0 design, 0 notes" in said
+    (statement,) = database.statements
+    assert "'PR #12', '1 blocking, 0 design, 0 notes'" in statement
+    # The pull request gets the report itself, not the hand-back summary.
+    ((command, body),) = github.calls
+    assert command[:4] == ["gh", "pr", "comment", "12"]
+    assert "## Blocking" in body
+
+
+def test_a_final_message_that_carries_the_report_is_taken_as_it_is(tmp_path: pathlib.Path) -> None:
+    event = stop(REPORT)
+    event["agent_transcript_path"] = str(handed_back(tmp_path, "Outcome: 9 blocking, 9 design"))
+    assert agent_activity.reported(event) == REPORT
+
+
+def test_a_stop_with_no_transcript_to_read_keeps_its_final_message() -> None:
+    assert agent_activity.reported(stop("nothing to report")) == "nothing to report"
+
+
 # --- sessions starting ---
 
 
