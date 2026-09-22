@@ -99,6 +99,23 @@ Reach a catalog that can dress someone.
 
 **Acceptance.** The size and brand-count targets in §3. Every core garment category populated. At least 95% of products carry a resolved category, at least 90% carry usable size data.
 
+**Correction, 2026-09-22.** "Usable size data" was never defined, and the two
+readings differ by twenty points on today's catalog, so a person settled it
+rather than a script. It means **size data present**, measured over **offers
+whose category carries sizes** — bags, belts, jewellery, eyewear, watches and
+scarves are excluded, because a size the garment does not have is not a gap this
+milestone can close. Sizes hang off offers, so offers are the population; the
+original wording said products, which `second-brain/wiki/projects/catalog-supply.md`
+had already been measuring as offers.
+
+Availability is deliberately not part of it. Of 21,055 offers on 2026-09-22,
+15,425 carry a size row (73.3%) but only 11,328 carry one that is in stock or of
+unknown stock (53.8%), the predicate `intelligence/catalog/search.py` matches on.
+The 4,097 offers sized and sold out in every size are C4's work, not C2's: stock
+turns over hourly, and a breadth milestone gated on it could never close. The
+buyable share is reported beside the target as C4's signal
+(`scripts/catalog_coverage.py`), and it is the number to watch once C4 starts.
+
 **Depends on.** C1.
 
 #### C3 — Embedding service and backfill
