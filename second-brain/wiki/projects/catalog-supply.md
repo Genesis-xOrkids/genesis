@@ -1,10 +1,10 @@
 ---
 title: Catalog Supply (C1–C4)
 type: project
-sources: [ROADMAP.md]
+sources: [ROADMAP.md, scripts/catalog_coverage.py]
 related: ["[[current-state]]", "[[source-agnostic-core]]", "[[hybrid-catalog-search]]", "[[embeddings-and-vectors]]", "[[catalog-sources]]", "[[fashion-taxonomy]]", "[[no-silent-fallbacks]]", "[[styling-intelligence]]"]
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-19
 ---
 
 ## What it is
@@ -44,10 +44,29 @@ under-represented.
 | Category coverage | 89.7% | 95% |
 | Offers with size data | 73% | 90% |
 
+**The four measures are computed now, not asserted.** `scripts/catalog_coverage.py`
+prints them in SQL against whichever database it is pointed at, each beside its
+target, plus a product count for every category (commit `8021ac9`). Run it for
+current numbers: the table above stays as measured on 2026-09-05 and nothing
+refreshes it.
+
+**Two sources disagree about what the size measure is over, and neither is
+corrected here.** `ROADMAP.md` §5.1 reads "at least 90% carry usable size data"
+with *products* as the subject of the sentence; the table above, and the script,
+state it over *offers*, which is what size rows hang off and what a person buys.
+The script names both sources where it prints the number.
+
+**Usable is narrower than present.** [[hybrid-catalog-search]] matches a size row
+only where `in_stock` is true or unknown, so an offer whose every size has sold
+out carries size data the stylist cannot use. The script counts sizes the way
+search does, which puts its figure below the 73% above — that one counted any
+size row at all.
+
 All four gaps are breadth rather than depth, so they move together by adding
 storefronts. The workflow exists: `probe_storefronts.py` vets candidates without
 adding them, `seed_storefronts.py --file storefronts.txt` registers those that
-pass, `ingest_catalog.py` runs. `storefront-scout` ([[agent-network]]) owns
+pass, `ingest_catalog.py` runs, and `catalog_coverage.py` says where that left
+the four measures. `storefront-scout` ([[agent-network]]) owns
 the first half of it: it probes candidates and opens a pull request adding the
 ones that pass, and a person runs the seed and the ingest after that merges. Twelve of twenty candidates probed ingestible on
 the first pass, so roughly ten more registered storefronts should clear every
