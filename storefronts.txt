@@ -1,6 +1,6 @@
 # Storefronts in the ingestion registry.
 # Verified ingestible by scripts/probe_storefronts.py before being added here.
-# Contemporary apparel, mixed price tiers, two non-USD to exercise conversion.
+# Contemporary apparel, mixed price tiers, non-USD storefronts to exercise conversion.
 www.everlane.com          # Everlane (USD)
 www.allbirds.com          # Allbirds (USD)
 www.rothys.com            # Rothy's (USD)
@@ -13,3 +13,18 @@ www.outdoorvoices.com     # Outdoor Voices (USD)
 www.lisasaysgah.com       # Lisa Says Gah (USD)
 www.organicbasics.com     # Organic Basics (EUR)
 www.colorfulstandard.com  # Colorful Standard (EUR)
+knix.com                  # Knix (USD)
+negativeunderwear.com     # Negative (USD)
+wearpepper.com            # Pepper (USD)
+aloyoga.com               # Alo Yoga (USD)
+beyondyoga.com            # Beyond Yoga (USD)
+stelleworld.com           # Stelle (USD)
+lunya.co                  # Lunya (USD)
+lakepajamas.com           # LAKE (USD)
+cozyearth.com             # Cozy Earth (USD)
+hillhousehome.com         # Hill House Home (USD)
+gorjana.com               # gorjana (USD)
+missoma.com               # Missoma (GBP)
+astridandmiyu.com         # Astrid & Miyu (GBP)
+stoneandstrand.com        # STONE AND STRAND (USD)
+amyojewelry.com           # AMYO Jewelry (USD)
