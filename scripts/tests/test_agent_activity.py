@@ -340,16 +340,55 @@ def test_a_session_start_says_nothing_while_a_named_agent_stays_a_subagent(
     database: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(agent_activity.TEAMS, "0")
+    monkeypatch.setattr(agent_activity.subprocess, "run", Git("0\n"))
     assert agent_activity.hook(start_event(), EMPLOYEES, MOMENT) is None
     monkeypatch.delenv(agent_activity.TEAMS)
     assert agent_activity.hook(start_event(), EMPLOYEES, MOMENT) is None
     assert database.statements == []
 
 
+class Git:
+    """Stands in for `subprocess.run` when it counts commits behind origin/main."""
+
+    def __init__(self, behind: str, returncode: int = 0) -> None:
+        self.behind = behind
+        self.returncode = returncode
+
+    def __call__(self, command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command[:2] == ["git", "-C"]
+        assert command[3:] == ["rev-list", "--count", "HEAD..origin/main"]
+        return subprocess.CompletedProcess(command, self.returncode, stdout=self.behind, stderr="")
+
+
+def test_a_session_start_says_when_the_hooks_it_runs_are_out_of_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(agent_activity.TEAMS, "0")
+    monkeypatch.setattr(agent_activity.subprocess, "run", Git("3\n"))
+    said = agent_activity.hook(start_event(), EMPLOYEES, MOMENT)
+    assert said is not None
+    assert "3 commits behind origin/main" in said
+    assert "pull --ff-only" in said
+
+
+@pytest.mark.parametrize(
+    ("behind", "returncode"),
+    [("0\n", 0), ("", 128), ("not a number\n", 0)],
+    ids=["up to date", "git failed", "an answer that is not a count"],
+)
+def test_a_checkout_that_is_current_or_cannot_be_counted_says_nothing(
+    monkeypatch: pytest.MonkeyPatch, behind: str, returncode: int
+) -> None:
+    monkeypatch.setenv(agent_activity.TEAMS, "0")
+    monkeypatch.setattr(agent_activity.subprocess, "run", Git(behind, returncode))
+    assert agent_activity.hook(start_event(), EMPLOYEES, MOMENT) is None
+
+
 def test_a_session_start_says_when_a_named_agent_would_run_unrecorded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(agent_activity.TEAMS, "1")
+    monkeypatch.setattr(agent_activity.subprocess, "run", Git("0\n"))
     said = agent_activity.hook(start_event(), EMPLOYEES, MOMENT)
     assert said is not None
     assert "is not recorded" in said
@@ -360,6 +399,7 @@ def test_the_warning_reaches_the_session_as_context_and_the_person_as_a_message(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv(agent_activity.TEAMS, "1")
+    monkeypatch.setattr(agent_activity.subprocess, "run", Git("0\n"))
     monkeypatch.setattr(agent_activity, "defined_ids", lambda _repo: EMPLOYEES)
     monkeypatch.setattr("sys.argv", ["agent_activity", "hook"])
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(start_event())))

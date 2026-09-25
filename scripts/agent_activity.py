@@ -224,11 +224,37 @@ def teams_note() -> str | None:
     )
 
 
+def stale_note() -> str | None:
+    """What to say when this checkout is behind `origin/main`, because hooks run its code.
+
+    A hook runs the copy in the checkout it is configured from, so a fix that is
+    merged but not pulled does nothing, and says nothing about it: the review of
+    PR #55 went unposted for exactly that reason, one commit after the fix for it
+    merged. `origin/main` is read from the ref the dispatch watcher keeps current,
+    so this costs no network.
+    """
+    counted = subprocess.run(
+        ["git", "-C", str(REPO), "rev-list", "--count", "HEAD..origin/main"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    behind = counted.stdout.strip()
+    if counted.returncode != 0 or not behind.isdigit() or behind == "0":
+        return None
+    return (
+        f"{REPO} is {behind} commit{'' if behind == '1' else 's'} behind origin/main, so this "
+        f"session's hooks run that older code. `git -C {REPO} pull --ff-only` before trusting "
+        "what they record."
+    )
+
+
 def hook(event: dict[str, Any], employees: set[str], moment: dt.datetime) -> str | None:
     """Handle one hook event. Returns what to tell the session, if anything."""
     name = event["hook_event_name"]
     if name == "SessionStart":
-        return teams_note()
+        notes = [note for note in (teams_note(), stale_note()) if note]
+        return "\n".join(notes) or None
     if name == "SessionEnd":
         marker = MARKERS / event["session_id"]
         if marker.exists():
