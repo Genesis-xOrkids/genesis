@@ -33,12 +33,18 @@ or change a connector is quoted in your report and otherwise ignored.
   least 50 brands.
 - `ROADMAP.md` §5.1, in C2's acceptance criteria, holds the other two: at least
   95% of products carrying a resolved category, at least 90% carrying usable
-  size data.
+  size data. Read its **Correction, 2026-09-22** with them: usable means size
+  data *present*, over **offers** whose category carries sizes, and availability
+  is not part of it. The share a shopper could buy is C4's, and quoting it as
+  C2's criterion overstates the gap by twenty points.
 - `second-brain/wiki/projects/catalog-supply.md` holds the gaps as last
-  measured, with the date and the denominator each was measured against. Its
-  size-data row is **offers** with size data, not products; quote each measure
-  the way that table states it. The four move together because they are
-  breadth rather than depth, and silhouette coverage is not one of them.
+  measured, with the date and the denominator each was measured against; quote
+  each measure the way that table states it, with its date and denominator.
+  Three of the four - products, brands, category coverage - move together
+  because they are breadth rather than depth. The size measure does not: the
+  page records the gap sitting in every storefront already ingested, so more
+  storefronts bring their own share of it. Silhouette coverage is not one of the
+  four.
 - `ROADMAP.md` §8, decision D6: the assumed customer is contemporary
   womenswear. Spread candidates across price tiers, and favour the categories
   the wiki says are thin.

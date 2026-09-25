@@ -2,9 +2,9 @@
 title: Catalog Supply (C1–C4)
 type: project
 sources: [ROADMAP.md, scripts/catalog_coverage.py]
-related: ["[[current-state]]", "[[source-agnostic-core]]", "[[hybrid-catalog-search]]", "[[embeddings-and-vectors]]", "[[catalog-sources]]", "[[fashion-taxonomy]]", "[[no-silent-fallbacks]]", "[[styling-intelligence]]"]
+related: ["[[current-state]]", "[[source-agnostic-core]]", "[[hybrid-catalog-search]]", "[[embeddings-and-vectors]]", "[[catalog-sources]]", "[[fashion-taxonomy]]", "[[no-silent-fallbacks]]", "[[null-means-unknown]]", "[[styling-intelligence]]"]
 created: 2026-09-07
-last-updated: 2026-09-19
+last-updated: 2026-09-24
 ---
 
 ## What it is
@@ -42,35 +42,62 @@ under-represented.
 | Products | 21,055 | 25,000 |
 | Brands | 34 | 50 |
 | Category coverage | 89.7% | 95% |
-| Offers with size data | 73% | 90% |
+| Offers with size data, over every offer | 73% | 90% |
 
 **The four measures are computed now, not asserted.** `scripts/catalog_coverage.py`
 prints them in SQL against whichever database it is pointed at, each beside its
-target, plus a product count for every category (commit `8021ac9`). Run it for
-current numbers: the table above stays as measured on 2026-09-05 and nothing
-refreshes it.
+target, plus a product count for every category (commits `8021ac9`, `a4b9fa4`).
+Run it for current numbers: the table above stays as measured on 2026-09-05 and
+nothing refreshes it.
 
-**Two sources disagree about what the size measure is over, and neither is
-corrected here.** `ROADMAP.md` §5.1 reads "at least 90% carry usable size data"
-with *products* as the subject of the sentence; the table above, and the script,
-state it over *offers*, which is what size rows hang off and what a person buys.
-The script names both sources where it prints the number.
+**What "usable size data" means was settled by a person, not by the script.**
+`ROADMAP.md` §5.1 carries a dated **Correction, 2026-09-22**: it means size data
+*present*, measured over **offers whose category carries sizes** — bag, belt,
+jewelry, eyewear, watch and scarf excluded, because a size the garment does not
+have is not a gap this milestone can close. Offers rather than products is now
+the roadmap's own wording, which settles the disagreement this page used to
+record. Availability is deliberately not part of it: stock turns over hourly, and
+a breadth milestone gated on it could never close, so the share a shopper could
+buy is C4's signal and is reported beside the target rather than scored against
+it.
 
-**Usable is narrower than present.** [[hybrid-catalog-search]] matches a size row
-only where `in_stock` is true or unknown, so an offer whose every size has sold
-out carries size data the stylist cannot use. The script counts sizes the way
-search does, which puts its figure below the 73% above — that one counted any
-size row at all.
+Both readings, measured 2026-09-24 against the hosted catalog by
+`catalog_coverage.py`:
 
-All four gaps are breadth rather than depth, so they move together by adding
-storefronts. The workflow exists: `probe_storefronts.py` vets candidates without
+| Reading | Share | Denominator |
+|---|---|---|
+| Size data present — **the C2 criterion**, 14.8 points short of its 90% target | 75.2% | 20,033 offers outside the unsized categories |
+| Carrying a size in stock or of unknown stock — **C4's signal, not a criterion** | 55.3% | the same 20,033 offers |
+| Size data present over every offer — the pre-correction reading, superseded | 73.3% | 21,055 offers |
+
+1,932 of those offers (2026-09-24) have a product with no category at all, so
+they can be placed neither inside nor outside the excluded categories. The script
+keeps them in the denominator, because null is unknown rather than known-unsized
+([[null-means-unknown]]), and prints what the measure would read without them
+(75.6%) so the choice is auditable. 1,022 offers are in the excluded categories
+and 358 of those carry a size row anyway — a belt has a size — which the
+exclusion drops with the rest: it is a statement about the category, not about
+the row.
+
+**Three of the four gaps are breadth; the size gap is not.** Products, brands and
+category coverage move together by adding storefronts. Size data does not: on
+2026-09-24 the 4,966 offers in sized categories with no size row were spread
+across eleven of the twelve storefronts ingested — only Outdoor Voices is fully
+sized — so new storefronts arrive carrying a share of the same gap. It is
+heaviest where one-size items are common (hosiery 32% of its offers sized, hat
+49%, shirt 47%), which is the shape the connector's own skips would leave: it
+writes no size row for a single-variant `Default Title` product, nor for a label
+`parse_size` cannot read ([[no-silent-fallbacks]]). Nobody has confirmed that
+against the source payloads yet, so the cause is a reading, not a measurement.
+The workflow exists: `probe_storefronts.py` vets candidates without
 adding them, `seed_storefronts.py --file storefronts.txt` registers those that
 pass, `ingest_catalog.py` runs, and `catalog_coverage.py` says where that left
 the four measures. `storefront-scout` ([[agent-network]]) owns
 the first half of it: it probes candidates and opens a pull request adding the
-ones that pass, and a person runs the seed and the ingest after that merges. Twelve of twenty candidates probed ingestible on
-the first pass, so roughly ten more registered storefronts should clear every
-target.
+ones that pass, and a person runs the seed and the ingest after that merges.
+Twelve of twenty candidates probed ingestible on the first pass, so roughly ten
+more registered storefronts should clear the product, brand and category targets;
+the size target needs connector work beside them.
 
 **Silhouette coverage (~18%) is deliberately not on this list.** Silhouette is
 rarely stated in product text, so more storefronts will not move it; it needs the
@@ -104,3 +131,9 @@ the < 2% dead-link target, measured on a sample of *surfaced* items rather than
 the whole catalog — the distinction that keeps the measurement honest and cheap.
 
 Depends on C1 only, so it can run any time.
+
+Its size of the problem is already measured, because C2's report prints it beside
+the target it is not part of: on 2026-09-24, 3,995 offers in sized categories were
+sized and sold out in every size, and 1,737 were buyable in exactly one size,
+against 55.3% carrying a size a size-filtered search would match. Those are the
+numbers to watch when this starts.
