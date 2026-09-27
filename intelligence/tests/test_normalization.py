@@ -249,6 +249,33 @@ def test_an_unrecognised_colour_name_returns_none() -> None:
         ("W28 L32", SizeSystem.waist_inseam, "28x32"),
         ("28x32", SizeSystem.waist_inseam, "28x32"),
         ("One Size", SizeSystem.one_size, "one_size"),
+        # Tentree writes one size as a single word.
+        ("ONE", SizeSystem.one_size, "one_size"),
+        # Letter sizes past the common run, and plus sizes kept as written.
+        ("XXXXL", SizeSystem.alpha, "XXXXL"),
+        ("6XL", SizeSystem.alpha, "6XL"),
+        ("2X", SizeSystem.alpha, "2X"),
+        ("XL/XXL", SizeSystem.alpha, "XL/XXL"),
+        # Marine Layer spells the letters out.
+        ("Extra Small", SizeSystem.alpha, "XS"),
+        ("Small", SizeSystem.alpha, "S"),
+        ("Medium", SizeSystem.alpha, "M"),
+        ("Large", SizeSystem.alpha, "L"),
+        ("Extra Large", SizeSystem.alpha, "XL"),
+        # A pair joined by a hyphen or a space is the pair a slash states.
+        ("S-M", SizeSystem.alpha, "S/M"),
+        ("XL-XXL", SizeSystem.alpha, "XL/XXL"),
+        ("XS S", SizeSystem.alpha, "XS/S"),
+        # A letter size with a number restating it: Taylor Stitch's chest, Marine
+        # Layer's inseam, Cozy Earth's shoe range, Stelle's and Allbirds' brackets.
+        ("XS - 36", SizeSystem.alpha, "XS"),
+        ("S-30", SizeSystem.alpha, "S"),
+        ("L: US 10-13", SizeSystem.alpha, "L"),
+        ("M/L: US 8-11", SizeSystem.alpha, "M/L"),
+        ("XS (4/5)", SizeSystem.alpha, "XS"),
+        ("3XS (2/3)", SizeSystem.alpha, "3XS"),
+        ("S (W5-7)", SizeSystem.alpha, "S"),
+        ("M/L (8-11)", SizeSystem.alpha, "M/L"),
     ],
 )
 def test_size_labels_that_state_their_system_are_parsed(
@@ -281,3 +308,40 @@ def test_half_sizes_survive_but_trailing_zeros_do_not() -> None:
 def test_unparseable_sizes_return_none() -> None:
     assert parse_size("") is None
     assert parse_size("please select") is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # A word after the letter changes the garment rather than restating it.
+        "Extra Small - Petite",
+        "M (Tall)",
+        # Everlane's men's and women's shoe sizes, which are not Medium or a W.
+        "M 10",
+        "W 10",
+        # Letters run together are ambiguous: Tentree's "SM" is S/M beside "LXL"
+        # and Small anywhere else.
+        "SM",
+        # Knix's and Organic Basics' "+" is not stated to mean anything.
+        "S+",
+        # A range or a waist-inseam, depending on the store: Marine Layer's pants
+        # run "30-30" through "34-32", Colorful Standard's socks "36-40".
+        "30-32",
+        "36-40",
+        # Systems the enum does not have: bra band and cup, kids' ages, a length
+        # letter, a width letter, and a size stated for men and women at once.
+        "34B",
+        "12-18M",
+        "4T",
+        "10Y",
+        "0R",
+        "10.5D",
+        "W10/M9",
+        "L MEN/XL WOMEN",
+    ],
+)
+def test_labels_whose_meaning_is_not_in_the_label_stay_unknown(raw: str) -> None:
+    """Every one of these was seen live, and each is left unknown rather than read
+    into the nearest system that happens to fit."""
+    assert parse_size(raw) is None
+    assert parse_size(raw, declared_system=SizeSystem.us) is None

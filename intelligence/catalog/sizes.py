@@ -28,17 +28,37 @@ ALPHA_SIZES = {
     "xl",
     "xxl",
     "xxxl",
+    "xxxxl",
+    "3xs",
     "2xl",
     "3xl",
     "4xl",
     "5xl",
+    "6xl",
+    # Plus sizes, kept as written: a women's 2X is not reliably a 2XL, and
+    # treating them as one would be the conversion this module declines to make.
+    "1x",
+    "2x",
+    "3x",
+    "xxs/xs",
     "xs/s",
     "s/m",
     "m/l",
     "l/xl",
+    "xl/xxl",
+    "xl/2xl",
 }
 
-ONE_SIZE = {"one size", "onesize", "os", "o/s", "one-size", "1sz", "tu"}
+# The same letters spelled out, as some storefronts write them.
+SPELLED_ALPHA = {
+    "extra small": "xs",
+    "small": "s",
+    "medium": "m",
+    "large": "l",
+    "extra large": "xl",
+}
+
+ONE_SIZE = {"one size", "onesize", "one", "os", "o/s", "one-size", "1sz", "tu"}
 
 _SYSTEM_PREFIXES: dict[str, SizeSystem] = {
     "us": SizeSystem.us,
@@ -55,12 +75,28 @@ _SYSTEM_PREFIXES: dict[str, SizeSystem] = {
 _PREFIXED = re.compile(r"^(?P<system>[a-z]{2,3})[\s\-_]*(?P<value>\d+(?:\.\d+)?)$")
 _WAIST_INSEAM = re.compile(r"^w?(?P<waist>\d{2})\s*(?:x|/|\s|l)\s*(?P<inseam>\d{2})$")
 _NUMERIC = re.compile(r"^\d+(?:\.\d+)?$")
+# A letter size followed by a measurement that restates it: "XS - 36" (chest),
+# "S-30" (inseam), "L: US 10-13" (the shoe sizes a sock fits), "XS (4/5)" (the
+# kids' numeric it corresponds to). The qualifier must carry a number, so a word
+# that changes the garment - "Small - Petite", "M (Tall)" - leaves it unread.
+_QUALIFIED = re.compile(
+    r"^(?P<size>[a-z0-9/ ]+?)\s*"
+    r"(?:[-:]\s*[^()]*\d[^()]*|\([^()]*\d[^()]*\))$"
+)
+# Two letter sizes joined by a hyphen or a space, "S-M" or "XS S": the range a
+# slash states, written another way.
+_ALPHA_PAIR = re.compile(r"^(?P<low>[a-z0-9]+)(?:\s*-\s*|\s+)(?P<high>[a-z0-9]+)$")
 
 
 @dataclass(frozen=True)
 class ParsedSize:
     system: SizeSystem
     value: str
+
+
+# Sold in a single configuration. Connectors record it too when the source states
+# that fact in its structure rather than in a label.
+ONE_SIZE_FITS = ParsedSize(system=SizeSystem.one_size, value="one_size")
 
 
 def parse_size(raw: str, *, declared_system: SizeSystem | None = None) -> ParsedSize | None:
@@ -76,10 +112,17 @@ def parse_size(raw: str, *, declared_system: SizeSystem | None = None) -> Parsed
         return None
 
     if text in ONE_SIZE:
-        return ParsedSize(system=SizeSystem.one_size, value="one_size")
+        return ONE_SIZE_FITS
 
-    if text in ALPHA_SIZES:
-        return ParsedSize(system=SizeSystem.alpha, value=text.upper())
+    alpha = _alpha(text)
+    if alpha is not None:
+        return alpha
+
+    qualified = _QUALIFIED.match(text)
+    if qualified:
+        alpha = _alpha(qualified.group("size"))
+        if alpha is not None:
+            return alpha
 
     waist_inseam = _WAIST_INSEAM.match(text)
     if waist_inseam:
@@ -101,6 +144,19 @@ def parse_size(raw: str, *, declared_system: SizeSystem | None = None) -> Parsed
             return None
         return ParsedSize(system=declared_system, value=_trim_number(text))
 
+    return None
+
+
+def _alpha(text: str) -> ParsedSize | None:
+    """A letter size, written as letters, spelled out, or as a hyphenated pair."""
+    letters = SPELLED_ALPHA.get(text, text)
+    if letters in ALPHA_SIZES:
+        return ParsedSize(system=SizeSystem.alpha, value=letters.upper())
+    pair = _ALPHA_PAIR.match(letters)
+    if pair:
+        joined = f"{pair.group('low')}/{pair.group('high')}"
+        if joined in ALPHA_SIZES:
+            return ParsedSize(system=SizeSystem.alpha, value=joined.upper())
     return None
 
 
