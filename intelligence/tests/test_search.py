@@ -17,11 +17,12 @@ from sqlalchemy.orm import Session
 
 from api.genesis_api.db import engine
 from api.genesis_api.models.catalog import FASHION_EMBEDDING_DIMS
-from api.genesis_api.models.enums import Category, ColorFamily, SizeSystem
+from api.genesis_api.models.enums import Category, ColorFamily, Provenance, SizeSystem
+from api.genesis_api.writer import WriteSpec, write
 from intelligence.catalog.connectors.affiliate_feed import RAKUTEN_COLUMNS, AffiliateFeedConnector
 from intelligence.catalog.ingest import ingest
 from intelligence.catalog.money import FxRates
-from intelligence.catalog.search import SearchFilters, search_catalog
+from intelligence.catalog.search import MAX_PER_STYLE, SearchFilters, search_catalog
 
 
 class StubEmbedder:
@@ -304,3 +305,132 @@ def test_distinct_styles_are_not_collapsed_together(catalog: Session) -> None:
     )
     titles = {r.title for r in results}
     assert len(titles) == len(results), "no duplicate titles among survivors"
+
+
+def test_a_page_stays_full_when_colourways_fold(catalog: Session) -> None:
+    """Folding colourways must not shorten the page. The rankers already go deep
+    enough to refill it with the next distinct styles, so a query whose top hits
+    are one style in five colours still returns a full page."""
+    # The repeated word in the description ranks every colourway above the
+    # other trenches, so the whole top of the fused list is the one style.
+    colourways = [
+        _row(
+            f"HT{i}",
+            f"Harbour Trench | {colour}",
+            "Testwear",
+            "Womens Coats",
+            "250.00",
+            description="Trench. A trench coat, the trench.",
+        )
+        for i, colour in enumerate(["Black", "Stone", "Navy", "Olive", "Khaki"])
+    ]
+    others = [
+        _row(f"OT{i}", f"{name} Trench", "Otherwear", "Womens Coats", "200.00")
+        for i, name in enumerate(["Field", "City", "Belted", "Cropped"])
+    ]
+    ingest(catalog, _connector().normalize(colourways + others))
+    catalog.flush()
+
+    results, diagnostics = search_catalog(catalog.connection(), query="trench", limit=4)
+
+    assert len(results) == 4, "folded colourways must be replaced, not leave holes"
+    harbour = [r for r in results if r.title.startswith("Harbour Trench")]
+    assert len(harbour) == MAX_PER_STYLE
+    assert all(r.other_colourways == 5 - MAX_PER_STYLE for r in harbour)
+    assert all(r.other_colourways == 0 for r in results if r not in harbour)
+    assert diagnostics.queries == 3, "refilling the page must not cost a query"
+
+
+def _brand_id(catalog: Session, brand: str) -> int:
+    return catalog.execute(
+        text("select id from brands where name = :name"), {"name": brand}
+    ).scalar_one()
+
+
+def test_filters_only_fills_the_page_with_distinct_products_not_the_cheapest(
+    catalog: Session,
+) -> None:
+    """Without a query nothing ranks, so the order has to come from something
+    other than price: ordering by price put free replacement buttons first on
+    exactly the broad browse a new shopper starts with. Several offers of one
+    product must not spend page slots either."""
+    rows = [_row("FB0", "Replacement Button", "Fallbackwear", "Womens Tops", "0.00")]
+    rows += [
+        _row(f"FB{i + 1}", name, "Fallbackwear", "Womens Tops", "60.00")
+        for i, name in enumerate(["Linen Shirt", "Poplin Shirt", "Boxy Tee", "Rib Tank"])
+    ]
+    rows += [
+        _row(f"FC{i}", f"Knit Polo | {colour}", "Fallbackwear", "Womens Tops", "80.00")
+        for i, colour in enumerate(["Black", "Ecru", "Navy"])
+    ]
+    ingest(catalog, _connector().normalize(rows))
+    catalog.flush()
+
+    # Two further offers for every product, so offer rows outnumber products
+    # three to one and a page cut on offer rows would come back short.
+    offers = catalog.execute(
+        text(
+            "select o.product_id, o.retailer_id, o.price_usd_cents from offers o"
+            " join products p on p.id = o.product_id where p.source_id like 'F%'"
+        )
+    ).all()
+    write(
+        catalog,
+        [
+            WriteSpec(
+                entity="Offer",
+                natural_key={"source": "searchtest-extra", "source_id": f"{product_id}-{n}"},
+                values={
+                    "provenance": Provenance.feed_sync,
+                    "product_id": product_id,
+                    "retailer_id": retailer_id,
+                    "url": f"https://example.test/extra/{product_id}/{n}",
+                    "price_amount_minor": price + n,
+                    "currency": "USD",
+                    "price_usd_cents": price + n,
+                    "in_stock": True,
+                },
+            )
+            for product_id, retailer_id, price in offers
+            for n in (1, 2)
+        ],
+    )
+    catalog.flush()
+
+    results, diagnostics = search_catalog(
+        catalog.connection(),
+        filters=SearchFilters(brand_ids=(_brand_id(catalog, "Fallbackwear"),)),
+        limit=6,
+    )
+
+    assert len(results) == 6
+    assert len({r.product_id for r in results}) == 6
+    polos = [r for r in results if r.title.startswith("Knit Polo")]
+    assert len(polos) == MAX_PER_STYLE
+    assert all(r.other_colourways == 1 for r in polos)
+    assert results[0].price_usd_cents != 0, "the free item must not lead on price"
+    assert diagnostics.queries == 2
+
+
+def test_filters_only_puts_known_in_stock_before_unknown_before_sold_out(
+    catalog: Session,
+) -> None:
+    """A browse that leads with a sold-out item leads with something nobody can
+    buy; an unknown is at least possibly buyable."""
+    known = _row("ST1", "Stock Known Tee", "Stockwear", "Womens Tops", "40.00")
+    also = _row("ST2", "Stock Also Tee", "Stockwear", "Womens Tops", "30.00")
+    unknown = _row("ST3", "Stock Unknown Tee", "Stockwear", "Womens Tops", "20.00", instock=None)
+    gone = _row(
+        "ST4", "Stock Gone Tee", "Stockwear", "Womens Tops", "10.00", instock="out of stock"
+    )
+    # Cheapest first and newest first would each give the reverse of this order.
+    ingest(catalog, _connector().normalize([known, also, unknown, gone]))
+    catalog.flush()
+
+    results, _ = search_catalog(
+        catalog.connection(),
+        filters=SearchFilters(brand_ids=(_brand_id(catalog, "Stockwear"),)),
+        limit=8,
+    )
+
+    assert [r.in_stock for r in results] == [True, True, None, False]

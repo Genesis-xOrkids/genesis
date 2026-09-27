@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.engine import Connection
 
 from api.genesis_api.models import Brand, Offer, OfferSize, Product, ProductImage, Retailer
@@ -39,9 +39,10 @@ RRF_K = 60
 # Merchandisers append the colourway to the title after a pipe or a spaced dash.
 _TITLE_SEPARATOR = re.compile(r"\s+[|\u2013\u2014-]\s+|\|")
 
-# How deep each ranker goes before fusion. Deeper than the final limit so a
-# result ranked poorly by one ranker can still be rescued by another, and deep
-# enough that collapsing colourways afterwards still leaves a full page.
+# How deep each ranker, and the filters-only fallback, goes before the page is
+# cut. Deeper than the final limit so a result ranked poorly by one ranker can
+# still be rescued by another, and deep enough that collapsing colourways
+# afterwards still leaves a full page.
 CANDIDATE_DEPTH = 200
 
 # At most this many colourways of one style in a result set. Splitting source
@@ -279,24 +280,54 @@ def search_catalog(
     if not fused:
         # No query, or nothing matched either ranker. Filters alone still define
         # a valid result set - "show me black dresses under $200" needs no query.
+        #
+        # With nothing to rank by, the order is: offers known in stock, then
+        # unknown, then known sold out, because a browse that leads with
+        # something nobody can buy has failed before the shopper scrolls; then
+        # newest to the catalog first, the "new in" order a shop defaults to,
+        # with the id breaking ties within one ingest. Never price: ascending
+        # price put free replacement buttons and pouches at the top of exactly
+        # the broad browse a new shopper starts with. The cut is on offer rows,
+        # so it goes CANDIDATE_DEPTH deep for the same reason the rankers do:
+        # several offers of one product and several colourways of one style
+        # both fold away before the page is filled.
+        stock_order = case(
+            (Offer.__table__.c.in_stock.is_(True), 0),
+            (Offer.__table__.c.in_stock.is_(None), 1),
+            else_=2,
+        )
         statement = (
             _apply_filters(_base_query(), filters)
-            .order_by(Offer.__table__.c.price_usd_cents.asc().nullslast())
-            .limit(limit)
+            .order_by(
+                stock_order,
+                Product.__table__.c.created_at.desc(),
+                Product.__table__.c.id.desc(),
+                Offer.__table__.c.id,
+            )
+            .limit(CANDIDATE_DEPTH)
         )
         diagnostics.queries += 1
         rows = connection.execute(statement).mappings().all()
         diagnostics.notes.append("fell back to filters only")
         return _hydrate(connection, rows, {}, diagnostics, limit), diagnostics
 
-    ordered = sorted(fused.items(), key=lambda item: item[1][0], reverse=True)[:limit]
     diagnostics.fused = len(fused)
-    wanted = [product_id for product_id, _ in ordered]
 
-    statement = _apply_filters(_base_query(), filters).where(Product.__table__.c.id.in_(wanted))
+    # Every fused candidate is hydrated, not only the first page of them, so the
+    # colourway collapse can refill the page from further down the ranking. The
+    # price order is the tie-break between equal fusion scores.
+    statement = (
+        _apply_filters(_base_query(), filters)
+        .where(Product.__table__.c.id.in_(list(fused)))
+        .order_by(
+            Offer.__table__.c.price_usd_cents.asc().nullslast(),
+            Product.__table__.c.id,
+            Offer.__table__.c.id,
+        )
+    )
     diagnostics.queries += 1
     rows = connection.execute(statement).mappings().all()
-    return _hydrate(connection, rows, dict(ordered), diagnostics, limit), diagnostics
+    return _hydrate(connection, rows, fused, diagnostics, limit), diagnostics
 
 
 def _hydrate(
@@ -306,9 +337,16 @@ def _hydrate(
     diagnostics: SearchDiagnostics,
     limit: int,
 ) -> list[SearchResult]:
-    """Build compact results, keeping the cheapest offer per product.
+    """Build one page of compact results, keeping the cheapest offer per product.
 
-    One image query for the whole page rather than one per product: the same
+    Products are ranked by score, and products with equal scores keep the order
+    in which the rows first reached them, so the caller's ORDER BY is the
+    tie-break - and the whole order when nothing was scored. The colourway
+    collapse runs over every candidate, not over a page cut beforehand, so
+    folded colourways are replaced by the next distinct styles rather than
+    leaving holes, and the folded counts include colourways below the page.
+
+    One image query for the page rather than one per product: the same
     one-query-per-relationship rule the GraphQL loader follows.
     """
     cheapest: dict[int, Any] = {}
@@ -322,25 +360,6 @@ def _hydrate(
         if incumbent is None or (challenger is not None and challenger < incumbent):
             cheapest[row["product_id"]] = row
 
-    images: dict[int, str] = {}
-    if cheapest:
-        diagnostics.queries += 1
-        image_rows = (
-            connection.execute(
-                select(
-                    ProductImage.__table__.c.product_id,
-                    ProductImage.__table__.c.source_url,
-                    ProductImage.__table__.c.position,
-                )
-                .where(ProductImage.__table__.c.product_id.in_(list(cheapest)))
-                .order_by(ProductImage.__table__.c.position)
-            )
-            .mappings()
-            .all()
-        )
-        for image in image_rows:
-            images.setdefault(image["product_id"], image["source_url"])
-
     results = [
         SearchResult(
             product_id=row["product_id"],
@@ -351,15 +370,39 @@ def _hydrate(
             price_usd_cents=row["price_usd_cents"],
             retailer=row["retailer"],
             url=row["url"],
-            image_url=images.get(row["product_id"]),
+            image_url=None,
             in_stock=row["in_stock"],
             score=scored.get(row["product_id"], (0.0, ()))[0],
             matched_by=scored.get(row["product_id"], (0.0, ()))[1],
         )
         for row in cheapest.values()
     ]
-    results.sort(key=lambda result: (-result.score, result.price_usd_cents or 1 << 31))
-    return _collapse_colourways(results, limit)
+    results.sort(key=lambda result: -result.score)
+    page = _collapse_colourways(results, limit)
+
+    if page:
+        diagnostics.queries += 1
+        image_rows = (
+            connection.execute(
+                select(
+                    ProductImage.__table__.c.product_id,
+                    ProductImage.__table__.c.source_url,
+                    ProductImage.__table__.c.position,
+                )
+                .where(
+                    ProductImage.__table__.c.product_id.in_([result.product_id for result in page])
+                )
+                .order_by(ProductImage.__table__.c.position)
+            )
+            .mappings()
+            .all()
+        )
+        images: dict[int, str] = {}
+        for image in image_rows:
+            images.setdefault(image["product_id"], image["source_url"])
+        for result in page:
+            result.image_url = images.get(result.product_id)
+    return page
 
 
 def _style_key(result: SearchResult) -> tuple[str, str]:
