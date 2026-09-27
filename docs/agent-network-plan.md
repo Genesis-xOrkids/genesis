@@ -374,7 +374,7 @@ dispatch one scout run from the panel:
 
 | Item | Milestone | Why this one |
 |---|---|---|
-| A catalog coverage report in SQL: products, brands, the share of products with a resolved category, the share of offers with size data, and products per core category | C2 | Python against the database, and C2 cannot be called done without it |
+| A catalog coverage report in SQL: products, brands, the share of products with a resolved category, the share of offers carrying size data over the categories that carry sizes (ROADMAP.md §5.1's correction of 2026-09-22, with the share a shopper could buy beside it as C4's signal), and products per core category | C2 | Python against the database, and C2 cannot be called done without it |
 | The web application's shell and design tokens, light and dark, in `apps/web` and `packages/ui`, with an accessibility check in CI | A1 | TypeScript, CI and a browser: everything a Python item does not exercise |
 | A storefront probe, dispatched from the Dispatch panel | C2 | The dispatch path and the scout, end to end |
 

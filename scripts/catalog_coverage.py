@@ -8,20 +8,27 @@ usable size data (ROADMAP.md §5.1, and §3 for the first two). This prints each
 the four beside its target and whether it is met, so the milestone is measured
 rather than asserted.
 
-Three things the numbers mean, which the report repeats where it prints them:
+ROADMAP.md §5.1's correction of 2026-09-22 settles what the fourth one counts,
+and this follows it rather than deciding anything of its own:
 
-- **Usable size data is a size row search will match** - ``in_stock`` true or
-  unknown, as ``intelligence/catalog/search.py`` filters. A size a shopper cannot
-  buy is data the stylist cannot use, so counting every size row would let a
-  fully sold-out storefront carry the measure past its target while search
-  returned none of it.
-- **Size coverage is a share of offers**, where ROADMAP.md §5.1 states the 90%
-  over products. ``second-brain/wiki/projects/catalog-supply.md`` states it over
-  offers, which is what sizes hang off and what this measures. The two disagree,
-  the report names both, and nothing here settles it.
-- **A product row is one colourway, not one style.** A style split across five
-  colours is five products, so the count overstates the options an outfit can
-  draw on, and the distinct-title count prints beside it.
+- **Usable size data means size data present**, over **offers whose category
+  carries sizes**. Bags, belts, jewellery, eyewear, watches and scarves are out
+  of the denominator, because a size the garment does not have is not a gap this
+  milestone can close.
+- **Availability is not part of it.** An offer sized and sold out still counts:
+  stock turns over hourly and a breadth milestone gated on it could never close.
+  The share a shopper could actually buy prints beside the target as C4's signal,
+  where it belongs, and is not scored against C2.
+
+One question the correction leaves open, and how this answers it: **an offer
+whose product has no category stays in the denominator**, because null is
+unknown rather than known-unsized. Excluding it would let an unresolved category
+hide a missing size, and would make this measure rise as C2's category measure
+fell. The report prints how many offers that is and what the measure would read
+without them, so the choice is auditable rather than asserted here.
+
+A product row is one colourway, not one style, so the product count overstates
+the options an outfit can draw on, and the distinct-title count prints beside it.
 
 ``met`` compares the unrounded share against the target and the report rounds for
 display, so a share that displays as its target can still miss it. Rounding
@@ -41,19 +48,101 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 
-from sqlalchemy import TextClause, text
+from sqlalchemy import RowMapping, TextClause, text
 from sqlalchemy.engine import Connection
 
 from api.genesis_api.db import engine
+from api.genesis_api.models.enums import Category
 
 PERCENT = "%"
 
-# A size row the catalog can be searched on: `in_stock` true, or unknown. Null is
-# unknown rather than absent, and excluding it would drop every source that ships
-# sizes without availability. Mirrors the filter in intelligence/catalog/search.py.
-USABLE_SIZES = (
+# Categories that carry no size, named by ROADMAP.md §5.1's correction of
+# 2026-09-22 and taken from the enum rather than spelled out, so renaming a
+# member here is a type error rather than a silently empty exclusion.
+UNSIZED_CATEGORIES = (
+    Category.bag,
+    Category.belt,
+    Category.jewelry,
+    Category.eyewear,
+    Category.watch,
+    Category.scarf,
+)
+_UNSIZED = ", ".join(f"'{category.value}'" for category in UNSIZED_CATEGORIES)
+
+# One row per offer, never one per size: an offer sized S, M and L carries size
+# data once. Written as subqueries joined in rather than `id in (...)`, so each
+# join is at most 1:1 and every count below counts offers.
+ANY_SIZE = "select distinct offer_id from offer_sizes"
+# A size row a size-filtered search will match, per intelligence/catalog/search.py:
+# in stock, or of unknown stock. Called buyable rather than usable, because since
+# the 2026-09-22 correction "usable size data" means present, whatever the stock.
+BUYABLE_SIZES = (
     "select distinct offer_id from offer_sizes where in_stock is true or in_stock is null"
 )
+ONE_BUYABLE_SIZE = (
+    "select offer_id from offer_sizes where in_stock is true or in_stock is null "
+    "group by offer_id having count(*) = 1"
+)
+
+# Every offer with its category and the three facts about its sizes that C2 and
+# C4 read. Defined once, so the measure and the signals printed beside it are
+# taken over the same rows and cannot drift apart.
+OFFER_SIZING = f"""
+    select products.category::text as category,
+           sized.offer_id is not null as sized,
+           buyable.offer_id is not null as buyable,
+           one_size.offer_id is not null as one_size
+    from offers
+    join products on products.id = offers.product_id
+    left join ({ANY_SIZE}) as sized on sized.offer_id = offers.id
+    left join ({BUYABLE_SIZES}) as buyable on buyable.offer_id = offers.id
+    left join ({ONE_BUYABLE_SIZE}) as one_size on one_size.offer_id = offers.id
+"""
+
+# The population C2's size criterion is measured over: everything the correction
+# did not exclude. An offer whose product has no category stays in, because null
+# is unknown rather than known-unsized.
+MAY_CARRY_SIZES = f"(category is null or category not in ({_UNSIZED}))"
+# The same population with those unresolved offers dropped, which is the reading
+# this report does not take. It prints it anyway, beside the count it is over, so
+# the cost of that choice is a number rather than an argument.
+KNOWN_SIZED_CATEGORY = f"(category is not null and category not in ({_UNSIZED}))"
+UNSIZED_CATEGORY = f"category in ({_UNSIZED})"
+
+
+# The prose under the stock table. No measured numbers in it: what it has to say
+# is why three real numbers are not criteria, which is the mistake it exists to
+# make impossible.
+STOCK_NOTE = """\
+**Not a C2 criterion, and not a second reading of one.** ROADMAP.md §5.1's correction of
+2026-09-22 keeps availability out of C2 deliberately: stock turns over hourly, and a breadth
+milestone gated on it could never close. These three are here because the first is what a
+size-filtered search can actually return (`intelligence/catalog/search.py`), and because the
+first hides the third - one size left counts the same as a full size run, while a shopper asks
+for their own size. They are the numbers to watch once C4 starts, and on their own
+say nothing about whether C2 is met."""
+
+# The prose under the size measure: which offers it is over, and what an offer
+# without a size row does and does not imply.
+SIZE_NOTES = """\
+- {unsized_category_offers} offers are in the categories the correction excludes: bag, belt,
+  jewelry, eyewear, watch, scarf. {unsized_category_sized_offers} of them carry a size row
+  anyway, a belt having a size, and the exclusion drops those too. It is a statement about the
+  category, not about the row.
+- {unplaced_offers} offers have a product with no category at all, so they can be placed neither
+  inside nor outside those categories, and they stay in the denominator. Null is unknown, not
+  known-unsized: dropping them would let an unresolved category hide a missing size, and would
+  make this measure rise as C2's category measure fell.
+  Dropped, the measure would read {share_without_unplaced} instead.
+- An offer with no size row is not always an ingestion gap. The connector writes no size row for
+  a single-variant product, the `Default Title` shape a genuinely one-size item ships in, and
+  none for a label `parse_size` cannot read, a bare numeric with no declared system being
+  ambiguous on purpose (`intelligence/catalog/connectors/shopify_public.py`,
+  `intelligence/catalog/sizes.py`).
+- A product row is one colourway of one style, so the product count overstates the options an
+  outfit can draw on. The title count beside it is the nearer figure (C3,
+  `second-brain/wiki/concepts/hybrid-catalog-search.md`).
+- Met compares the unrounded share, so a share that displays as its target can still miss it."""
 
 
 @dataclass(frozen=True)
@@ -112,36 +201,38 @@ MEASURES = (
         qualifier="of {basis:,} products",
     ),
     Measure(
-        name="Offers with usable size data",
-        # Distinct offer ids rather than a join straight to offer_sizes: an offer
-        # sized S, M and L is one offer with size data, not three. Joining straight
-        # to the rows measured 94.8% on the catalog this measures 53.8% of.
+        # "Size data", not "usable size data": since the correction the two mean
+        # the same thing, and the shorter name cannot be read as being about stock.
+        name="Offers with size data",
         statement=text(
             f"""
-            select 100.0 * count(usable.offer_id) / nullif(count(*), 0) as value,
+            select 100.0 * count(*) filter (where sized) / nullif(count(*), 0) as value,
                    count(*) as basis
-            from offers
-            left join ({USABLE_SIZES}) as usable on usable.offer_id = offers.id
+            from ({OFFER_SIZING}) as offer
+            where {MAY_CARRY_SIZES}
             """
         ),
         target=90,
         unit=PERCENT,
-        qualifier="of {basis:,} offers",
+        qualifier="of {basis:,} offers not in an unsized category",
     ),
 )
 
-# The two halves of what C2's size criterion leaves out, which are different
-# problems: one set of offers never had sizes ingested, the other has them and
-# has sold out.
-SIZED_OFFERS = text(
+# What the one size percentage above does not say: which offers it left out or
+# kept on an unresolved category, and what stock says about the ones it counted.
+SIZE_PICTURE = text(
     f"""
-    select count(*) filter (where sized.offer_id is not null) as sized,
-           count(*) filter (where sized.offer_id is not null and usable.offer_id is null)
-               as sold_out
-    from offers
-    left join (select distinct offer_id from offer_sizes) as sized
-        on sized.offer_id = offers.id
-    left join ({USABLE_SIZES}) as usable on usable.offer_id = offers.id
+    select count(*) filter (where {UNSIZED_CATEGORY}) as unsized_category_offers,
+           count(*) filter (where {UNSIZED_CATEGORY} and sized) as unsized_category_sized_offers,
+           count(*) filter (where category is null) as unplaced_offers,
+           100.0 * count(*) filter (where {KNOWN_SIZED_CATEGORY} and sized)
+               / nullif(count(*) filter (where {KNOWN_SIZED_CATEGORY}), 0)
+               as share_without_unplaced,
+           100.0 * count(*) filter (where {MAY_CARRY_SIZES} and buyable)
+               / nullif(count(*) filter (where {MAY_CARRY_SIZES}), 0) as buyable_share,
+           count(*) filter (where {MAY_CARRY_SIZES} and sized and not buyable) as sold_out_offers,
+           count(*) filter (where {MAY_CARRY_SIZES} and one_size) as one_size_offers
+    from ({OFFER_SIZING}) as offer
     """
 )
 
@@ -183,11 +274,26 @@ class Coverage:
 
 
 @dataclass(frozen=True)
-class SizedOffers:
-    """Offers carrying any size row, and those whose sizes have all sold out."""
+class SizePicture:
+    """Everything about sizes that C2's one percentage does not say.
 
-    sized: int
-    sold_out: int
+    The first four are about the population: which offers the correction excluded,
+    how many of those carry sizes anyway, how many are in on an unresolved
+    category, and what the measure would read without those. The last three are
+    stock, which C4 owns and C2 is deliberately blind to.
+
+    Every field counts offers, except the two shares, which are percentages: one
+    over the population the measure is taken over, one over that population
+    without the offers whose category is unknown.
+    """
+
+    unsized_category_offers: int
+    unsized_category_sized_offers: int
+    unplaced_offers: int
+    share_without_unplaced: float | None
+    buyable_share: float | None
+    sold_out_offers: int
+    one_size_offers: int
 
 
 @dataclass(frozen=True)
@@ -200,18 +306,24 @@ class CategoryProducts:
 
 def coverages(connection: Connection) -> list[Coverage]:
     """Every C2 measure, one statement each."""
-    found = []
-    for measure in MEASURES:
-        row = connection.execute(measure.statement).mappings().one()
-        qualifier = measure.qualifier.format(basis=row["basis"]) if measure.qualifier else ""
-        found.append(Coverage(measure=measure, value=_float(row["value"]), qualifier=qualifier))
-    return found
+    return [
+        _coverage(measure, connection.execute(measure.statement).mappings().one())
+        for measure in MEASURES
+    ]
 
 
-def sized_offers(connection: Connection) -> SizedOffers:
-    """How many offers carry sizes at all, and how many of those have sold out."""
-    row = connection.execute(SIZED_OFFERS).mappings().one()
-    return SizedOffers(sized=row["sized"], sold_out=row["sold_out"])
+def measure_sizes(connection: Connection) -> SizePicture:
+    """The offers the size measure leaves out, and what stock says about the rest."""
+    row = connection.execute(SIZE_PICTURE).mappings().one()
+    return SizePicture(
+        unsized_category_offers=row["unsized_category_offers"],
+        unsized_category_sized_offers=row["unsized_category_sized_offers"],
+        unplaced_offers=row["unplaced_offers"],
+        share_without_unplaced=_float(row["share_without_unplaced"]),
+        buyable_share=_float(row["buyable_share"]),
+        sold_out_offers=row["sold_out_offers"],
+        one_size_offers=row["one_size_offers"],
+    )
 
 
 def by_category(connection: Connection) -> list[CategoryProducts]:
@@ -223,12 +335,12 @@ def by_category(connection: Connection) -> list[CategoryProducts]:
 
 
 def report(connection: Connection, now: datetime.datetime) -> str:
-    """The markdown report: C2's four measures, what they leave out, then the categories."""
-    sizes = sized_offers(connection)
+    """C2's four measures, the stock C4 owns, what the size measure leaves out, categories."""
+    size_picture = measure_sizes(connection)
     lines = [
         "# Catalog coverage",
         "",
-        f"Milestone C2 (ROADMAP.md §5.1), measured "
+        f"Milestone C2 (ROADMAP.md §5.1, corrected 2026-09-22), measured "
         f"{now.astimezone(datetime.UTC):%Y-%m-%d %H:%M} UTC against {_source(connection)}.",
         "",
         "| Measure | Actual | Target | Met |",
@@ -241,21 +353,28 @@ def report(connection: Connection, now: datetime.datetime) -> str:
     ]
     lines += [
         "",
-        "## What these numbers mean",
+        "## Not scored against C2: stock, which C4 owns",
         "",
-        "- Usable size data is a size row search will match: `in_stock` true or unknown, as",
-        f"  `intelligence/catalog/search.py` filters. {sizes.sized:,} offers carry a size row",
-        f"  at all; sizes have sold out on {sizes.sold_out:,} of them. The two gaps are",
-        "  different problems: one is ingestion, the other freshness.",
-        "- ROADMAP.md §5.1 states the 90% over products;"
-        " `second-brain/wiki/projects/catalog-supply.md`",
-        "  states it over offers, which is what sizes hang off and what this measures. The two",
-        "  disagree, and this report does not settle it.",
-        "- A product row is one colourway of one style, so the product count overstates the",
-        "  options an outfit can draw on. The title count beside it is the nearer figure (C3,",
-        "  `second-brain/wiki/concepts/hybrid-catalog-search.md`).",
-        "- Met compares the unrounded share, so a share that displays as its target can still",
-        "  miss it.",
+        "| C4 signal, over the same offers the size measure is taken over | Value |",
+        "|---|--:|",
+        f"| Carrying a size in stock or of unknown stock | {_share(size_picture.buyable_share)} |",
+        f"| Sized, and sold out in every size | {size_picture.sold_out_offers:,} |",
+        f"| Buyable in exactly one size | {size_picture.one_size_offers:,} |",
+        "",
+    ]
+    lines += STOCK_NOTE.splitlines()
+    lines += [
+        "",
+        "## What the size measure counts",
+        "",
+    ]
+    lines += SIZE_NOTES.format(
+        unsized_category_offers=f"{size_picture.unsized_category_offers:,}",
+        unsized_category_sized_offers=f"{size_picture.unsized_category_sized_offers:,}",
+        unplaced_offers=f"{size_picture.unplaced_offers:,}",
+        share_without_unplaced=_share(size_picture.share_without_unplaced),
+    ).splitlines()
+    lines += [
         "",
         "## Products by category",
         "",
@@ -268,6 +387,12 @@ def report(connection: Connection, now: datetime.datetime) -> str:
     ]
     lines += [f"| {row.category} | {row.products:,} |" for row in by_category(connection)]
     return "\n".join(lines)
+
+
+def _coverage(measure: Measure, row: RowMapping) -> Coverage:
+    """One measured row, with its qualifier filled in from the same statement."""
+    qualifier = measure.qualifier.format(basis=row["basis"]) if measure.qualifier else ""
+    return Coverage(measure=measure, value=_float(row["value"]), qualifier=qualifier)
 
 
 def _float(value: object) -> float | None:
@@ -283,6 +408,10 @@ def _source(connection: Connection) -> str:
 def _stated(value: float, unit: str) -> str:
     """A number as the report states it: percentages to one decimal, counts whole."""
     return f"{value:,.1f}{unit}" if unit else f"{value:,.0f}"
+
+
+def _share(value: float | None) -> str:
+    return "unknown" if value is None else _stated(value, PERCENT)
 
 
 def _measured(coverage: Coverage) -> str:
