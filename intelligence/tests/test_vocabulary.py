@@ -204,7 +204,11 @@ def test_the_added_terms_resolve_the_titles_they_were_added_for(
         ("The Teddy Slipper", Category.shoes),
         ("Cozy Slipper Socks", Category.hosiery),
         ("Wedge Heel Boot", Category.boots),
-        ("Slide Buckle Belt", Category.belt),
+        ("Cable Knit Crewneck", Category.sweater),
+        ("Kids Classic Knit Tank Top", Category.top),
+        ("Women's Bamboo Stretch-Knit Tapered Pant", Category.pants),
+        ("Women's Bamboo Stretch-Knit Kimono Robe", Category.sleepwear),
+        ("Knit Cami Mini Dress", Category.dress),
         ("The ReWool Duffle Coat", Category.coat),
         ("Kangaroo Pouch Pocket Tee", Category.top),
         ("Pearl Charm Bracelet", Category.jewelry),
@@ -248,12 +252,30 @@ def test_sibilant_plurals_match(title: str, expected: Category) -> None:
     assert category_for(title) is expected
 
 
-def test_within_one_text_a_modifier_outranks_nothing_but_across_texts_order_holds() -> None:
-    """The title leads, as for every attribute. A modifier in the title answers
-    before a noun on the shelf, because the shelf is the merchant's filing and
-    the title is the garment's name."""
-    assert category_for("Relaxed Crewneck", "T-Shirts") is Category.sweater
-    assert category_for("The Monty", "Womens Shoes") is Category.shoes
+def test_a_noun_on_the_shelf_outranks_a_modifier_in_the_name() -> None:
+    """The name and the merchant's category are read together: a modifier
+    describes the garment, and the shelf's noun names it."""
+    assert (
+        category_for("Super Fine Cashmere Long Sleeve Crewneck", "Crew Neck Sweaters")
+        is Category.sweater
+    )
+    assert category_for("Air Alpaca Long-Sleeve Slim Crew", "Sweaters") is Category.sweater
+    assert category_for("Archive Long-Sleeve Crew", "Knit Tops") is Category.top
+    assert category_for("SuperForm Rib Longsleeve", "Longsleeve") is Category.top
+
+
+def test_a_noun_in_the_name_still_outranks_one_on_the_shelf() -> None:
+    """A department is a shelf, not a description: "Knit Cami Mini Dress" is
+    filed under Sweaters so knitwear shoppers find it, and it is a dress."""
+    assert category_for("Knit Cami Mini Dress", "Sweaters") is Category.dress
+    assert category_for("The Utility Coverall in Linen", "Dresses") is Category.jumpsuit
+
+
+def test_tags_and_descriptions_do_not_outrank_a_modifier_in_the_name() -> None:
+    """They name what an item is worn with as readily as the item: Negative tags
+    its henleys with its sleepwear."""
+    assert category_for("Whipped Henley in Mink", "Lounge", "sleepwear pajama") is Category.top
+    assert category_for("The Monty", None, "Womens Shoes") is Category.shoes
     assert category_for(None, "Underwear_Bras_Scoop") is Category.lingerie
 
 

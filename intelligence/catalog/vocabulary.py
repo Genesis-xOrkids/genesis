@@ -75,7 +75,6 @@ CATEGORY_TERMS: dict[str, Category] = {
     "turtleneck": Category.sweater,
     "sweater": Category.sweater,
     "jumper": Category.sweater,
-    "knit": Category.sweater,
     "pullover": Category.sweater,
     "hoodie": Category.sweater,
     "sweatshirt": Category.sweater,
@@ -149,6 +148,7 @@ CATEGORY_TERMS: dict[str, Category] = {
     "bootie": Category.boots,
     "boot": Category.boots,
     "flip flop": Category.sandals,
+    "slide": Category.sandals,
     "sandal": Category.sandals,
     "mary jane": Category.shoes,
     "espadrille": Category.shoes,
@@ -213,14 +213,16 @@ CATEGORY_TERMS: dict[str, Category] = {
 # Words that name an item standing alone and only describe it beside another
 # noun. "Relaxed Crewneck" is a sweatshirt; a "Crewneck Tee" is a tee. "The
 # Scuff Slipper" is a shoe; a "Slipper Sock" is a sock. "The Travel Duffel" is a
-# bag; a "Duffle Coat" is a coat.
+# bag; a "Duffle Coat" is a coat. "Knit" is a construction rather than a garment:
+# as a noun it filed "Knit Tank Top", "Stretch-Knit Pant" and "Knit Kimono Robe"
+# as sweaters.
 #
 # Longest-first matching cannot express that, because the modifier is often the
-# longer word, so these are a second tier: removed from a text before its nouns
-# are matched, and consulted only when no noun is left. Removing them first is
-# also what keeps "Short Sleeve Tee" out of shorts - "short" is an inflection of
-# "shorts" (see :func:`_inflections`), and in "short sleeve" it describes a
-# sleeve.
+# longer word, so these are a second tier: removed before nouns are matched, and
+# consulted only when no noun is left (see :func:`category_for`). Removing them
+# first is also what keeps "Short Sleeve Tee" out of shorts - "short" is an
+# inflection of "shorts" (see :func:`_inflections`), and in "short sleeve" it
+# describes a sleeve.
 CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
     "short sleeve": Category.top,
     "shortsleeve": Category.top,
@@ -228,6 +230,7 @@ CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
     "longsleeve": Category.top,
     "henley": Category.top,
     "popover": Category.shirt,
+    "knit": Category.sweater,
     "crewneck": Category.sweater,
     "crew neck": Category.sweater,
     "quarter zip": Category.sweater,
@@ -241,7 +244,6 @@ CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
     "driver": Category.shoes,
     "wedge": Category.shoes,
     "derby": Category.shoes,
-    "slide": Category.sandals,
     "weekender": Category.bag,
     "duffel": Category.bag,
     "duffle": Category.bag,
@@ -636,16 +638,22 @@ def category_for(*texts: str | None) -> Category | None:
     """What the item is, from the first text that says.
 
     Texts come in order of trustworthiness, as for every attribute (see
-    :func:`_first`). Within one text a noun outranks a modifier: the modifiers
-    are taken out before the nouns are looked for, and named only when no noun
-    is left (see :data:`CATEGORY_MODIFIER_TERMS`).
+    :func:`_first`), and every connector passes the item's own name first and
+    the merchant's category for it second. A noun outranks a modifier (see
+    :data:`CATEGORY_MODIFIER_TERMS`) across those two: the modifiers are taken
+    out before the nouns are looked for, and named only when neither text has a
+    noun left. A modifier describes the garment and the shelf's noun names it,
+    so a "Super Fine Cashmere Long Sleeve Crewneck" filed under "Crew Neck
+    Sweaters" is a sweater, and "Long Sleeve" alone is a top.
+
+    Tags and descriptions follow one text at a time, because they name the
+    garments an item is worn with as readily as the item itself.
     """
-    for text in texts:
-        if not text:
-            continue
-        found = _match(_without(text, CATEGORY_MODIFIER_TERMS), CATEGORY_TERMS)
+    for group in (texts[:2], *((text,) for text in texts[2:])):
+        nouns = tuple(_without(text, CATEGORY_MODIFIER_TERMS) if text else None for text in group)
+        found = _first(CATEGORY_TERMS, nouns)
         if found is None:
-            found = _match(text, CATEGORY_MODIFIER_TERMS)
+            found = _first(CATEGORY_MODIFIER_TERMS, group)
         if found is not None:
             return found
     return None
