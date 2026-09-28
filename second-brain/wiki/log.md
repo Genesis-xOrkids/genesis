@@ -187,3 +187,20 @@ nothing recording what they spent. `evals/agents/run.py` now runs three at a
 time and prices each case from its transcript ([[evals-as-gates]]). The price
 table has no entry for `claude-opus-5-5`, the model the reviewer runs on, so
 those cases show tokens with "no price" until one is added.
+
+## 2026-09-28 — the builder divided by the part of the repository it changes
+
+`genesis-builder` became `backend-builder`, `web-builder` and `tooling-builder`,
+along the area labels the pull request check already derives
+(`scripts/pr_conventions.py`). Of the 61 pull requests merged by 2026-09-27, 25
+were the agent network's own tooling, counted from `gh pr list` by the paths each
+touched, and the tooling ones from #46 to #57 were all built in an interactive
+session: the one builder read `ROADMAP.md` for its acceptance criteria, so
+tooling had no home in it. The loop the three share is written once, in
+`.claude/skills/builder-procedure/`.
+
+Tooling is the part wired to state already running - the hosted D1 database, the
+deployed site, this machine's watcher - so its builder carries a second guard,
+`no-live-changes.sh`, that denies the commands which would move that state
+before a merge. CI now runs every guard's cases; nothing had run them before
+([[agent-network]]).

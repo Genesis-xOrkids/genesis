@@ -1,7 +1,7 @@
 ---
 title: The agent network — who works on this repository, and how
 type: decision
-sources: [.claude/agents/, .claude/commands/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json, docs/agent-network-plan.md]
+sources: [.claude/agents/, .claude/commands/, .claude/skills/builder-procedure/SKILL.md, .claude/hooks/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json, docs/agent-network-plan.md]
 related: ["[[agent-runtime]]", "[[evals-as-gates]]", "[[pre-ship-checklist]]", "[[null-means-unknown]]", "[[one-write-door]]", "[[atomic-facts-not-derivations]]"]
 created: 2026-09-12
 last-updated: 2026-09-28
@@ -21,7 +21,9 @@ model gateway ([[agent-runtime]]); this network works on the code.
 |---|---|---|
 | `dispatcher` | Takes one task and hands it to the right employee | The watcher, one session per task |
 | `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, `/build`, the dispatcher's build loop, or a task; a routine on every pull request is planned |
-| `genesis-builder` | Turns one spec into one reviewed pull request | `/build`, or a task |
+| `backend-builder` | Turns one spec in the intelligence plane - the API and schema, the catalog, search, the model gateway, the product's agents, the cloud infrastructure - into one reviewed pull request | `/build`, or a task |
+| `web-builder` | Turns one spec in the application and its shared packages into one reviewed pull request | `/build`, or a task |
+| `tooling-builder` | Turns one spec in the agents, CI, the scripts that run them and the site into one reviewed pull request | `/build`, or a task |
 | `storefront-scout` | Proves candidate storefronts, and adds those that pass to the registry | A task, or by hand |
 
 ## How work reaches them
@@ -41,8 +43,8 @@ Polling costs no tokens; nothing starts a model until a task arrives.
 A build is three employees in a line, driven from outside the builder:
 
 1. `/build`, or the dispatcher when the task was dispatched, resolves the spec
-   and hands it to `genesis-builder`, which works in a worktree of its own and
-   opens a draft pull request.
+   and hands it to the builder that owns the paths it changes, which works in a
+   worktree of its own and opens a draft pull request.
 2. `genesis-reviewer` reviews that pull request, and the `SubagentStop` hook
    posts its report there.
 3. The caller sends the Blocking findings back to the builder, which fixes
@@ -157,9 +159,9 @@ would then disagree about the same run.
   (`python3 -m evals.agents.run <agent>`); the `eval-runner` agent that wrapped
   it was removed on 2026-09-28 after fifteen days without a run, because every
   eval on record had run the script directly. A suite scores a report against what its case
-  expects, so it fits an agent whose output is a report. `genesis-builder` and
+  expects, so it fits an agent whose output is a report. The builders and
   `storefront-scout` end in a pull request instead, and have no suite, so a
-  change to either prompt is ungated: that is a gap, not a substitution.
+  change to any of their prompts is ungated: that is a gap, not a substitution.
   Neither CI nor the reviewer reads an agent definition, so an instruction
   deleted from one ships green, and the work it was holding up goes wrong on
   some later pull request where nobody is looking for it.
@@ -186,8 +188,28 @@ would then disagree about the same run.
   same reason a dispatched task gets one: a session that moves a shared
   checkout's HEAD breaks whatever else is working in it. The worktree is made
   from `origin/main`, and Claude Code refuses any edit or git command aimed at
-  the main checkout (both checked live 2026-09-16), so the agents no longer
-  check where they are.
+  the main checkout (both checked live 2026-09-16). That refusal is
+  conditional, per the teammate case above, so they check where they are
+  anyway. The worktree starts on a branch named `worktree-agent-...`, which the
+  pull request check rejects: #61 merged with that check failing, so builders
+  branch before they commit.
+- **Builders are divided by the part of the repository they change** (decided
+  2026-09-28). `backend-builder` takes the intelligence plane, `web-builder`
+  the application, and `tooling-builder` the agents, CI and the site - the
+  division the pull request's area labels already draw
+  (`scripts/pr_conventions.py`). The parts differ in what proves a change:
+  pgvector Postgres and a migration chain for one, a browser for another, guard
+  cases and eval suites for the third. Only tooling is wired to state already
+  running, which `no-live-changes.sh` guards. The single `genesis-builder` it
+  replaces was written for roadmap milestones, reading `ROADMAP.md` for its
+  acceptance criteria, so tooling work had no home in it: the tooling pull
+  requests from #46 to #57 were all built in an interactive session. The loop
+  the builders share is written once, in `.claude/skills/builder-procedure/`,
+  which each definition preloads through its `skills:` field; a definition adds
+  only its paths, what it builds against, how it proves a change, and its
+  limits. A spec that changes two builders' paths is two items (`/build`), and
+  a builder whose change needs another's paths reports it rather than making
+  it. None of the three has an eval suite, the gap `genesis-builder` had.
 - **The scout stops at the registry.** `storefronts.txt` is input. Registering
   those domains and ingesting them writes to the hosted catalog, so a person
   runs `seed_storefronts.py` and `ingest_catalog.py` after the pull request

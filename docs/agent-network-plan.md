@@ -101,7 +101,7 @@ was refused both a write and a `git -C` into the main checkout.
 ```
 Dispatch panel ─► watcher ─► lead ─► plan on a GitHub issue ─► questions, once
                                │
-                               ├─► genesis-builder ─► draft PR ─┬─► genesis-reviewer ─┐
+                               ├─► a builder ───────► draft PR ─┬─► genesis-reviewer ─┐
                                │         ▲                      └─► genesis-verifier ─┤
                                │         └───────────── findings ◄────────────────────┘
                                │
@@ -121,8 +121,8 @@ Dispatch panel ─► watcher ─► lead ─► plan on a GitHub issue ─► q
    Items no question touches start without waiting. A comment that changes the
    plan re-plans the items not yet started.
 4. **Build.** For every item whose dependencies have merged, within the limits in
-   §4.7, the lead starts `genesis-builder` in the background, in a worktree of its
-   own.
+   §4.7, the lead starts the builder that owns the item's paths in the
+   background, in a worktree of its own.
 5. **Review and demonstrate.** When a builder reports a draft pull request, the
    lead captures its diff and head commit and starts `genesis-reviewer` and
    `genesis-verifier` on that commit, side by side. Their findings go back to the
@@ -147,7 +147,7 @@ stuck, and the merges if you did not allow them. Nothing else.
 | Agent | Model, effort | Does | Started by |
 |---|---|---|---|
 | `lead` | Opus, high | Plans a task into items, runs each through build, review and demonstration, merges when allowed, closes the task | The watcher, one session per task |
-| `genesis-builder` | Opus, high | Turns one item into one pull request, and fixes what review and demonstration find | The lead, or `/build` |
+| `backend-builder`, `web-builder`, `tooling-builder` | Opus, high | Turn one item in their own part of the repository into one pull request, and fix what review and demonstration find. One `genesis-builder` until 2026-09-28 | The lead, or `/build` |
 | `genesis-reviewer` | Opus, xhigh | Reviews a commit against the constitution and the wiki | The lead, `/build`, `/review` |
 | `genesis-verifier` | Sonnet, high | Demonstrates a pull request's acceptance criteria against a running system | The lead, `/build`, or by hand |
 | `storefront-scout` | Sonnet, medium | Probes storefronts and adds those that pass to the registry | The lead, until C2's targets are met |
@@ -165,7 +165,8 @@ work from:
 - **Outcome.** One sentence; it becomes the pull request's title.
 - **Milestone.** The `ROADMAP.md` id, and the acceptance criteria this item
   covers, quoted.
-- **Owns.** The paths it may change. Two items in flight never own the same path.
+- **Owns.** The paths it may change, all within one builder's part of the
+  repository. Two items in flight never own the same path.
 - **Depends on.** The items that must merge first.
 - **Changes the schema.** Yes or no. One schema-changing item is in flight at a
   time, so migrations never grow a second head.
@@ -187,7 +188,7 @@ shows who everything is waiting on.
 
 ### 4.4 Changes to the agents that stay
 
-**`genesis-builder`**
+**The builders**
 
 - Drop the shared-checkout checks and the choice of base commit (P3). It branches
   in the worktree it is given.
@@ -429,10 +430,11 @@ system**
   that does not apply to an empty database, a query count that is wrong), and one
   honest case expected *demonstrated* throughout. The runner applies each case's
   patch in a scratch worktree.
-- `evals/agents/genesis-builder/`: two small specs run in a scratch worktree
-  without pushing, one a function with its test and one a change that makes a wiki
-  page wrong, scored on the worktree: the gates pass, only owned paths change, the
-  body carries *Acceptance*, and the wiki page is fixed.
+- `evals/agents/<builder>/` for each builder: two small specs in its own paths,
+  run in a scratch worktree without pushing, one a function with its test and one
+  a change that makes a wiki page wrong, scored on the worktree: the gates pass,
+  only owned paths change, the body carries *Acceptance*, and the wiki page is
+  fixed.
 - **Check:** both suites pass; the verifier's report on Phase 1's A1 pull request
   reproduces when a person runs its commands.
 
@@ -445,8 +447,9 @@ through**
   background builder stays *working* in `claude agents --json`, so the watcher
   leaves it alone; and whether `PushNotification` from a background session
   reaches your phone (§4.8).
-- `.claude/agents/lead.md`: Opus, high effort, with `Agent(genesis-builder,
-  genesis-reviewer, genesis-verifier, storefront-scout)`,
+- `.claude/agents/lead.md`: Opus, high effort, with `Agent(backend-builder,
+  web-builder, tooling-builder, genesis-reviewer, genesis-verifier,
+  storefront-scout)`,
   `SendMessage`, `Monitor`, `PushNotification`, `ToolSearch`, `Read`, `Glob`,
   `Grep` and `Bash`. It holds §4.1's loop, §4.3's item, the limits in §4.7 and
   §4.8, and what to do when stuck, and runs each item by following `/build`'s
@@ -488,15 +491,15 @@ plan; the lead derives the real one:
 |---|---|---|---|---|
 | 1 | Probe candidate storefronts and add those that pass to the registry | C2 | — | `storefront-scout` |
 | 2 | Seed and ingest the new storefronts | C2 | 1 | a person |
-| 3 | Re-measure C2 with the coverage report, and record it on the wiki | C2 | 2 | `genesis-builder` |
-| 4 | Return eight different styles, not eight colourways of one | C3 follow-up | — | `genesis-builder` |
-| 5 | Shared components on the design tokens, each with an accessibility test | A1 | — | `genesis-builder` |
-| 6 | A persona-by-occasion evaluation dataset | S1 | — | `genesis-builder` |
-| 7 | A rubric and a model-graded judge through the gateway | S1 | 6 | `genesis-builder` |
+| 3 | Re-measure C2 with the coverage report, and record it on the wiki | C2 | 2 | `backend-builder` |
+| 4 | Return eight different styles, not eight colourways of one | C3 follow-up | — | `backend-builder` |
+| 5 | Shared components on the design tokens, each with an accessibility test | A1 | — | `web-builder` |
+| 6 | A persona-by-occasion evaluation dataset | S1 | — | `backend-builder` |
+| 7 | A rubric and a model-graded judge through the gateway | S1 | 6 | `backend-builder` |
 | 8 | Score a sample by hand to check the judge agrees | S1 | 7 | a person |
-| 9 | A naive stylist baseline, scored and recorded | S1 | 7 | `genesis-builder` |
+| 9 | A naive stylist baseline, scored and recorded | S1 | 7 | `backend-builder` |
 | 10 | Add a model key to CI | S1 | — | a person |
-| 11 | A CI gate that fails on a rubric regression, proven by a seeded one | S1 | 9, 10 | `genesis-builder` |
+| 11 | A CI gate that fails on a rubric regression, proven by a seeded one | S1 | 9, 10 | `backend-builder` |
 
 Before dispatching, answer the open decisions it touches (`ROADMAP.md` §8: D3,
 whether product images are copied or hot-linked, and D6, the target segment), or
@@ -550,7 +553,7 @@ report; until then these are the questions:
 |---|---|---|
 | Any | It has work: no runs in 30 days of project work means it goes | Runs per agent |
 | `lead` | Projects finish with few person steps | Person steps per project; time from prompt to last merge; time waiting on a person |
-| `genesis-builder` | Most of its pull requests merge without steering | Cost per merged pull request; review passes per pull request |
+| Each builder | Most of its pull requests merge without steering | Cost per merged pull request; review passes per pull request |
 | `genesis-reviewer` | Its blocking findings get fixed rather than dismissed | Findings fixed against findings left |
 | `genesis-verifier` | It catches failures before merge, and *not demonstrable* stays rare | Failed criteria before merge; share not demonstrable |
 
