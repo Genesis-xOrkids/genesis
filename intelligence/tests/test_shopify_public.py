@@ -21,7 +21,6 @@ from intelligence.catalog.connectors.shopify_public import (
     StorefrontProfile,
     fetch_storefront_profile,
     iter_storefront_products,
-    looks_like_a_garment,
     strip_html,
 )
 from intelligence.catalog.money import FxRates
@@ -251,10 +250,29 @@ def test_html_descriptions_are_reduced_to_text() -> None:
         ("Free Returns Coverage", "return,package_protection", False),
         ("Shipping Protection", None, False),
         ("Fabric Swatch", "Samples", False),
+        # The filter this replaced matched "protection" anywhere, and quarantined
+        # Stelle's sun shirts and Beyond Yoga's UV jackets as service SKUs.
+        ("UPF 50+ Long Sleeve Sun Protection Shirt", "Short Sleeve Tops", True),
+        ("Places To Go UV Protection Jacket", "Outerwear", True),
     ],
 )
 def test_garment_filter(title: str, product_type: str | None, expected: bool) -> None:
-    assert looks_like_a_garment(title, product_type) is expected
+    """The connector asks the shared rule (``vocabulary.not_apparel``), and a
+    record it turns away is quarantined at the filter stage rather than dropped."""
+    records = [
+        {
+            "id": 910,
+            "title": title,
+            "product_type": product_type,
+            "handle": "x",
+            "variants": [
+                {"title": "M", "price": "10.00", "available": True, "requires_shipping": True}
+            ],
+        }
+    ]
+    result = _connector().normalize(records)
+    assert bool(result.products) is expected
+    assert [stage for _, stage, _ in result.failures] == ([] if expected else ["filter"])
 
 
 def test_the_storefront_states_its_own_currency_and_country() -> None:

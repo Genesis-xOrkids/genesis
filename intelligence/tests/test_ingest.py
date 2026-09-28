@@ -8,8 +8,10 @@ and nulls that survive as unknown rather than becoming zeros.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -19,7 +21,12 @@ from intelligence.catalog.connectors.affiliate_feed import (
     RAKUTEN_COLUMNS,
     AffiliateFeedConnector,
 )
+from intelligence.catalog.connectors.base import Connector
 from intelligence.catalog.connectors.shopify import ShopifyConnector
+from intelligence.catalog.connectors.shopify_public import (
+    ShopifyPublicConnector,
+    StorefrontProfile,
+)
 from intelligence.catalog.ingest import ingest, offer_id_for, product_id_for, slugify
 from intelligence.catalog.money import FxRates
 
@@ -85,6 +92,13 @@ def _feed() -> AffiliateFeedConnector:
     return AffiliateFeedConnector(
         source="rakuten-test", retailer_name="Net-a-Porter", rates=RATES, columns=RAKUTEN_COLUMNS
     )
+
+
+def _public() -> ShopifyPublicConnector:
+    profile = StorefrontProfile(
+        domain="cozyearth.test", retailer_name="Cozy Earth", currency="USD", brand_name="Cozy Earth"
+    )
+    return ShopifyPublicConnector(profile=profile, rates=RATES)
 
 
 def test_a_run_writes_products_offers_images_and_sizes(session: Session) -> None:
@@ -245,6 +259,63 @@ def test_bad_records_are_quarantined_with_their_payload(session: Session) -> Non
     stages = {row.stage for row in failures}
     assert stages == {"identify", "normalize"}
     assert any("no price" in row.error for row in failures)
+
+
+@pytest.mark.parametrize(
+    ("connector", "towel", "robe"),
+    [
+        (
+            _shopify,
+            {**SHOPIFY_RECORDS[1], "id": "gid://shopify/Product/9", "title": "Luxe Bath Towels"},
+            {**SHOPIFY_RECORDS[1], "id": "gid://shopify/Product/10", "title": "Luxe Bath Robe"},
+        ),
+        (
+            _feed,
+            {**FEED_ROWS[0], "sku": "NAP-9", "productname": "Luxe Bath Towels"},
+            {**FEED_ROWS[0], "sku": "NAP-10", "productname": "Luxe Bath Robe"},
+        ),
+        (
+            _public,
+            {
+                "id": 9,
+                "title": "Luxe Bath Towels",
+                "handle": "towels",
+                "variants": [{"title": "Default Title", "price": "88.00", "available": True}],
+            },
+            {
+                "id": 10,
+                "title": "Luxe Bath Robe",
+                "handle": "robe",
+                "variants": [{"title": "M", "price": "148.00", "available": True}],
+            },
+        ),
+    ],
+    ids=["shopify", "affiliate_feed", "shopify_public"],
+)
+def test_every_connector_quarantines_what_is_not_apparel(
+    session: Session,
+    connector: Callable[[], Connector],
+    towel: dict[str, object],
+    robe: dict[str, object],
+) -> None:
+    """The rule lives at the boundary, so no source can ingest a towel and no
+    source can turn away a bath robe."""
+    source = connector()
+    report = ingest(session, source.normalize([towel, robe]))
+
+    assert report.quarantined == 1
+    assert report.products_written == 1
+    failure = session.execute(
+        select(IngestionFailure.__table__.c.stage, IngestionFailure.__table__.c.error).where(
+            IngestionFailure.__table__.c.source == source.source
+        )
+    ).one()
+    assert failure.stage == "filter"
+    assert failure.error == "not_apparel: home_goods (towel)"
+    category = session.execute(
+        select(Product.__table__.c.category).where(Product.__table__.c.source == source.source)
+    ).scalar_one()
+    assert category is Category.sleepwear
 
 
 def test_per_size_availability_survives_ingestion(session: Session) -> None:

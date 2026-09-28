@@ -8,11 +8,18 @@ extraction route to fill.
 
 Matching is longest-phrase-first. "Shirt dress" is a dress, not a shirt, and a
 shorter pattern that fires first would get it wrong every time.
+
+It also decides what is not a fashion item at all. Storefronts sell towels,
+bedding, gift cards and loyalty rewards through the same feed as their
+clothing, and every connector asks :func:`not_apparel` before translating a
+record, so the rule is one rule however many sources there are.
 """
 
 from __future__ import annotations
 
+import enum
 import re
+from dataclasses import dataclass
 from typing import TypedDict
 
 from api.genesis_api.models.enums import (
@@ -36,10 +43,14 @@ CATEGORY_TERMS: dict[str, Category] = {
     "maxi dress": Category.dress,
     "midi dress": Category.dress,
     "mini dress": Category.dress,
+    "sweatshirt dress": Category.dress,
+    "sundress": Category.dress,
     "dress": Category.dress,
     "jumpsuit": Category.jumpsuit,
     "romper": Category.jumpsuit,
     "playsuit": Category.jumpsuit,
+    "coverall": Category.jumpsuit,
+    "onesie": Category.jumpsuit,
     "trench coat": Category.coat,
     "puffer": Category.coat,
     "parka": Category.coat,
@@ -54,21 +65,25 @@ CATEGORY_TERMS: dict[str, Category] = {
     "sport coat": Category.blazer,
     "denim jacket": Category.jacket,
     "bomber": Category.jacket,
+    "shacket": Category.jacket,
     "jacket": Category.jacket,
     "waistcoat": Category.vest,
     "vest": Category.vest,
     "gilet": Category.vest,
     "cardigan": Category.cardigan,
+    "cardi": Category.cardigan,
     "turtleneck": Category.sweater,
     "sweater": Category.sweater,
     "jumper": Category.sweater,
     "knit": Category.sweater,
     "pullover": Category.sweater,
     "hoodie": Category.sweater,
+    "sweatshirt": Category.sweater,
     "button down": Category.shirt,
     "button-down": Category.shirt,
     "oxford": Category.shirt,
     "blouse": Category.shirt,
+    "overshirt": Category.shirt,
     "shirt": Category.shirt,
     "t-shirt": Category.top,
     "tee": Category.top,
@@ -77,6 +92,7 @@ CATEGORY_TERMS: dict[str, Category] = {
     "bodysuit": Category.top,
     "cami": Category.top,
     "polo": Category.top,
+    "tunic": Category.top,
     "top": Category.top,
     "jeans": Category.jeans,
     "jean": Category.jeans,
@@ -91,37 +107,149 @@ CATEGORY_TERMS: dict[str, Category] = {
     "slack": Category.pants,
     "shorts": Category.shorts,
     "skirt": Category.skirt,
+    "skort": Category.skirt,
+    "sports bra": Category.activewear,
+    "leotard": Category.activewear,
+    "unitard": Category.activewear,
+    "swim short": Category.swimwear,
+    "swim trunk": Category.swimwear,
+    "swim brief": Category.swimwear,
+    "bikini brief": Category.lingerie,
+    "boxer brief": Category.lingerie,
+    "nipple cover": Category.lingerie,
+    "underwear": Category.lingerie,
+    "bralette": Category.lingerie,
+    "boyshort": Category.lingerie,
+    "boybrief": Category.lingerie,
+    "hipster": Category.lingerie,
+    "pasties": Category.lingerie,
+    "thong": Category.lingerie,
+    "brief": Category.lingerie,
+    "boxer": Category.lingerie,
+    "trunk": Category.lingerie,
+    "bra": Category.lingerie,
+    "pajama short": Category.sleepwear,
+    "sleep shirt": Category.sleepwear,
+    "sleep sack": Category.sleepwear,
+    "sleep set": Category.sleepwear,
+    "sleepwear": Category.sleepwear,
+    "nightgown": Category.sleepwear,
+    "nightshirt": Category.sleepwear,
+    "nightie": Category.sleepwear,
+    "bathrobe": Category.sleepwear,
+    "bath wrap": Category.sleepwear,
+    "towel wrap": Category.sleepwear,
+    "sleeper": Category.sleepwear,
+    "pajama": Category.sleepwear,
+    "pyjama": Category.sleepwear,
+    "robe": Category.sleepwear,
+    "pj": Category.sleepwear,
     "sneaker": Category.sneakers,
     "trainer": Category.sneakers,
+    "bootie": Category.boots,
     "boot": Category.boots,
+    "flip flop": Category.sandals,
     "sandal": Category.sandals,
+    "mary jane": Category.shoes,
+    "espadrille": Category.shoes,
+    "slingback": Category.shoes,
+    "sling back": Category.shoes,
+    "moccasin": Category.shoes,
     "heel": Category.shoes,
     "loafer": Category.shoes,
     "flat": Category.shoes,
     "pump": Category.shoes,
+    "clog": Category.shoes,
+    "mule": Category.shoes,
     "shoe": Category.shoes,
     "handbag": Category.bag,
     "tote": Category.bag,
     "clutch": Category.bag,
     "crossbody": Category.bag,
     "backpack": Category.bag,
+    "belt bag": Category.bag,
+    "fanny pack": Category.bag,
+    "card holder": Category.bag,
+    "wristlet": Category.bag,
+    "carryall": Category.bag,
+    "wallet": Category.bag,
     "bag": Category.bag,
     "belt": Category.belt,
+    "scarves": Category.scarf,
     "scarf": Category.scarf,
+    "snood": Category.scarf,
     "hat": Category.hat,
     "cap": Category.hat,
     "beanie": Category.hat,
+    "beret": Category.hat,
+    "visor": Category.hat,
     "sunglass": Category.eyewear,
     "watch": Category.watch,
     "necklace": Category.jewelry,
     "earring": Category.jewelry,
     "bracelet": Category.jewelry,
     "ring": Category.jewelry,
+    "pendant": Category.jewelry,
+    "anklet": Category.jewelry,
+    "bangle": Category.jewelry,
+    "brooch": Category.jewelry,
     "sock": Category.hosiery,
     "tight": Category.hosiery,
+    "stocking": Category.hosiery,
+    "pantyhose": Category.hosiery,
     "glove": Category.gloves,
+    "mitten": Category.gloves,
     "swimsuit": Category.swimwear,
     "bikini": Category.swimwear,
+    "tankini": Category.swimwear,
+    "rash guard": Category.swimwear,
+    "rashguard": Category.swimwear,
+    "cover up": Category.swimwear,
+    "coverup": Category.swimwear,
+    "sarong": Category.swimwear,
+    "swim": Category.swimwear,
+}
+
+# Words that name an item standing alone and only describe it beside another
+# noun. "Relaxed Crewneck" is a sweatshirt; a "Crewneck Tee" is a tee. "The
+# Scuff Slipper" is a shoe; a "Slipper Sock" is a sock. "The Travel Duffel" is a
+# bag; a "Duffle Coat" is a coat.
+#
+# Longest-first matching cannot express that, because the modifier is often the
+# longer word, so these are a second tier: removed from a text before its nouns
+# are matched, and consulted only when no noun is left. Removing them first is
+# also what keeps "Short Sleeve Tee" out of shorts - "short" is an inflection of
+# "shorts" (see :func:`_inflections`), and in "short sleeve" it describes a
+# sleeve.
+CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
+    "short sleeve": Category.top,
+    "shortsleeve": Category.top,
+    "long sleeve": Category.top,
+    "longsleeve": Category.top,
+    "henley": Category.top,
+    "popover": Category.shirt,
+    "crewneck": Category.sweater,
+    "crew neck": Category.sweater,
+    "quarter zip": Category.sweater,
+    "half zip": Category.sweater,
+    "1/4 zip": Category.sweater,
+    "one piece": Category.swimwear,
+    "corset": Category.lingerie,
+    "teddy": Category.lingerie,
+    "ballerina": Category.shoes,
+    "slipper": Category.shoes,
+    "driver": Category.shoes,
+    "wedge": Category.shoes,
+    "derby": Category.shoes,
+    "slide": Category.sandals,
+    "weekender": Category.bag,
+    "duffel": Category.bag,
+    "duffle": Category.bag,
+    "pouch": Category.bag,
+    "choker": Category.jewelry,
+    "charm": Category.jewelry,
+    "hoop": Category.jewelry,
+    "stud": Category.jewelry,
 }
 
 SILHOUETTE_TERMS: dict[str, Silhouette] = {
@@ -278,6 +406,121 @@ GENDER_TERMS: dict[str, Gender] = {
 }
 
 
+class NonApparelKind(enum.Enum):
+    """What a record is when it is not something a person wears.
+
+    Not stored anywhere: it names the reason a record was quarantined, so the
+    quarantine can be counted by cause.
+    """
+
+    home_goods = "home_goods"
+    gift_or_service = "gift_or_service"
+    loyalty_reward = "loyalty_reward"
+    personal_care = "personal_care"
+    fitness_equipment = "fitness_equipment"
+
+
+# Words that, in a title naming no garment, say the record is not a fashion
+# item. The garment check comes first (see :func:`not_apparel`), so a "Bath
+# Robe", a "Blanket Scarf" and a "Sun Protection Shirt" are clothing whatever
+# else their titles say.
+NON_APPAREL_TERMS: dict[str, NonApparelKind] = {
+    "towel": NonApparelKind.home_goods,
+    "washcloth": NonApparelKind.home_goods,
+    "wash cloth": NonApparelKind.home_goods,
+    "sheet": NonApparelKind.home_goods,
+    "pillowcase": NonApparelKind.home_goods,
+    "pillow case": NonApparelKind.home_goods,
+    "pillow": NonApparelKind.home_goods,
+    "sham": NonApparelKind.home_goods,
+    "duvet": NonApparelKind.home_goods,
+    "quilt": NonApparelKind.home_goods,
+    "blanket": NonApparelKind.home_goods,
+    "throw": NonApparelKind.home_goods,
+    "coverlet": NonApparelKind.home_goods,
+    "bedding": NonApparelKind.home_goods,
+    "mattress": NonApparelKind.home_goods,
+    "bath": NonApparelKind.home_goods,
+    "mat": NonApparelKind.home_goods,
+    "placemat": NonApparelKind.home_goods,
+    "coaster": NonApparelKind.home_goods,
+    "napkin": NonApparelKind.home_goods,
+    "candle": NonApparelKind.home_goods,
+    "mug": NonApparelKind.home_goods,
+    "water bottle": NonApparelKind.home_goods,
+    "tray": NonApparelKind.home_goods,
+    "dish": NonApparelKind.home_goods,
+    "catchall": NonApparelKind.home_goods,
+    "ornament": NonApparelKind.home_goods,
+    "chair": NonApparelKind.home_goods,
+    "packing cube": NonApparelKind.home_goods,
+    "jewelry box": NonApparelKind.home_goods,
+    "jewellery box": NonApparelKind.home_goods,
+    "keepsake tin": NonApparelKind.home_goods,
+    "gift card": NonApparelKind.gift_or_service,
+    "e-gift": NonApparelKind.gift_or_service,
+    "egift": NonApparelKind.gift_or_service,
+    "gift voucher": NonApparelKind.gift_or_service,
+    "gift certificate": NonApparelKind.gift_or_service,
+    "gift code": NonApparelKind.gift_or_service,
+    "gift wrap": NonApparelKind.gift_or_service,
+    "gift wrapping": NonApparelKind.gift_or_service,
+    "gift envelope": NonApparelKind.gift_or_service,
+    "gift box": NonApparelKind.gift_or_service,
+    "warranty": NonApparelKind.gift_or_service,
+    "insurance": NonApparelKind.gift_or_service,
+    "package protection": NonApparelKind.gift_or_service,
+    "shipping protection": NonApparelKind.gift_or_service,
+    "returns coverage": NonApparelKind.gift_or_service,
+    "returns": NonApparelKind.gift_or_service,
+    "shipping": NonApparelKind.gift_or_service,
+    "donation": NonApparelKind.gift_or_service,
+    "carbon offset": NonApparelKind.gift_or_service,
+    "extended care": NonApparelKind.gift_or_service,
+    "membership": NonApparelKind.gift_or_service,
+    "subscription": NonApparelKind.gift_or_service,
+    "personalization": NonApparelKind.gift_or_service,
+    "swatch": NonApparelKind.gift_or_service,
+    "sample": NonApparelKind.gift_or_service,
+    "reward": NonApparelKind.loyalty_reward,
+    "shampoo": NonApparelKind.personal_care,
+    "conditioner": NonApparelKind.personal_care,
+    "body wash": NonApparelKind.personal_care,
+    "detangler": NonApparelKind.personal_care,
+    "curler": NonApparelKind.personal_care,
+    "supplement": NonApparelKind.personal_care,
+    "multivitamin": NonApparelKind.personal_care,
+    "cleanser": NonApparelKind.personal_care,
+    "cleansing cloth": NonApparelKind.personal_care,
+    "polishing cloth": NonApparelKind.personal_care,
+    "moisturizer": NonApparelKind.personal_care,
+    "serum": NonApparelKind.personal_care,
+    "eye cream": NonApparelKind.personal_care,
+    "night cream": NonApparelKind.personal_care,
+    "body butter": NonApparelKind.personal_care,
+    "body oil": NonApparelKind.personal_care,
+    "essential oil": NonApparelKind.personal_care,
+    "mousse": NonApparelKind.personal_care,
+    "comb": NonApparelKind.personal_care,
+    "yoga block": NonApparelKind.fitness_equipment,
+    "yoga wheel": NonApparelKind.fitness_equipment,
+    "yoga strap": NonApparelKind.fitness_equipment,
+    "yoga mat": NonApparelKind.fitness_equipment,
+}
+
+
+@dataclass(frozen=True)
+class NotApparel:
+    """A title that names something other than apparel, and the words that said so."""
+
+    kind: NonApparelKind
+    phrase: str
+
+    def __str__(self) -> str:
+        """The quarantine reason, led by a name a count can group on."""
+        return f"not_apparel: {self.kind.value} ({self.phrase})"
+
+
 def _tokens(text: str) -> str:
     """Reduce text to space-separated words.
 
@@ -289,18 +532,33 @@ def _tokens(text: str) -> str:
 
 
 def _match[T](text: str, terms: dict[str, T]) -> T | None:
-    """Longest phrase wins.
+    phrase = _phrase_in(text, terms)
+    return None if phrase is None else terms[phrase]
+
+
+def _phrase_in[T](text: str, terms: dict[str, T]) -> str | None:
+    """The longest of ``terms`` the text contains.
 
     "Shirt dress" contains "shirt", so a shorter pattern firing first would file
-    every shirt dress under shirts. Sorting by length removes any dependence on
-    dictionary order. A trailing "s" is accepted so "boots" matches "boot".
+    every shirt dress under shirts. Between two phrases of equal length the one
+    listed first wins, which is why "top" is listed before "bra": a "Bra Top" is
+    a top.
     """
     haystack = _tokens(text)
     for phrase in sorted(terms, key=len, reverse=True):
-        normalized = _tokens(phrase).strip()
-        if any(f" {form} " in haystack for form in _inflections(normalized)):
-            return terms[phrase]
+        if any(f" {form} " in haystack for form in _inflections(_tokens(phrase).strip())):
+            return phrase
     return None
+
+
+def _without[T](text: str, terms: dict[str, T]) -> str:
+    """The text, with every one of ``terms`` taken out of it."""
+    haystack = _tokens(text)
+    for phrase in sorted(terms, key=len, reverse=True):
+        for form in _inflections(_tokens(phrase).strip()):
+            while f" {form} " in haystack:
+                haystack = haystack.replace(f" {form} ", " ")
+    return haystack
 
 
 def _inflections(phrase: str) -> tuple[str, ...]:
@@ -308,9 +566,18 @@ def _inflections(phrase: str) -> tuple[str, ...]:
 
     Both directions are needed and only one was there originally. Titles say
     "Sailor Jean" where the vocabulary says "jeans", so matching only
-    phrase-plus-s filed a whole category of denim under trousers.
+    phrase-plus-s filed a whole category of denim under trousers. A sibilant
+    ending takes "-es", and until it was accepted "Dresses", "Watches" and
+    "Sunglasses" matched nothing at all.
+
+    The singular is a trap as well as a fix: "short" is the singular of
+    "shorts", and so is the "short" in "Short Sleeve Tee". That one is answered
+    by :data:`CATEGORY_MODIFIER_TERMS` rather than here, because "Bike Short" is
+    shorts.
     """
     forms = {phrase, f"{phrase}s"}
+    if phrase.endswith(("s", "x", "z", "ch", "sh")):
+        forms.add(f"{phrase}es")
     if phrase.endswith("es") and len(phrase) > 3:
         forms.add(phrase[:-2])
     if phrase.endswith("s") and len(phrase) > 2:
@@ -366,7 +633,22 @@ def attributes_for(*texts: str | None) -> GarmentAttributes:
 
 
 def category_for(*texts: str | None) -> Category | None:
-    return _first(CATEGORY_TERMS, texts)
+    """What the item is, from the first text that says.
+
+    Texts come in order of trustworthiness, as for every attribute (see
+    :func:`_first`). Within one text a noun outranks a modifier: the modifiers
+    are taken out before the nouns are looked for, and named only when no noun
+    is left (see :data:`CATEGORY_MODIFIER_TERMS`).
+    """
+    for text in texts:
+        if not text:
+            continue
+        found = _match(_without(text, CATEGORY_MODIFIER_TERMS), CATEGORY_TERMS)
+        if found is None:
+            found = _match(text, CATEGORY_MODIFIER_TERMS)
+        if found is not None:
+            return found
+    return None
 
 
 def silhouette_for(*texts: str | None) -> Silhouette | None:
@@ -403,6 +685,25 @@ def pattern_for(*texts: str | None) -> Pattern | None:
 
 def gender_for(*texts: str | None) -> Gender | None:
     return _first(GENDER_TERMS, texts)
+
+
+def not_apparel(title: str) -> NotApparel | None:
+    """Why a record is not a fashion item, when its title says so.
+
+    Conservative by construction. Only the title is read: a department called
+    "Home" also shelves the robes, and a description mentions the towel a
+    swimsuit dries with. A title that names any garment is apparel however much
+    else it says, so a "Bath Robe" stays and so does a "Bra Trio Bundle"; a set
+    or bundle is judged by what it names, and a "Bath Towel Set" names only
+    towels. A title naming neither is kept and left uncategorised, because not
+    knowing what a thing is does not show that it is not clothing.
+    """
+    if category_for(title) is not None:
+        return None
+    phrase = _phrase_in(title, NON_APPAREL_TERMS)
+    if phrase is None:
+        return None
+    return NotApparel(kind=NON_APPAREL_TERMS[phrase], phrase=phrase)
 
 
 def _first[T](terms: dict[str, T], texts: tuple[str | None, ...]) -> T | None:
