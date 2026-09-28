@@ -4,7 +4,7 @@ type: decision
 sources: [.claude/agents/, .claude/commands/, scripts/agent_activity.py, scripts/task_queue.py, scripts/dispatch_watch.py, second-brain/site/schema.sql, .claude/settings.json, docs/agent-network-plan.md]
 related: ["[[agent-runtime]]", "[[evals-as-gates]]", "[[pre-ship-checklist]]", "[[null-means-unknown]]", "[[one-write-door]]", "[[atomic-facts-not-derivations]]"]
 created: 2026-09-12
-last-updated: 2026-09-16
+last-updated: 2026-09-28
 ---
 
 ## What it is
@@ -21,7 +21,6 @@ model gateway ([[agent-runtime]]); this network works on the code.
 |---|---|---|
 | `dispatcher` | Takes one task and hands it to the right employee | The watcher, one session per task |
 | `genesis-reviewer` | Reviews a diff against the constitution and this wiki | `/review`, `/build`, the dispatcher's build loop, or a task; a routine on every pull request is planned |
-| `eval-runner` | Scores an agent against its eval cases | A task; a trigger on pull requests that change an agent is planned |
 | `genesis-builder` | Turns one spec into one reviewed pull request | `/build`, or a task |
 | `storefront-scout` | Proves candidate storefronts, and adds those that pass to the registry | A task, or by hand |
 
@@ -154,7 +153,10 @@ would then disagree about the same run.
   carry any header.
 - **Every agent has evals before its prompt changes land** ([[evals-as-gates]]).
   The reviewer's cases are in `evals/agents/genesis-reviewer/`, scored by a
-  script rather than by a model. A suite scores a report against what its case
+  script rather than by a model. Whoever changes a prompt runs the script
+  (`python3 -m evals.agents.run <agent>`); the `eval-runner` agent that wrapped
+  it was removed on 2026-09-28 after fifteen days without a run, because every
+  eval on record had run the script directly. A suite scores a report against what its case
   expects, so it fits an agent whose output is a report. `genesis-builder` and
   `storefront-scout` end in a pull request instead, and have no suite, so a
   change to either prompt is ungated: that is a gap, not a substitution.

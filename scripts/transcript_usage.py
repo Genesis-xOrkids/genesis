@@ -46,6 +46,7 @@ SYNTHETIC = "<synthetic>"
 # hold its row out of the ledger forever.
 SETTLES_AFTER = dt.timedelta(minutes=1)
 MEASURABLE_FOR = dt.timedelta(days=1)
+PROJECTS = pathlib.Path.home() / ".claude/projects"
 
 
 class UnmeasuredError(Exception):
@@ -105,12 +106,23 @@ def read(transcript: pathlib.Path) -> Usage:
     if len(models) > 1:
         raise UnmeasuredError(f"it used more than one model: {', '.join(sorted(models))}")
 
-    totals = [0, 0, 0, 0, 0]
-    for _model, usage, _final in responses.values():
-        for index, count in enumerate(_counts(usage)):
-            totals[index] += count
+    counts = [_counts(usage) for _model, usage, _final in responses.values()]
+    fresh, write_5m, write_1h, cache_read, output = (
+        sum(column) for column in zip(*counts, strict=True)
+    )
     partial = sum(1 for _model, _usage, final in responses.values() if not final)
-    return Usage(models.pop(), *totals, partial)
+    return Usage(models.pop(), fresh, write_5m, write_1h, cache_read, output, partial)
+
+
+def spent(pattern: str, what: str) -> Usage:
+    """What the one transcript under Claude Code's projects matching `pattern` recorded.
+
+    Raises `UnmeasuredError` when there is not exactly one, or it cannot say.
+    """
+    transcripts = sorted(PROJECTS.glob(pattern))
+    if len(transcripts) != 1:
+        raise UnmeasuredError(f"{len(transcripts)} transcripts found for {what}")
+    return read(transcripts[0])
 
 
 def stored(row: dict[str, Any]) -> Usage | None:
