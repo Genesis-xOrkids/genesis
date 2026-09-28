@@ -48,7 +48,7 @@ expect_deny "cd /tmp && ./scripts/seed_storefronts.py"
 # to read one asks for the file by another route rather than working around it.
 expect_deny "rg seed_storefronts scripts/"
 
-# The work both agents actually do stays open, including the probe, which is
+# The work these agents actually do stays open, including the probe, which is
 # the scout's whole job and the nearest neighbour of the scripts denied above.
 expect_allow "PYTHONPATH=. uv run python scripts/probe_storefronts.py www.example.com"
 expect_allow "git status --short"

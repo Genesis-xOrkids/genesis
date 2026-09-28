@@ -120,6 +120,12 @@ jobs:
           python3 second-brain/site/build.py --target static >/dev/null
           node --test second-brain/site/worker.test.mjs
 
+      - name: Guard tests
+        # Each guard in .claude/hooks/ keeps its cases beside it. A guard whose
+        # cases nobody runs can stop denying without anyone knowing, and the
+        # agents it holds keep working as if it still did. The runner has jq.
+        run: for test in .claude/hooks/*.test.sh; do bash "$test" || exit 1; done
+
       - name: Secrets
         # Free stand-in for GitHub's push protection, which costs money on
         # private repos. The binary is run directly rather than through

@@ -1,12 +1,11 @@
 ---
-description: Build one spec with genesis-builder, have genesis-reviewer review the pull request it opens, and carry the findings back to be fixed
+description: Build one spec with the builder for the part of the repository it changes, have genesis-reviewer review the pull request it opens, and carry the findings back to be fixed
 argument-hint: "<a spec, a path to one, or a roadmap milestone such as A1>"
 ---
 
-Turn **$ARGUMENTS** into a reviewed pull request, through the two agents that
-do it: `genesis-builder` writes, `genesis-reviewer` checks. The loop lives here
-rather than inside the builder, because an author grading its own work is not a
-review.
+Turn **$ARGUMENTS** into a reviewed pull request, through the agents that do it:
+a builder writes, `genesis-reviewer` checks. The loop lives here rather than
+inside the builder, because an author grading its own work is not a review.
 
 ## 1. Resolve the spec, and show it
 
@@ -21,13 +20,34 @@ spawning anything. A spec that leaves open a question about the schema, the API
 surface, or a recorded decision is not ready: put that question to the user
 first, because the builder cannot ask one.
 
-## 2. Build
+## 2. Choose the builder, and build
 
-Invoke the Agent tool with `subagent_type: "genesis-builder"`, and give it a
-`name` (`builder`) so you can message it later. Give it the spec in full, the
-acceptance criteria, the base branch when it is not `main`, and anything this
-session established that it would otherwise have to rediscover: it has not seen
-this conversation.
+Each builder owns a part of the repository, and its definition in
+`.claude/agents/` lists the paths:
+
+- `backend-builder` - the intelligence plane: the API and schema, the catalog,
+  search, the model gateway, the product's agents, and the cloud
+  infrastructure. The C, S and X milestones.
+- `web-builder` - the application and its shared packages. The A milestones.
+- `tooling-builder` - the agents, CI, the scripts that run them, and the second
+  brain's site.
+
+Choose the one whose paths the spec changes. A spec that changes two builders'
+paths is two items: split it, show the user the split, and build them in
+dependency order - the field in the API before the screen that reads it - or
+side by side when neither needs the other, at most two builders at once
+(`docs/agent-network-plan.md` §4.7). Wiki pages decide nothing here: every
+builder fixes the pages its own change makes wrong. A spec that changes only
+shared files - a root document such as `ROADMAP.md`, or the wiki - goes to the
+builder whose part the change governs: C2's definition of usable size data to
+`backend-builder`, a pull request convention in `CLAUDE.md` to
+`tooling-builder`.
+
+Invoke the Agent tool with that builder's name as `subagent_type`, and give it a
+`name` so you can message it later. Give it the spec in full, the acceptance
+criteria, the base branch when it is not `main`, and anything this session
+established that it would otherwise have to rediscover: it has not seen this
+conversation.
 
 It works in a worktree of its own and ends with `Target:` and `Outcome:` lines.
 The project's hooks record its run and post its report to the pull request. Do

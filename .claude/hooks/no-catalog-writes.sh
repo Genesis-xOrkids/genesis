@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# PreToolUse guard for the agents that create: genesis-builder and
+# PreToolUse guard for the agents that create: the three builders and
 # storefront-scout. It denies the three scripts that write to the hosted
 # catalog, whatever `GENESIS_DATABASE_URL` points at.
 #
 # Their frontmatter already withholds the Neon MCP tools, but that is not the
-# route either agent would actually take: both hold Bash, and the writers are
+# route any of them would actually take: each holds Bash, and the writers are
 # ordinary scripts in this repository. `seed_storefronts.py` and
 # `ingest_catalog.py` write through the one write door, and
 # `backfill_embeddings.py` rewrites vectors over the whole catalog. Registering

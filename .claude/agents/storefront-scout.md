@@ -123,5 +123,5 @@ the pull request when `Target:` names one.
 - Never add a domain the probe did not return `ok` for.
 - Never edit a connector, the probe, or the fetcher to make a domain pass. A
   source that needs code to be read is a connector change with a spec of its
-  own, and `genesis-builder`'s work, not a registry line.
+  own, and `backend-builder`'s work, not a registry line.
 - Never merge, and never push to `main`.

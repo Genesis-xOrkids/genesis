@@ -80,10 +80,10 @@ after the reviewer's first run on 2026-09-12 - the after-the-fact move this page
 warns about - so on 2026-09-13 the gate itself was tested with a seeded
 regression. A reviewer told to ignore the constitution's Data rules failed
 exactly the three Data cases (`jsonb-column`, `stored-on-sale`, `null-as-false`)
-and passed the other five. `dispatcher`, `genesis-builder` and
+and passed the other five. `dispatcher`, the three builders and
 `storefront-scout` have no suite yet, so a
 change to their prompts is not gated; the runner refuses them by name rather
-than passing them. The last two end in a pull request rather than in a report
+than passing them. The builders and the scout end in a pull request rather than in a report
 with counts, which is why no suite was written for them - but nothing else
 gates their prompts either, because neither the reviewer nor CI reads an agent
 definition ([[agent-network]]).
