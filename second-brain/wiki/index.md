@@ -67,7 +67,7 @@ root and are read there; `raw/repo-docs/` holds pointers, not copies.
 
 **Intelligence**
 
-- [[hybrid-catalog-search]] — vector + filters + BM25, eight results, and two live defects
+- [[hybrid-catalog-search]] — vector + filters + full-text rank, eight results with at most two colourways per style, and a browse order that is not price
 - [[fashion-taxonomy]] — Fashionpedia plus a silhouette vocabulary; enums for closed sets, tables for open ones
 - [[prompt-caching]] — stable prefix, volatile tail, and the three silent invalidators
 - [[tool-results-are-data]] — retrieved text is untrusted; write tools are gated; numbers come from SQL

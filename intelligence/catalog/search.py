@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.engine import Connection
 
 from api.genesis_api.models import Brand, Offer, OfferSize, Product, ProductImage, Retailer
@@ -39,9 +39,10 @@ RRF_K = 60
 # Merchandisers append the colourway to the title after a pipe or a spaced dash.
 _TITLE_SEPARATOR = re.compile(r"\s+[|\u2013\u2014-]\s+|\|")
 
-# How deep each ranker goes before fusion. Deeper than the final limit so a
-# result ranked poorly by one ranker can still be rescued by another, and deep
-# enough that collapsing colourways afterwards still leaves a full page.
+# How deep each ranker, and the filters-only fallback, goes before the page is
+# cut. Deeper than the final limit so a result ranked poorly by one ranker can
+# still be rescued by another, and deep enough that collapsing colourways
+# afterwards still leaves a full page.
 CANDIDATE_DEPTH = 200
 
 # At most this many colourways of one style in a result set. Splitting source
@@ -49,6 +50,16 @@ CANDIDATE_DEPTH = 200
 # shoe can exist as forty-nine products. Eight results that are the same shoe in
 # eight colours is not a result set, and no amount of ranking quality fixes it.
 MAX_PER_STYLE = 2
+
+# Offers known in stock, then unknown, then known sold out. It decides which of
+# a product's offers is shown - a cheaper offer that is sold out is not a price
+# the shopper can pay - and it leads the filters-only order, because a browse
+# that opens on something nobody can buy has failed before the shopper scrolls.
+_STOCK_TIER = case(
+    (Offer.__table__.c.in_stock.is_(True), 0),
+    (Offer.__table__.c.in_stock.is_(None), 1),
+    else_=2,
+)
 
 
 class Embedder(Protocol):
@@ -94,9 +105,9 @@ class SearchResult:
     in_stock: bool | None
     score: float = 0.0
     matched_by: tuple[str, ...] = ()
-    # How many further colourways of this style were collapsed behind this
-    # result, so the agent can say "also in four other colours" rather than
-    # letting the shopper discover it by clicking through.
+    # How many further colourways of this style the catalog holds under the
+    # same filters, beyond those on the page, so the agent can say "also in four
+    # other colours" rather than letting the shopper discover it by clicking.
     other_colourways: int = 0
 
 
@@ -113,11 +124,12 @@ class SearchDiagnostics:
 
 
 def _base_query() -> Select[Any]:
-    """Products joined to their cheapest live offer.
+    """Products joined to their offers, one row per offer.
 
     An offer join rather than a subquery on price: the shopper is buying a
     specific offer at a specific retailer, so the row that survives filtering has
-    to be the row they can actually click.
+    to be the row they can actually click. Which of a product's offers that is -
+    the best stocked, then the cheapest - is settled by row order in `_hydrate`.
     """
     return (
         select(
@@ -279,67 +291,88 @@ def search_catalog(
     if not fused:
         # No query, or nothing matched either ranker. Filters alone still define
         # a valid result set - "show me black dresses under $200" needs no query.
+        #
+        # With nothing to rank by, the order is the stock tier first; then the
+        # brands take turns, each brand's newest product before anyone's second;
+        # then newest to the catalog. The turns are there because newest alone
+        # is "most recently onboarded storefront": the ingest runner writes a
+        # storefront in one transaction, so all of it shares one created_at and
+        # it would fill the page. Products with no brand take turns as one.
+        # Never price: ascending price put free replacement buttons and pouches
+        # at the top of exactly the broad browse a new shopper starts with.
+        #
+        # The cut is on offer rows, so it goes CANDIDATE_DEPTH deep for the same
+        # reason the rankers do: further offers of one product and further
+        # colourways of one style both fold away before the page is filled.
+        # The trailing price and offer id put each product's shown offer first.
+        newest = (Product.__table__.c.created_at.desc(), Product.__table__.c.id.desc())
+        brand_turn = func.dense_rank().over(
+            partition_by=(_STOCK_TIER, Product.__table__.c.brand_id), order_by=newest
+        )
         statement = (
             _apply_filters(_base_query(), filters)
-            .order_by(Offer.__table__.c.price_usd_cents.asc().nullslast())
-            .limit(limit)
+            .order_by(
+                _STOCK_TIER,
+                brand_turn,
+                *newest,
+                Offer.__table__.c.price_usd_cents.asc().nullslast(),
+                Offer.__table__.c.id,
+            )
+            .limit(CANDIDATE_DEPTH)
         )
         diagnostics.queries += 1
         rows = connection.execute(statement).mappings().all()
         diagnostics.notes.append("fell back to filters only")
-        return _hydrate(connection, rows, {}, diagnostics, limit), diagnostics
+        return _hydrate(connection, rows, {}, filters, diagnostics, limit), diagnostics
 
-    ordered = sorted(fused.items(), key=lambda item: item[1][0], reverse=True)[:limit]
     diagnostics.fused = len(fused)
-    wanted = [product_id for product_id, _ in ordered]
 
-    statement = _apply_filters(_base_query(), filters).where(Product.__table__.c.id.in_(wanted))
+    # Every fused candidate is hydrated, not only the first page of them, so the
+    # colourway collapse can refill the page from further down the ranking. The
+    # order puts each product's shown offer first, and breaks ties between equal
+    # fusion scores the same way: better stocked, then cheaper.
+    statement = (
+        _apply_filters(_base_query(), filters)
+        .where(Product.__table__.c.id.in_(list(fused)))
+        .order_by(
+            _STOCK_TIER,
+            Offer.__table__.c.price_usd_cents.asc().nullslast(),
+            Product.__table__.c.id,
+            Offer.__table__.c.id,
+        )
+    )
     diagnostics.queries += 1
     rows = connection.execute(statement).mappings().all()
-    return _hydrate(connection, rows, dict(ordered), diagnostics, limit), diagnostics
+    return _hydrate(connection, rows, fused, filters, diagnostics, limit), diagnostics
 
 
 def _hydrate(
     connection: Connection,
     rows: Sequence[Any],
     scored: dict[int, tuple[float, tuple[str, ...]]],
+    filters: SearchFilters,
     diagnostics: SearchDiagnostics,
     limit: int,
 ) -> list[SearchResult]:
-    """Build compact results, keeping the cheapest offer per product.
+    """Build one page of compact results, one offer per product.
 
-    One image query for the whole page rather than one per product: the same
-    one-query-per-relationship rule the GraphQL loader follows.
+    Rows arrive in the caller's ORDER BY, which puts each product's shown offer
+    first: best stock tier, then cheapest. The first row per product is kept,
+    so the rule lives in SQL once rather than again here.
+
+    Products are ranked by score, and products with equal scores keep the order
+    in which the rows first reached them, so the caller's ORDER BY is also the
+    tie-break - and the whole order when nothing was scored. The colourway
+    collapse runs over every candidate, not over a page cut beforehand, so
+    folded colourways are replaced by the next distinct styles rather than
+    leaving holes.
+
+    One image query and one colourway count for the page rather than one per
+    product: the same one-query-per-relationship rule the GraphQL loader follows.
     """
-    cheapest: dict[int, Any] = {}
+    shown: dict[int, Any] = {}
     for row in rows:
-        current = cheapest.get(row["product_id"])
-        if current is None:
-            cheapest[row["product_id"]] = row
-            continue
-        incumbent = current["price_usd_cents"]
-        challenger = row["price_usd_cents"]
-        if incumbent is None or (challenger is not None and challenger < incumbent):
-            cheapest[row["product_id"]] = row
-
-    images: dict[int, str] = {}
-    if cheapest:
-        diagnostics.queries += 1
-        image_rows = (
-            connection.execute(
-                select(
-                    ProductImage.__table__.c.product_id,
-                    ProductImage.__table__.c.source_url,
-                    ProductImage.__table__.c.position,
-                )
-                .where(ProductImage.__table__.c.product_id.in_(list(cheapest)))
-                .order_by(ProductImage.__table__.c.position)
-            )
-            .mappings()
-            .all()
-        )
-        for image in image_rows:
-            images.setdefault(image["product_id"], image["source_url"])
+        shown.setdefault(row["product_id"], row)
 
     results = [
         SearchResult(
@@ -351,19 +384,44 @@ def _hydrate(
             price_usd_cents=row["price_usd_cents"],
             retailer=row["retailer"],
             url=row["url"],
-            image_url=images.get(row["product_id"]),
+            image_url=None,
             in_stock=row["in_stock"],
             score=scored.get(row["product_id"], (0.0, ()))[0],
             matched_by=scored.get(row["product_id"], (0.0, ()))[1],
         )
-        for row in cheapest.values()
+        for row in shown.values()
     ]
-    results.sort(key=lambda result: (-result.score, result.price_usd_cents or 1 << 31))
-    return _collapse_colourways(results, limit)
+    results.sort(key=lambda result: -result.score)
+    page = _collapse_colourways(results, limit)
+
+    if page:
+        diagnostics.queries += 1
+        image_rows = (
+            connection.execute(
+                select(
+                    ProductImage.__table__.c.product_id,
+                    ProductImage.__table__.c.source_url,
+                    ProductImage.__table__.c.position,
+                )
+                .where(
+                    ProductImage.__table__.c.product_id.in_([result.product_id for result in page])
+                )
+                .order_by(ProductImage.__table__.c.position)
+            )
+            .mappings()
+            .all()
+        )
+        images: dict[int, str] = {}
+        for image in image_rows:
+            images.setdefault(image["product_id"], image["source_url"])
+        for result in page:
+            result.image_url = images.get(result.product_id)
+        _count_colourways(connection, page, filters, diagnostics)
+    return page
 
 
-def _style_key(result: SearchResult) -> tuple[str, str]:
-    """What makes two results the same garment in different colours.
+def _style_key(title: str, brand: str | None) -> tuple[str, str]:
+    """What makes two products the same garment in different colours.
 
     Colourway splitting gives each colour its own product with its own id, so
     identity has to come from the brand and the style name rather than the row.
@@ -371,30 +429,72 @@ def _style_key(result: SearchResult) -> tuple[str, str]:
     ("Barrel Jean | Washed Black") and leaving it in makes every colourway look
     like a different style, which is exactly the collapse this is trying to do.
     """
-    stem = _TITLE_SEPARATOR.split(result.title)[0].strip().lower()
-    return ((result.brand or "").lower(), stem)
+    stem = _TITLE_SEPARATOR.split(title)[0].strip().lower()
+    return ((brand or "").lower(), stem)
 
 
 def _collapse_colourways(results: list[SearchResult], limit: int) -> list[SearchResult]:
-    """Keep the best few colourways per style, and count the rest.
+    """Keep the best few colourways per style, up to a page.
 
     Order is preserved, so the highest-ranked colourway of a style is the one
-    kept. Nothing is discarded silently: the survivors carry a count of what was
-    folded behind them.
+    kept. What was folded is counted afterwards by `_count_colourways`.
     """
     kept: list[SearchResult] = []
     seen: dict[tuple[str, str], int] = {}
-    folded: dict[tuple[str, str], int] = {}
-
     for result in results:
-        key = _style_key(result)
-        count = seen.get(key, 0)
-        if count < MAX_PER_STYLE and len(kept) < limit:
-            seen[key] = count + 1
+        if len(kept) == limit:
+            break
+        key = _style_key(result.title, result.brand)
+        if seen.get(key, 0) < MAX_PER_STYLE:
+            seen[key] = seen.get(key, 0) + 1
             kept.append(result)
-        else:
-            folded[key] = folded.get(key, 0) + 1
-
-    for result in kept:
-        result.other_colourways = folded.get(_style_key(result), 0)
     return kept
+
+
+def _count_colourways(
+    connection: Connection,
+    page: list[SearchResult],
+    filters: SearchFilters,
+    diagnostics: SearchDiagnostics,
+) -> None:
+    """Record on each result how many further colourways of its style exist.
+
+    Nothing is discarded silently: the count is what lets the agent say "also in
+    four other colours". It is counted in the catalog, under the same filters,
+    rather than among the ranked candidates. The candidate window holds only
+    part of a style whenever the style is large or brands share the window, so a
+    count taken there depends on everything else the search returned.
+
+    One query for the page. SQL narrows by brand and title prefix, and
+    `_style_key` then decides, so the style rule is written once. The prefix
+    also matches longer titles ("Harbour Trench Coat" for "Harbour Trench"),
+    and those are dropped here.
+    """
+    conditions = [
+        and_(
+            Brand.__table__.c.name.is_(None)
+            if brand == ""
+            else func.lower(Brand.__table__.c.name) == brand,
+            func.lower(func.ltrim(Product.__table__.c.title)).startswith(stem, autoescape=True),
+        )
+        for brand, stem in {_style_key(result.title, result.brand) for result in page}
+    ]
+    statement = (
+        _apply_filters(_base_query(), filters)
+        .with_only_columns(
+            Product.__table__.c.id, Product.__table__.c.title, Brand.__table__.c.name
+        )
+        .where(or_(*conditions))
+        .distinct()
+    )
+    diagnostics.queries += 1
+    colourways: dict[tuple[str, str], set[int]] = {}
+    for product_id, title, brand in connection.execute(statement):
+        colourways.setdefault(_style_key(title, brand), set()).add(product_id)
+
+    on_page: dict[tuple[str, str], set[int]] = {}
+    for result in page:
+        on_page.setdefault(_style_key(result.title, result.brand), set()).add(result.product_id)
+    for result in page:
+        key = _style_key(result.title, result.brand)
+        result.other_colourways = len(colourways.get(key, set()) - on_page[key])

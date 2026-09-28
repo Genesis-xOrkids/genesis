@@ -1,7 +1,7 @@
 ---
 title: Catalog Supply (C1–C4)
 type: project
-sources: [ROADMAP.md, scripts/catalog_coverage.py, intelligence/catalog/sizes.py]
+sources: [ROADMAP.md, scripts/catalog_coverage.py, intelligence/catalog/search.py, intelligence/catalog/sizes.py]
 related: ["[[current-state]]", "[[source-agnostic-core]]", "[[hybrid-catalog-search]]", "[[embeddings-and-vectors]]", "[[catalog-sources]]", "[[fashion-taxonomy]]", "[[no-silent-fallbacks]]", "[[null-means-unknown]]", "[[styling-intelligence]]"]
 created: 2026-09-07
 last-updated: 2026-09-28
@@ -133,10 +133,14 @@ semantic queries moved 20% → 79%.
 Commits `ff2b5fa` (embed the catalog, collapse colourways in results) and
 `367058a` (fix category accuracy: the labels were wrong, not the retrieval).
 
-**One defect from this work is still open**: collapsing colourways left 3,557
-titles mapping to more than one product, one shoe existing as 49 products, so
-eight results can be the same style eight times. Recorded on
-[[hybrid-catalog-search]].
+**Its two search defects are closed.** Splitting records per colourway left
+3,557 titles mapping to more than one product, with one shoe existing as 49
+products. Search folds those to at most two colourways per style, and since PR
+#63 it refills the page after folding rather than returning it short. The same
+PR stopped the filters-only fallback from ordering by price. It now puts known
+in stock first, then lets brands take turns, then shows newest to the catalog
+first. Both are recorded on [[hybrid-catalog-search]]. Category precision has not
+been re-measured on the hosted catalog since that change.
 
 ## C4 — Freshness ⬜ not started
 
