@@ -292,6 +292,7 @@ def persist(
         route=outcome.route.value,
         records_seen=outcome.records_seen,
         products=report.products_written if report else 0,
+        sizes_retired=report.sizes_retired if report else 0,
         quarantined=report.quarantined if report else 0,
         error=outcome.error,
     )

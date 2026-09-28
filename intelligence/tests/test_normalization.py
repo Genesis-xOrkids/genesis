@@ -25,7 +25,7 @@ from intelligence.catalog.money import (
     to_usd_cents,
     to_usd_cents_as_of,
 )
-from intelligence.catalog.sizes import parse_size
+from intelligence.catalog.sizes import ParsedSize, parse_sizes
 
 RATES = FxRates(
     as_of=datetime.datetime(2026, 9, 3, tzinfo=datetime.UTC),
@@ -249,35 +249,132 @@ def test_an_unrecognised_colour_name_returns_none() -> None:
         ("W28 L32", SizeSystem.waist_inseam, "28x32"),
         ("28x32", SizeSystem.waist_inseam, "28x32"),
         ("One Size", SizeSystem.one_size, "one_size"),
+        # Tentree writes one size as a single word, in its Size option.
+        ("ONE", SizeSystem.one_size, "one_size"),
+        # Letter sizes past the common run, and plus sizes kept as written.
+        ("XXXXL", SizeSystem.alpha, "XXXXL"),
+        ("6XL", SizeSystem.alpha, "6XL"),
+        ("2X", SizeSystem.alpha, "2X"),
+        ("XL/XXL", SizeSystem.alpha, "XL/XXL"),
+        # Marine Layer spells the letters out.
+        ("Extra Small", SizeSystem.alpha, "XS"),
+        ("Small", SizeSystem.alpha, "S"),
+        ("Medium", SizeSystem.alpha, "M"),
+        ("Large", SizeSystem.alpha, "L"),
+        ("Extra Large", SizeSystem.alpha, "XL"),
+        # A pair joined by a hyphen or a space is the pair a slash states.
+        ("S-M", SizeSystem.alpha, "S/M"),
+        ("XL-XXL", SizeSystem.alpha, "XL/XXL"),
+        ("XS S", SizeSystem.alpha, "XS/S"),
+        # A letter size and, after a dash, the body measurement it is cut for:
+        # Taylor Stitch's chest, Marine Layer's inseam.
+        ("XS - 36", SizeSystem.alpha, "XS"),
+        ("S-30", SizeSystem.alpha, "S"),
+        # A letter size and the range of shoe sizes it fits, Cozy Earth's socks.
+        # The range is not one size, so only the letter is a fact.
+        ("L: US 10-13", SizeSystem.alpha, "L"),
+        ("M/L: US 8-11", SizeSystem.alpha, "M/L"),
     ],
 )
 def test_size_labels_that_state_their_system_are_parsed(
     raw: str, system: SizeSystem, value: str
 ) -> None:
-    parsed = parse_size(raw)
-    assert parsed is not None
-    assert parsed.system is system
-    assert parsed.value == value
+    assert parse_sizes(raw) == (ParsedSize(system=system, value=value),)
+
+
+@pytest.mark.parametrize(
+    ("raw", "value"),
+    [("M (US 8)", "8"), ("S - US 4", "4"), ("L: US 12", "12")],
+)
+def test_a_letter_size_restated_in_a_named_system_is_two_facts(raw: str, value: str) -> None:
+    """ "M (US 8)" is CLAUDE.md's own decomposition example: both are stored."""
+    assert set(parse_sizes(raw)) == {
+        ParsedSize(system=SizeSystem.alpha, value=raw[0]),
+        ParsedSize(system=SizeSystem.us, value=value),
+    }
 
 
 def test_a_bare_number_without_a_declared_system_is_unknown_not_guessed() -> None:
     """ "38" is an EU dress, an EU shoe, and an IT jacket. Recording a guess would
     hide the ambiguity from everyone downstream."""
-    assert parse_size("38") is None
+    assert parse_sizes("38") == ()
 
 
 def test_a_bare_number_uses_the_system_the_source_declared() -> None:
-    parsed = parse_size("38", declared_system=SizeSystem.eu)
-    assert parsed is not None
-    assert parsed.system is SizeSystem.eu
-    assert parsed.value == "38"
+    assert parse_sizes("38", declared_system=SizeSystem.eu) == (
+        ParsedSize(system=SizeSystem.eu, value="38"),
+    )
 
 
 def test_half_sizes_survive_but_trailing_zeros_do_not() -> None:
-    assert parse_size("8.5", declared_system=SizeSystem.us).value == "8.5"  # type: ignore[union-attr]
-    assert parse_size("8.0", declared_system=SizeSystem.us).value == "8"  # type: ignore[union-attr]
+    assert parse_sizes("8.5", declared_system=SizeSystem.us)[0].value == "8.5"
+    assert parse_sizes("8.0", declared_system=SizeSystem.us)[0].value == "8"
 
 
-def test_unparseable_sizes_return_none() -> None:
-    assert parse_size("") is None
-    assert parse_size("please select") is None
+def test_unparseable_sizes_return_nothing() -> None:
+    assert parse_sizes("") == ()
+    assert parse_sizes("please select") == ()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # A word after the letter changes the garment rather than restating it,
+        # with or without a number beside the word.
+        "Extra Small - Petite",
+        "Small - Petite 2",
+        "M (Tall)",
+        "M (Tall 34)",
+        # A bare number in brackets is the same size in a system the label does
+        # not name. Stelle writes girls' sizes this way, and reading the letter
+        # alone would put a girls' XS beside an adult one.
+        "XS (4/5)",
+        "XXS (4)",
+        "3XS (2/3)",
+        "M/L (8-11)",
+        # Allbirds' "W" is women's shoe sizing, not a system prefix.
+        "S (W5-7)",
+        "M (W8-10 / M8)",
+        # Everlane's men's and women's shoe sizes, which are not Medium or a W.
+        "M 10",
+        "W 10",
+        # Letters run together are ambiguous: Tentree's "SM" is S/M beside "LXL"
+        # and Small anywhere else.
+        "SM",
+        # Knix's and Organic Basics' "+" is not stated to mean anything.
+        "S+",
+        # A range or a waist-inseam, depending on the store: Marine Layer's pants
+        # run "30-30" through "34-32", Colorful Standard's socks "36-40".
+        "30-32",
+        "36-40",
+        # A number after a dash too small to be a chest or an inseam is a size in
+        # a system the label does not name: a girls' "XS - 4", or "M - 8".
+        "XS - 4",
+        "M - 8",
+        # Waist and inseam in one label, where one number is no waist or inseam
+        # a person has: a women's 12 beside a 30" inseam, a 50" inseam.
+        "12x30",
+        "W30 L50",
+        # Systems the enum does not have: bra band and cup, kids' ages, a length
+        # letter, a width letter, and a size stated for men and women at once.
+        "34B",
+        "12-18M",
+        "4T",
+        "10Y",
+        "0R",
+        "10.5D",
+        "W10/M9",
+        "L MEN/XL WOMEN",
+    ],
+)
+def test_labels_whose_meaning_is_not_in_the_label_stay_unknown(raw: str) -> None:
+    """Every one of these was seen live or is its direct variant, and each is left
+    unknown rather than read into the nearest system that happens to fit."""
+    assert parse_sizes(raw) == ()
+    assert parse_sizes(raw, declared_system=SizeSystem.us) == ()
+
+
+def test_a_prefix_on_a_number_is_still_read_when_it_looks_like_a_qualifier() -> None:
+    """ "EU-38" matches the letter-and-qualifier shape; its letters are a system,
+    not a size, and it is read as one."""
+    assert parse_sizes("EU-38") == (ParsedSize(system=SizeSystem.eu, value="38"),)

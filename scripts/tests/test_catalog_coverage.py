@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime
 
 import pytest
-from sqlalchemy import TextClause, delete, text
+from sqlalchemy import TextClause, delete, select, text
 from sqlalchemy.orm import Session
 
 from api.genesis_api.models import Brand, Offer, OfferSize, Product, Retailer
@@ -341,3 +341,32 @@ def test_the_report_keeps_the_c4_signals_apart_from_the_c2_criterion(seeded: Ses
     assert "2 offers have a product with no category at all" in sizes
     assert "Dropped, the measure would read 75.0% instead." in sizes
     assert "not always an ingestion gap" in sizes
+
+
+def test_a_size_stated_in_two_systems_is_still_one_buyable_size(seeded: Session) -> None:
+    """ "M (US 8)" is two rows, alpha M and US 8, and one size to a shopper."""
+    offer_id = seeded.execute(
+        select(Offer.id).where(Offer.source == "coverage-test", Offer.source_id == "a2")
+    ).scalar_one()
+    seeded.add(
+        OfferSize(offer_id=offer_id, size_system=SizeSystem.us, size_value="8", in_stock=True)
+    )
+    seeded.flush()
+
+    size_picture = catalog_coverage.measure_sizes(seeded.connection())
+
+    assert size_picture.one_size_offers == 2, "a2 is still buyable in exactly one size"
+
+
+def test_two_buyable_sizes_in_one_system_are_two_sizes(seeded: Session) -> None:
+    offer_id = seeded.execute(
+        select(Offer.id).where(Offer.source == "coverage-test", Offer.source_id == "a2")
+    ).scalar_one()
+    seeded.add(
+        OfferSize(offer_id=offer_id, size_system=SizeSystem.alpha, size_value="XL", in_stock=True)
+    )
+    seeded.flush()
+
+    size_picture = catalog_coverage.measure_sizes(seeded.connection())
+
+    assert size_picture.one_size_offers == 1, "a2 now has L and XL, leaving d2"

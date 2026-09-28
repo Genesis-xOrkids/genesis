@@ -188,11 +188,52 @@ time and prices each case from its transcript ([[evals-as-gates]]). The price
 table has no entry for `claude-opus-5-5`, the model the reviewer runs on, so
 those cases show tokens with "no price" until one is added.
 
+## 2026-09-28 — search fills its page, and a browse stops leading with free items
+
+PR #63 closes both retrieval defects [[hybrid-catalog-search]] had listed as
+live since 2026-09-05:
+
+- **Short pages.** Colourway folding now runs over every candidate, so a folded
+  colourway is replaced by the next distinct style instead of leaving a gap.
+- **The filters-only fallback.** It no longer orders by price. It puts known in
+  stock first, then lets brands take turns, then shows newest to the catalog
+  first.
+
+The same PR shows a product's best-stocked offer before its cheapest.
+[[catalog-supply]] no longer calls the colourway defect open.
+
+Review found that newest-first alone meant "most recently onboarded storefront
+first", because a storefront is ingested in one transaction. That finding is
+where the brand turns come from. Category precision has not been re-measured on
+the hosted catalog since the change.
+
+## 2026-09-28 — colourway counts come from the catalog
+
+A second review of PR #63 found that brand turns spread one style's colourways
+across the candidate window. A 12-colourway style reported 4 in a broad browse
+and 11 when filtered to its brand. `other_colourways` is now counted in the
+catalog under the search's filters, with one query per page, rather than among
+the candidates ([[hybrid-catalog-search]]). A search now costs one query more.
+The index hook for that page also stopped saying "BM25" (the lexical ranker is
+Postgres `ts_rank`) and "eight distinct styles" (two colourways of a style can
+share a page).
+
+## 2026-09-28 — C2's size gap, measured rather than read
+
+[[catalog-supply]] had called the cause of C2's size gap a reading, not a
+measurement: one-size items shipping as `Default Title`. A label-by-label pass
+over every registered storefront's feed (PR #64) found it was mostly labels the
+parser could not read, and that `Default Title` states no size at all. The page
+now carries the measured shapes and what is left: sizes in systems the enum
+does not have.
+
 ## 2026-09-28 — the builder divided by the part of the repository it changes
 
-`genesis-builder` became `backend-builder`, `web-builder` and `tooling-builder`,
-along the area labels the pull request check already derives
-(`scripts/pr_conventions.py`). Of the 61 pull requests merged by 2026-09-27, 25
+`genesis-builder` became `backend-builder`, `web-builder` and `tooling-builder`.
+They follow the area labels the pull request check derives
+(`scripts/pr_conventions.py`) where it draws them, and divide `scripts/`,
+`evals/` and the root files by name where it does not. Of the 61 pull
+requests merged by 2026-09-27, 25
 were the agent network's own tooling, counted from `gh pr list` by the paths each
 touched, and the tooling ones from #46 to #57 were all built in an interactive
 session: the one builder read `ROADMAP.md` for its acceptance criteria, so
