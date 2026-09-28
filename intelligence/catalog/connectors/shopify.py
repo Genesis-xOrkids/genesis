@@ -32,7 +32,7 @@ from intelligence.catalog.normalized import (
     NormalizedSize,
     SourceRecord,
 )
-from intelligence.catalog.sizes import parse_size
+from intelligence.catalog.sizes import parse_sizes
 
 SOURCE = "shopify"
 
@@ -143,16 +143,14 @@ class ShopifyConnector:
             label = variant.get("title") or variant.get("option1")
             if not label or str(label).lower() == "default title":
                 continue
-            parsed = parse_size(str(label), declared_system=self._declared_system(record))
-            if parsed is None:
-                continue
             available = variant.get("availableForSale")
-            sizes.append(
+            sizes.extend(
                 NormalizedSize(
                     system=parsed.system,
                     value=parsed.value,
                     in_stock=None if available is None else bool(available),
                 )
+                for parsed in parse_sizes(str(label), declared_system=self._declared_system(record))
             )
 
         any_available = [v.get("availableForSale") for v in variants]

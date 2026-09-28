@@ -217,3 +217,12 @@ the candidates ([[hybrid-catalog-search]]). A search now costs one query more.
 The index hook for that page also stopped saying "BM25" (the lexical ranker is
 Postgres `ts_rank`) and "eight distinct styles" (two colourways of a style can
 share a page).
+
+## 2026-09-28 — C2's size gap, measured rather than read
+
+[[catalog-supply]] had called the cause of C2's size gap a reading, not a
+measurement: one-size items shipping as `Default Title`. A label-by-label pass
+over every registered storefront's feed (PR #64) found it was mostly labels the
+parser could not read, and that `Default Title` states no size at all. The page
+now carries the measured shapes and what is left: sizes in systems the enum
+does not have.

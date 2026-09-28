@@ -34,7 +34,7 @@ from intelligence.catalog.normalized import (
     NormalizedSize,
     SourceRecord,
 )
-from intelligence.catalog.sizes import parse_size
+from intelligence.catalog.sizes import parse_sizes
 
 
 @dataclass(frozen=True)
@@ -186,9 +186,7 @@ class AffiliateFeedConnector:
         sizes = tuple(
             NormalizedSize(system=parsed.system, value=parsed.value)
             for label in (_text(row.get(columns.sizes)) or "").split(columns.size_delimiter)
-            if label.strip()
-            and (parsed := parse_size(label.strip(), declared_system=columns.declared_size_system))
-            is not None
+            for parsed in parse_sizes(label, declared_system=columns.declared_size_system)
         )
 
         offer = NormalizedOffer(
