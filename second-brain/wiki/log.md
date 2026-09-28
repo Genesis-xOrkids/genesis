@@ -187,3 +187,33 @@ nothing recording what they spent. `evals/agents/run.py` now runs three at a
 time and prices each case from its transcript ([[evals-as-gates]]). The price
 table has no entry for `claude-opus-5-5`, the model the reviewer runs on, so
 those cases show tokens with "no price" until one is added.
+
+## 2026-09-28 — search fills its page, and a browse stops leading with free items
+
+PR #63 closes both retrieval defects [[hybrid-catalog-search]] had listed as
+live since 2026-09-05:
+
+- **Short pages.** Colourway folding now runs over every candidate, so a folded
+  colourway is replaced by the next distinct style instead of leaving a gap.
+- **The filters-only fallback.** It no longer orders by price. It puts known in
+  stock first, then lets brands take turns, then shows newest to the catalog
+  first.
+
+The same PR shows a product's best-stocked offer before its cheapest.
+[[catalog-supply]] no longer calls the colourway defect open.
+
+Review found that newest-first alone meant "most recently onboarded storefront
+first", because a storefront is ingested in one transaction. That finding is
+where the brand turns come from. Category precision has not been re-measured on
+the hosted catalog since the change.
+
+## 2026-09-28 — colourway counts come from the catalog
+
+A second review of PR #63 found that brand turns spread one style's colourways
+across the candidate window. A 12-colourway style reported 4 in a broad browse
+and 11 when filtered to its brand. `other_colourways` is now counted in the
+catalog under the search's filters, with one query per page, rather than among
+the candidates ([[hybrid-catalog-search]]). A search now costs one query more.
+The index hook for that page also stopped saying "BM25" (the lexical ranker is
+Postgres `ts_rank`) and "eight distinct styles" (two colourways of a style can
+share a page).
