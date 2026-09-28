@@ -25,6 +25,7 @@ from intelligence.catalog.connectors.shopify_public import (
     strip_html,
 )
 from intelligence.catalog.money import FxRates
+from intelligence.catalog.normalized import NormalizedOffer
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 RATES = FxRates(as_of=datetime.datetime(2026, 9, 3, tzinfo=datetime.UTC), usd_per_unit={})
@@ -465,6 +466,21 @@ def test_a_size_is_of_unknown_stock_when_any_variant_carrying_it_is() -> None:
     assert _sizes(record) == {(SizeSystem.alpha, "M"): None}
 
 
+def test_an_offer_cannot_be_built_without_deciding_its_sizes() -> None:
+    """Ingest replaces an offer's stored sizes with the ones it is given, so an
+    offer built with no sizes stated would delete them all."""
+    with pytest.raises(TypeError, match="sizes"):
+        NormalizedOffer(  # type: ignore[call-arg]
+            source="shopify-public:example.test",
+            source_id="1",
+            product_source_id="1",
+            retailer_name="Example",
+            url="https://example.test/products/x",
+            price_amount_minor=1000,
+            currency="USD",
+        )
+
+
 def test_a_single_default_title_variant_states_no_size() -> None:
     """ "Default Title" says the listing has no options, not that the garment is
     one size. This live Colorful Standard 3-pack is filed under a product type
@@ -562,19 +578,35 @@ def test_a_waist_alone_is_not_read_in_the_stores_system() -> None:
     assert _sizes(record) == {}
 
 
-def test_an_inseam_written_with_an_inch_mark_still_pairs_with_the_waist() -> None:
-    record = {
+def _pant(size: str, length: str) -> dict[str, Any]:
+    return {
         "id": 908,
         "title": "Slim Chino",
         "handle": "slim-chino",
         "product_type": "Pants",
         "options": [
-            {"name": "Size", "position": 1, "values": ["30"]},
-            {"name": "Length", "position": 2, "values": ['32"']},
+            {"name": "Size", "position": 1, "values": [size]},
+            {"name": "Length", "position": 2, "values": [length]},
         ],
-        "variants": [_variant(1, '30 / 32"', "30", '32"', available=True)],
+        "variants": [_variant(1, f"{size} / {length}", size, length, available=True)],
     }
-    assert _sizes(record) == {(SizeSystem.waist_inseam, "30x32"): True}
+
+
+@pytest.mark.parametrize("length", ["32", '32"', "32\u201d", "32 in", "32 In."])
+def test_an_inseam_with_its_unit_still_pairs_with_the_waist(length: str) -> None:
+    assert _sizes(_pant("30", length)) == {(SizeSystem.waist_inseam, "30x32"): True}
+
+
+def test_a_size_too_small_to_be_a_waist_is_not_paired_with_the_inseam() -> None:
+    """A women's 12 in a 30" inseam is a US 12, not a 12-inch waist."""
+    assert _sizes(_pant("12", "30")) == {(SizeSystem.us, "12"): True}
+
+
+@pytest.mark.parametrize("length", ["Regular", "32 cm", "50"])
+def test_a_number_that_could_be_a_waist_is_unknown_when_nothing_pairs_it(length: str) -> None:
+    """Beside a cut, a unit that is not inches, or an inseam no one has, "30" is a
+    waist or a US 30 and the feed does not say which."""
+    assert _sizes(_pant("30", length)) == {}
 
 
 def test_a_numeric_size_beside_a_cut_keeps_the_stores_system() -> None:

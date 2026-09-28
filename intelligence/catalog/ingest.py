@@ -1,9 +1,14 @@
 """Catalog ingestion: connector output into the database.
 
-Everything here goes through the one write door. There is no bespoke INSERT for
-products, no second path for offers, and no per-source column: a connector's
-output becomes write specs, and the writer upserts them on their natural keys.
-That is what makes a re-sync idempotent rather than duplicating the catalog.
+Every insert and update here goes through the one write door. There is no
+bespoke INSERT for products, no second path for offers, and no per-source
+column: a connector's output becomes write specs, and the writer upserts them on
+their natural keys. That is what makes a re-sync idempotent rather than
+duplicating the catalog.
+
+The one statement that does not is the delete in :func:`_retire_sizes`. The
+writer only upserts, and an offer's sizes are a set the source restates in full
+each run, so the sizes it stopped stating are removed beside the writer.
 
 Failures are quarantined, never dropped. A run reports what it wrote and what it
 could not read, so a source changing shape shows up as a number instead of as a
@@ -42,7 +47,8 @@ def slugify(name: str) -> str:
 
 @dataclass
 class IngestReport:
-    """What one run did. Every number here is a count of rows actually written."""
+    """What one run did. Every number here counts rows actually written, except
+    ``sizes_retired``, which counts size rows deleted."""
 
     products_written: int = 0
     offers_written: int = 0
@@ -61,6 +67,11 @@ def ingest(session: Session, result: NormalizationResult) -> IngestReport:
     Ordered deliberately: brands and retailers first because products and offers
     reference them, then products, then offers once product ids exist. The writer
     does not reorder specs, so the ordering is stated here rather than inferred.
+
+    Each offer's ``sizes`` must be its complete set: the stored sizes of every
+    offer written here are replaced by it, and a size it omits is deleted. A
+    caller that updates an offer without knowing its sizes (a price or stock
+    recheck) must not come through here.
     """
     report = IngestReport()
 

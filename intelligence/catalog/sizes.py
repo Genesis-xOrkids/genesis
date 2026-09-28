@@ -86,14 +86,25 @@ _QUALIFIED = re.compile(
 )
 # The qualifiers that restate a letter size rather than change it: a number in a
 # named system, one size ("US 8") or a range of them ("US 10-13"), or after a
-# dash a bare measurement ("36", Taylor Stitch's chest; "30", Marine Layer's
-# inseam). A word ("Petite", "Tall") changes the garment, and a bare number in
+# dash a bare body measurement in inches ("36", Taylor Stitch's chest; "30",
+# Marine Layer's inseam). A word ("Petite", "Tall") changes the garment, and a bare number in
 # brackets ("(4/5)", "(6)") is the same size in a system the label does not name
 # - how Stelle writes girls' sizes - so neither is read.
 _IN_A_SYSTEM = re.compile(
     rf"^(?P<system>[a-z]{{2,3}})\s*(?P<value>{_NUMBER})(?P<range>\s*-\s*{_NUMBER})?$"
 )
 _MEASUREMENT = re.compile(rf"^{_NUMBER}$")
+# Two digits for a waist; an inseam may carry its unit, straight or curly.
+_WAIST = re.compile(r"^\d{2}$")
+_INSEAM = re.compile(r'^(?P<inches>\d{2})\s*(?:"|\u201d|in\.?|inches)?$')
+
+# Inches a person could measure, so a number is read as a waist, an inseam or a
+# chest only inside them: "12" beside a 30" inseam is a women's size 12, not a
+# 12-inch waist, and "XS - 4" is a girls' size, not a 4-inch chest.
+_WAIST_INCHES = (22, 56)
+_INSEAM_INCHES = (24, 38)
+# After a dash: Marine Layer's inseams (30-34) to Taylor Stitch's chests (36-46).
+_MEASUREMENT_INCHES = (24, 60)
 
 
 @dataclass(frozen=True)
@@ -127,14 +138,10 @@ def parse_sizes(raw: str, *, declared_system: SizeSystem | None = None) -> tuple
         if facts:
             return facts
 
-    waist_inseam = _WAIST_INSEAM.match(text)
-    if waist_inseam:
-        return (
-            ParsedSize(
-                system=SizeSystem.waist_inseam,
-                value=f"{waist_inseam.group('waist')}x{waist_inseam.group('inseam')}",
-            ),
-        )
+    pair = _WAIST_INSEAM.match(text)
+    if pair:
+        paired = waist_inseam(pair.group("waist"), pair.group("inseam"))
+        return (paired,) if paired else ()
 
     prefixed = _PREFIXED.match(text)
     if prefixed:
@@ -150,6 +157,27 @@ def parse_sizes(raw: str, *, declared_system: SizeSystem | None = None) -> tuple
         return (ParsedSize(system=declared_system, value=_trim_number(text)),)
 
     return ()
+
+
+def waist_inseam(waist: str, inseam: str) -> ParsedSize | None:
+    """One waist-inseam size from its two numbers, when both are plausible inches."""
+    inseam_match = _INSEAM.match(inseam.strip().lower())
+    if not _WAIST.match(waist.strip()) or inseam_match is None:
+        return None
+    inches = inseam_match.group("inches")
+    if not (_within(waist, _WAIST_INCHES) and _within(inches, _INSEAM_INCHES)):
+        return None
+    return ParsedSize(system=SizeSystem.waist_inseam, value=f"{waist.strip()}x{inches}")
+
+
+def could_be_a_waist(label: str) -> bool:
+    """Whether a bare number is in the range a waist is measured in."""
+    text = label.strip()
+    return bool(_WAIST.match(text)) and _within(text, _WAIST_INCHES)
+
+
+def _within(number: str, inches: tuple[int, int]) -> bool:
+    return inches[0] <= float(number) <= inches[1]
 
 
 def _alpha(text: str) -> ParsedSize | None:
@@ -183,7 +211,11 @@ def _qualified(match: re.Match[str]) -> tuple[ParsedSize, ...]:
         if in_a_system.group("range"):
             return (alpha,)
         return (alpha, ParsedSize(system=system, value=_trim_number(in_a_system.group("value"))))
-    if match.group("after") and _MEASUREMENT.match(qualifier):
+    if (
+        match.group("after")
+        and _MEASUREMENT.match(qualifier)
+        and _within(qualifier, _MEASUREMENT_INCHES)
+    ):
         return (alpha,)
     return ()
 

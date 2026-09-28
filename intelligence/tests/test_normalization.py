@@ -347,6 +347,14 @@ def test_unparseable_sizes_return_nothing() -> None:
         # run "30-30" through "34-32", Colorful Standard's socks "36-40".
         "30-32",
         "36-40",
+        # A number after a dash too small to be a chest or an inseam is a size in
+        # a system the label does not name: a girls' "XS - 4", or "M - 8".
+        "XS - 4",
+        "M - 8",
+        # Waist and inseam in one label, where one number is no waist or inseam
+        # a person has: a women's 12 beside a 30" inseam, a 50" inseam.
+        "12x30",
+        "W30 L50",
         # Systems the enum does not have: bra band and cup, kids' ages, a length
         # letter, a width letter, and a size stated for men and women at once.
         "34B",

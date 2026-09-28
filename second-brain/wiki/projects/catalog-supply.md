@@ -95,7 +95,7 @@ option read as the size (Girlfriend's leggings). The single-variant `Default
 Title` shape accounted for ~310 offers, and it stays unknown: it says the listing
 has no options, not that the garment is one size, and one of the sampled ones is
 a sock 3-pack filed under a product type ending `/M` ([[null-means-unknown]]).
-Reading the unambiguous shapes moves the sample to 86.5%, an estimated ~86% on the
+Reading the unambiguous shapes moves the sample to 86.4%, an estimated ~86% on the
 hosted catalog, after a re-ingest that also retires size rows the source no longer
 states (PR #64). What remains is mostly sizes in systems the enum does not have —
 girls' sizes written `XS (4/5)` or `4T` (~1,200 offers), bra band and cup (~205),

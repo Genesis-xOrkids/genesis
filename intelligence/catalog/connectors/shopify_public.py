@@ -42,7 +42,7 @@ from intelligence.catalog.normalized import (
     NormalizedSize,
     SourceRecord,
 )
-from intelligence.catalog.sizes import ParsedSize, parse_sizes
+from intelligence.catalog.sizes import ParsedSize, could_be_a_waist, parse_sizes, waist_inseam
 
 _HTML_TAG = re.compile(r"<[^>]+>")
 _WHITESPACE = re.compile(r"\s+")
@@ -424,13 +424,16 @@ class ShopifyPublicConnector:
 
         inseam_index = self._option_index(record, _INSEAM_OPTION_NAMES)
         if inseam_index is not None:
-            # A waist and an inseam in two options are one waist-inseam size,
-            # read as the label a denim tag prints. A cut ("Regular", "Short")
-            # or a letter size beside the inseam leaves the size to stand alone.
-            inseam = str(variant.get(f"option{inseam_index}") or "").strip().removesuffix('"')
-            combined = parse_sizes(f"W{label} L{inseam}")
-            if combined and combined[0].system is SizeSystem.waist_inseam:
-                return combined
+            # A waist and an inseam in two options are one waist-inseam size.
+            inseam = str(variant.get(f"option{inseam_index}") or "")
+            paired = waist_inseam(label, inseam)
+            if paired is not None:
+                return (paired,)
+            # Beside a cut ("Regular") a number that could be a waist could
+            # equally be a size, and nothing says which. A letter size, or a
+            # number no waist is measured in ("8" beside "Short"), reads alone.
+            if could_be_a_waist(label):
+                return ()
 
         # A number in an option named for the waist is a waist, which no system
         # the store declares describes.

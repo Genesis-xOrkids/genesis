@@ -79,9 +79,18 @@ ANY_SIZE = "select distinct offer_id from offer_sizes"
 BUYABLE_SIZES = (
     "select distinct offer_id from offer_sizes where in_stock is true or in_stock is null"
 )
+# Counted per size system, because one label can state one size in two systems:
+# "M (US 8)" is two rows, alpha M and US 8, for a single size. An offer is
+# buyable in exactly one size when no system holds more than one buyable row.
+# The rows do not record which label they came from, so an offer whose only
+# buyable sizes are "S" and a separately labelled "US 10" counts as one size too.
+# Of 36,968 sampled offers on 2026-09-27, four mixed systems across labels and
+# none of them was that case (PR #64).
 ONE_BUYABLE_SIZE = (
-    "select offer_id from offer_sizes where in_stock is true or in_stock is null "
-    "group by offer_id having count(*) = 1"
+    "select offer_id from ("
+    "select offer_id, size_system, count(*) as sizes from offer_sizes "
+    "where in_stock is true or in_stock is null group by offer_id, size_system"
+    ") as per_system group by offer_id having max(sizes) = 1"
 )
 
 # Every offer with its category and the three facts about its sizes that C2 and
@@ -119,7 +128,7 @@ STOCK_NOTE = """\
 milestone gated on it could never close. These three are here because the first is what a
 size-filtered search can actually return (`intelligence/catalog/search.py`), and because the
 first hides the third - one size left counts the same as a full size run, while a shopper asks
-for their own size. They are the numbers to watch once C4 starts, and on their own
+for their own size. One size is counted per size system, so "M (US 8)" is one size, not two. They are the numbers to watch once C4 starts, and on their own
 say nothing about whether C2 is met."""
 
 # The prose under the size measure: which offers it is over, and what an offer
