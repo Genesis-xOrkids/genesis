@@ -173,3 +173,22 @@ Of the ten reviewer runs recorded since 2026-09-11, four were cut off by the
 subscription's session limit, and a fifth failed on a billing error on
 2026-09-13. Nothing had recorded that fifth run's end, so it was closed by hand
 at the moment it failed.
+
+## 2026-09-28 — search fills its page, and a browse stops leading with free items
+
+PR #63 closes both retrieval defects [[hybrid-catalog-search]] had listed as
+live since 2026-09-05:
+
+- **Short pages.** Colourway folding now runs over every candidate, so a folded
+  colourway is replaced by the next distinct style instead of leaving a gap.
+- **The filters-only fallback.** It no longer orders by price. It puts known in
+  stock first, then lets brands take turns, then shows newest to the catalog
+  first.
+
+The same PR shows a product's best-stocked offer before its cheapest.
+[[catalog-supply]] no longer calls the colourway defect open.
+
+Review found that newest-first alone meant "most recently onboarded storefront
+first", because a storefront is ingested in one transaction. That finding is
+where the brand turns come from. Category precision has not been re-measured on
+the hosted catalog since the change.

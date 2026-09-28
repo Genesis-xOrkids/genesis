@@ -347,6 +347,26 @@ def _brand_id(catalog: Session, brand: str) -> int:
     ).scalar_one()
 
 
+def _extra_offer(
+    product_id: int, retailer_id: int, n: int, price_usd_cents: int, *, in_stock: bool
+) -> WriteSpec:
+    """A further offer for an existing product, as a second retailer would add."""
+    return WriteSpec(
+        entity="Offer",
+        natural_key={"source": "searchtest-extra", "source_id": f"{product_id}-{n}"},
+        values={
+            "provenance": Provenance.feed_sync,
+            "product_id": product_id,
+            "retailer_id": retailer_id,
+            "url": f"https://example.test/extra/{product_id}/{n}",
+            "price_amount_minor": price_usd_cents,
+            "currency": "USD",
+            "price_usd_cents": price_usd_cents,
+            "in_stock": in_stock,
+        },
+    )
+
+
 def test_filters_only_fills_the_page_with_distinct_products_not_the_cheapest(
     catalog: Session,
 ) -> None:
@@ -377,20 +397,7 @@ def test_filters_only_fills_the_page_with_distinct_products_not_the_cheapest(
     write(
         catalog,
         [
-            WriteSpec(
-                entity="Offer",
-                natural_key={"source": "searchtest-extra", "source_id": f"{product_id}-{n}"},
-                values={
-                    "provenance": Provenance.feed_sync,
-                    "product_id": product_id,
-                    "retailer_id": retailer_id,
-                    "url": f"https://example.test/extra/{product_id}/{n}",
-                    "price_amount_minor": price + n,
-                    "currency": "USD",
-                    "price_usd_cents": price + n,
-                    "in_stock": True,
-                },
-            )
+            _extra_offer(product_id, retailer_id, n, price + n, in_stock=True)
             for product_id, retailer_id, price in offers
             for n in (1, 2)
         ],
@@ -434,3 +441,64 @@ def test_filters_only_puts_known_in_stock_before_unknown_before_sold_out(
     )
 
     assert [r.in_stock for r in results] == [True, True, None, False]
+
+
+def test_filters_only_spreads_the_page_across_brands(catalog: Session) -> None:
+    """The ingest runner writes each storefront in one transaction, so a whole
+    storefront shares one created_at. Newest first on its own would fill a
+    browse with whichever storefront was onboarded last."""
+    for brand in ("Earlywear", "Latewear"):
+        ingest(
+            catalog,
+            _connector().normalize(
+                [
+                    _row(f"{brand}{i}", f"{brand} {name}", brand, "Womens Tops", "50.00")
+                    for i, name in enumerate(["Shirt", "Tee", "Tank", "Blouse", "Polo"])
+                ]
+            ),
+        )
+        catalog.flush()
+
+    results, _ = search_catalog(
+        catalog.connection(),
+        filters=SearchFilters(
+            brand_ids=(_brand_id(catalog, "Earlywear"), _brand_id(catalog, "Latewear"))
+        ),
+        limit=4,
+    )
+
+    assert [r.brand for r in results].count("Earlywear") == 2
+    assert [r.brand for r in results].count("Latewear") == 2
+
+
+def test_a_product_shows_its_buyable_offer_not_a_cheaper_sold_out_one(
+    catalog: Session,
+) -> None:
+    """The offer shown is the one the shopper clicks. A cheaper offer that is
+    sold out is not a price they can pay, so in stock wins over cheaper, on the
+    ranked path and on the filters-only path alike."""
+    ingest(
+        catalog,
+        _connector().normalize(
+            [_row("BO1", "Buyable Overshirt", "Offerwear", "Womens Shirts", "100.00")]
+        ),
+    )
+    catalog.flush()
+    product_id, retailer_id = catalog.execute(
+        text(
+            "select o.product_id, o.retailer_id from offers o"
+            " join products p on p.id = o.product_id where p.source_id = 'BO1'"
+        )
+    ).one()
+    write(catalog, [_extra_offer(product_id, retailer_id, 1, 8000, in_stock=False)])
+    catalog.flush()
+
+    ranked, _ = search_catalog(catalog.connection(), query="buyable overshirt")
+    browsed, _ = search_catalog(
+        catalog.connection(), filters=SearchFilters(brand_ids=(_brand_id(catalog, "Offerwear"),))
+    )
+
+    for results in (ranked, browsed):
+        overshirt = next(r for r in results if r.product_id == product_id)
+        assert overshirt.in_stock is True
+        assert overshirt.price_usd_cents == 10000
