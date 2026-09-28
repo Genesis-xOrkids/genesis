@@ -90,6 +90,11 @@ class NormalizedOffer:
     ``price_usd_cents`` is present only when a rate was available; when it is
     null the listed amount and currency still stand on their own, which is why
     they are the required fields and the conversion is not.
+
+    ``sizes`` is the offer's complete set of sizes as the source states them
+    now, and ingest replaces the stored set with it: a size missing here is
+    deleted. It has no default so that no caller can write an offer without
+    deciding what its sizes are; one that knows none passes ``()`` and means it.
     """
 
     source: str
@@ -99,12 +104,12 @@ class NormalizedOffer:
     url: str
     price_amount_minor: int
     currency: str
+    sizes: tuple[NormalizedSize, ...]
     affiliate_url: str | None = None
     sale_price_amount_minor: int | None = None
     price_usd_cents: int | None = None
     fx_rate_at: datetime.datetime | None = None
     in_stock: bool | None = None
-    sizes: tuple[NormalizedSize, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -358,3 +358,68 @@ def test_both_connectors_produce_the_same_canonical_shape(session: Session) -> N
     by_source = {row.source for row in rows}
     assert by_source == {"shopify", "rakuten-test"}
     assert all(row.category is not None for row in rows)
+
+
+def _sizes_of(session: Session, offer_id: int | None) -> dict[tuple[SizeSystem, str], bool | None]:
+    table = OfferSize.__table__
+    rows = session.execute(
+        select(table.c.size_system, table.c.size_value, table.c.in_stock).where(
+            table.c.offer_id == offer_id
+        )
+    ).all()
+    return {(row.size_system, row.size_value): row.in_stock for row in rows}
+
+
+def test_a_size_the_source_stops_stating_is_retired(session: Session) -> None:
+    """The writer upserts, so without retirement a size read once stays forever,
+    frozen at its last stock, and a size filter keeps matching it."""
+    connector = _feed()
+    ingest(session, connector.normalize(FEED_ROWS))
+    offer_id = offer_id_for(session, "rakuten-test", "NAP-1")
+    assert set(_sizes_of(session, offer_id)) == {
+        (SizeSystem.alpha, "XS"),
+        (SizeSystem.alpha, "S"),
+        (SizeSystem.alpha, "M"),
+    }
+
+    report = ingest(session, connector.normalize([{**FEED_ROWS[0], "size": "S,M"}]))
+
+    assert set(_sizes_of(session, offer_id)) == {(SizeSystem.alpha, "S"), (SizeSystem.alpha, "M")}
+    assert report.sizes_retired == 1
+
+
+def test_an_offer_whose_sizes_are_no_longer_read_keeps_none(session: Session) -> None:
+    """Unknown is no row. An offer the source now states no readable size for
+    carries no size, not the last one it was read with."""
+    connector = _feed()
+    ingest(session, connector.normalize(FEED_ROWS))
+    offer_id = offer_id_for(session, "rakuten-test", "NAP-1")
+
+    ingest(session, connector.normalize([{**FEED_ROWS[0], "size": "please select"}]))
+
+    assert _sizes_of(session, offer_id) == {}
+
+
+def test_retiring_sizes_touches_only_the_offers_in_the_run(session: Session) -> None:
+    ingest(session, _shopify().normalize(SHOPIFY_RECORDS))
+    other_offer_id = offer_id_for(session, "shopify", "gid://shopify/Product/1@Ganni Store")
+    before = _sizes_of(session, other_offer_id)
+
+    connector = _feed()
+    ingest(session, connector.normalize(FEED_ROWS))
+    ingest(session, connector.normalize([{**FEED_ROWS[0], "size": "S"}]))
+
+    assert before
+    assert _sizes_of(session, other_offer_id) == before
+
+
+def test_a_second_identical_run_retires_nothing(session: Session) -> None:
+    connector = _feed()
+    ingest(session, connector.normalize(FEED_ROWS))
+    offer_id = offer_id_for(session, "rakuten-test", "NAP-1")
+    first = _sizes_of(session, offer_id)
+
+    report = ingest(session, connector.normalize(FEED_ROWS))
+
+    assert report.sizes_retired == 0
+    assert _sizes_of(session, offer_id) == first

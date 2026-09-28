@@ -79,9 +79,18 @@ ANY_SIZE = "select distinct offer_id from offer_sizes"
 BUYABLE_SIZES = (
     "select distinct offer_id from offer_sizes where in_stock is true or in_stock is null"
 )
+# Counted per size system, because one label can state one size in two systems:
+# "M (US 8)" is two rows, alpha M and US 8, for a single size. An offer is
+# buyable in exactly one size when no system holds more than one buyable row.
+# The rows do not record which label they came from, so an offer whose only
+# buyable sizes are "S" and a separately labelled "US 10" counts as one size too.
+# Of 36,968 sampled offers on 2026-09-27, four mixed systems across labels and
+# none of them was that case (PR #64).
 ONE_BUYABLE_SIZE = (
-    "select offer_id from offer_sizes where in_stock is true or in_stock is null "
-    "group by offer_id having count(*) = 1"
+    "select offer_id from ("
+    "select offer_id, size_system, count(*) as sizes from offer_sizes "
+    "where in_stock is true or in_stock is null group by offer_id, size_system"
+    ") as per_system group by offer_id having max(sizes) = 1"
 )
 
 # Every offer with its category and the three facts about its sizes that C2 and
@@ -119,7 +128,7 @@ STOCK_NOTE = """\
 milestone gated on it could never close. These three are here because the first is what a
 size-filtered search can actually return (`intelligence/catalog/search.py`), and because the
 first hides the third - one size left counts the same as a full size run, while a shopper asks
-for their own size. They are the numbers to watch once C4 starts, and on their own
+for their own size. One size is counted per size system, so "M (US 8)" is one size, not two. They are the numbers to watch once C4 starts, and on their own
 say nothing about whether C2 is met."""
 
 # The prose under the size measure: which offers it is over, and what an offer
@@ -134,11 +143,12 @@ SIZE_NOTES = """\
   known-unsized: dropping them would let an unresolved category hide a missing size, and would
   make this measure rise as C2's category measure fell.
   Dropped, the measure would read {share_without_unplaced} instead.
-- An offer with no size row is not always an ingestion gap. The connector writes no size row for
-  a single-variant product, the `Default Title` shape a genuinely one-size item ships in, and
-  none for a label `parse_size` cannot read, a bare numeric with no declared system being
-  ambiguous on purpose (`intelligence/catalog/connectors/shopify_public.py`,
-  `intelligence/catalog/sizes.py`).
+- An offer with no size row is not always an ingestion gap. The connector reads sizes only from
+  an option named for the size, so it writes none for a single-variant `Default Title` product,
+  which states that the listing has no options rather than that the garment is one size, and
+  none for a label `parse_sizes` cannot read: a bare numeric with no declared system, or a size
+  in a system the enum does not have (kids' ages, bra band and cup), stays unknown on purpose
+  (`intelligence/catalog/connectors/shopify_public.py`, `intelligence/catalog/sizes.py`).
 - A product row is one colourway of one style, so the product count overstates the options an
   outfit can draw on. The title count beside it is the nearer figure (C3,
   `second-brain/wiki/concepts/hybrid-catalog-search.md`).
