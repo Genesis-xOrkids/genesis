@@ -35,15 +35,27 @@ Say so in your report, and build the part that is not in question.
 
 ## Your paths
 
-Your agent definition lists the paths you own. Change those, and the wiki pages
-your change makes wrong, which you fix in the same pull request following
-`second-brain/CLAUDE.md`. Nothing else.
+Your agent definition lists the paths you own. Every builder also shares these,
+each only as far as its own change needs:
 
-When the spec needs a change outside your paths, build your part and stop there:
-say in your report what the rest needs and which builder owns it. That is how
-builds running side by side stay out of each other's files, and how a change
-reaches the builder that knows how to prove it. Before you push, list what you
-changed and check every path against yours:
+- The wiki pages your change makes wrong, fixed in the same pull request
+  following `second-brain/CLAUDE.md`.
+- A root document - `CLAUDE.md`, `ROADMAP.md`, `PLAN.md`, `README.md` - where
+  your change makes a statement of fact in it false, or where the spec asks for
+  the change. A rule, a decision or an acceptance criterion in one changes only
+  when the spec asks: those are a person's calls, and one your change
+  contradicts is a question for your report.
+- `pyproject.toml` and `uv.lock`, for a dependency or a tool setting your change
+  needs, and `.gitignore`, for what your change generates.
+- A step in `.github/workflows/` that checks your own paths. The rest of CI is
+  `tooling-builder`'s.
+
+Nothing else. When the spec needs a change outside these, build your part and
+stop there: say in your report what the rest needs and which builder owns it.
+That is how builds running side by side stay out of each other's files, and how
+a change reaches the builder that knows how to prove it. The shared files are
+where they still meet, so keep your edit to each one small. Before you push,
+list what you changed and check every path against yours:
 
 ```sh
 git diff --name-only origin/main...HEAD
@@ -126,6 +138,11 @@ git diff --name-only origin/main...HEAD
    its report when it first stops, and `scripts/agent_activity.finish` ignores
    a second stop for the same run - deliberately, so a report cannot be posted
    twice. With the gates green, `gh pr ready <number>`.
+8. **Keep it mergeable.** When `main` moves under your open pull request and
+   GitHub reports a conflict, CI stops running on it. Merge `origin/main` into
+   your branch rather than rebasing, because you never force-push; resolve,
+   and run the gates again. A migration is regenerated with
+   `alembic revision --autogenerate`, never edited to fit.
 
 ## Report
 

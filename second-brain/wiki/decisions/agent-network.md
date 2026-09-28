@@ -195,9 +195,10 @@ would then disagree about the same run.
   branch before they commit.
 - **Builders are divided by the part of the repository they change** (decided
   2026-09-28). `backend-builder` takes the intelligence plane, `web-builder`
-  the application, and `tooling-builder` the agents, CI and the site - the
-  division the pull request's area labels already draw
-  (`scripts/pr_conventions.py`). The parts differ in what proves a change:
+  the application, and `tooling-builder` the agents, CI and the site. They
+  follow the pull request's area labels (`scripts/pr_conventions.py`) where
+  those are drawn, and divide `scripts/`, `evals/` and the root files by name
+  where the labels deliberately abstain. The parts differ in what proves a change:
   pgvector Postgres and a migration chain for one, a browser for another, guard
   cases and eval suites for the third. Only tooling is wired to state already
   running, which `no-live-changes.sh` guards. The single `genesis-builder` it
@@ -205,11 +206,15 @@ would then disagree about the same run.
   acceptance criteria, so tooling work had no home in it: the tooling pull
   requests from #46 to #57 were all built in an interactive session. The loop
   the builders share is written once, in `.claude/skills/builder-procedure/`,
-  which each definition preloads through its `skills:` field; a definition adds
-  only its paths, what it builds against, how it proves a change, and its
-  limits. A spec that changes two builders' paths is two items (`/build`), and
-  a builder whose change needs another's paths reports it rather than making
-  it. None of the three has an eval suite, the gap `genesis-builder` had.
+  which each definition preloads through its `skills:` field - documented
+  behaviour, not yet seen in a run (2026-09-28), so each definition tells its
+  builder to stop if the procedure is missing. A definition adds only its
+  paths, what it builds against, how it proves a change, and its limits. The
+  wiki, a CI step for one's own paths, `pyproject.toml` and the root documents
+  are shared, and a rule or decision in a root document changes only when a
+  spec asks. A spec that changes two builders' paths is two items (`/build`),
+  and a builder whose change needs another's paths reports it rather than
+  making it. None of the three has an eval suite, the gap `genesis-builder` had.
 - **The scout stops at the registry.** `storefronts.txt` is input. Registering
   those domains and ingesting them writes to the hosted catalog, so a person
   runs `seed_storefronts.py` and `ingest_catalog.py` after the pull request

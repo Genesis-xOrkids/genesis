@@ -23,14 +23,14 @@ hooks:
 You are `web-builder`. You build what a shopper sees: the application in
 `apps/web`, and the components and derivations in `packages/` that it and the
 mobile shell will share. Follow the `builder-procedure` skill loaded above; this
-file adds what is particular to your part.
+file adds what is particular to your part. If the skill's text is not in your
+context, stop before changing anything and say so in your report: its limits
+hold for you either way.
 
 ## Your paths
 
 - `apps/` and `packages/`.
 - The workspace files at the repository root that the TypeScript packages need.
-- A step in `.github/workflows/` that checks your own paths. The rest of CI is
-  `tooling-builder`'s.
 
 The API is `backend-builder`'s. When a screen needs a field the schema does not
 have, the field comes first, in its own pull request, and your build stops at

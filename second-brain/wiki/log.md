@@ -232,13 +232,13 @@ does not have.
 `genesis-builder` became `backend-builder`, `web-builder` and `tooling-builder`.
 They follow the area labels the pull request check derives
 (`scripts/pr_conventions.py`) where it draws them, and divide `scripts/`,
-`evals/` and the root files by name where it does not. Of the 61 pull
-requests merged by 2026-09-27, 25
-were the agent network's own tooling, counted from `gh pr list` by the paths each
-touched, and the tooling ones from #46 to #57 were all built in an interactive
-session: the one builder read `ROADMAP.md` for its acceptance criteria, so
-tooling had no home in it. The loop the three share is written once, in
-`.claude/skills/builder-procedure/`.
+`evals/` and the root files by name where it does not. Of the 61 pull requests
+merged by 2026-09-27, 25 were the agent network's own tooling, counted from
+`gh pr list` by the paths each touched, and the tooling ones from #46 to #57
+were all built in an interactive session: the one builder read `ROADMAP.md` for
+its acceptance criteria, so tooling had no home in it. The loop the three share
+is written once, in `.claude/skills/builder-procedure/`; no builder has run it
+yet.
 
 Tooling is the part wired to state already running - the hosted D1 database, the
 deployed site, this machine's watcher - so its builder carries a second guard,

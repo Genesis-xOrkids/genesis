@@ -37,7 +37,11 @@ paths is two items: split it, show the user the split, and build them in
 dependency order - the field in the API before the screen that reads it - or
 side by side when neither needs the other, at most two builders at once
 (`docs/agent-network-plan.md` §4.7). Wiki pages decide nothing here: every
-builder fixes the pages its own change makes wrong.
+builder fixes the pages its own change makes wrong. A spec that changes only
+shared files - a root document such as `ROADMAP.md`, or the wiki - goes to the
+builder whose part the change governs: C2's definition of usable size data to
+`backend-builder`, a pull request convention in `CLAUDE.md` to
+`tooling-builder`.
 
 Invoke the Agent tool with that builder's name as `subagent_type`, and give it a
 `name` so you can message it later. Give it the spec in full, the acceptance

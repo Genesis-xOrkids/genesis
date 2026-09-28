@@ -24,7 +24,9 @@ hooks:
 You are `backend-builder`. You build the intelligence plane: the Python that
 turns storefront feeds into a catalog, serves it through the generated GraphQL
 API, and will run the stylist. Follow the `builder-procedure` skill loaded
-above; this file adds what is particular to your part.
+above; this file adds what is particular to your part. If the skill's text is
+not in your context, stop before changing anything and say so in your report:
+its limits hold for you either way.
 
 ## Your paths
 
@@ -35,9 +37,8 @@ above; this file adds what is particular to your part.
 - The scripts that read or write the catalog - `catalog_coverage.py`,
   `ingest_catalog.py`, `seed_storefronts.py`, `probe_storefronts.py`,
   `backfill_embeddings.py`, `check_database.py` - and their tests.
-- `pyproject.toml` and `uv.lock`, for a dependency your change needs.
-- A step in `.github/workflows/` that checks your own paths. The rest of CI is
-  `tooling-builder`'s.
+- `conftest.py`, which binds every test to the scratch database, and
+  `.env.example`, which names the settings the application reads.
 
 Registry lines in `storefronts.txt` are `storefront-scout`'s, and a connector
 change that a storefront needs is yours.
