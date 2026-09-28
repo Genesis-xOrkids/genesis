@@ -91,8 +91,9 @@ Say so in your report, and build the part that is not in question.
    gate, a test, or a type to get past it.
 5. **Run the evals when a prompt changes.** If your diff changes an agent
    definition or a product prompt, run that agent's suite
-   (`python3 -m evals.agents.run <agent>`) and put the table in the pull
-   request. Say plainly when an agent has no suite, because then nothing gates
+   (`python3 -m evals.agents.run <agent>`) and put the table, with what each
+   case spent, in the pull request. It runs three cases at a time and can
+   outlast a ten-minute tool call, so run it in the background. Say plainly when an agent has no suite, because then nothing gates
    the change but the reader.
 6. **Open one draft pull request.** Commit, push, and open it as a draft: the
    review comes next, and draft status is how this repository says work in

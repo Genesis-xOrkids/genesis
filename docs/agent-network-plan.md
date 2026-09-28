@@ -61,7 +61,7 @@ and the session finishes exactly once. Four things stop a larger prompt:
 | `genesis-builder` | **Keep**, and prove it first | The worker everything else depends on, and never run. Two of its steps guard against what the platform now prevents (§3, P3). |
 | `dispatcher` | **Replace** with `lead` | Sonnet at medium effort, one agent per task, finish once: it cannot plan, run work in parallel, or wait for a merge. |
 | `storefront-scout` | **Keep** until C2's targets are met, then remove | Well scoped, and C2 needs about ten storefronts, once. |
-| `eval-runner` | **Keep**, and widen to the product's suites | Its one suite is the reviewer's eight cases. |
+| `eval-runner` | **Removed** (2026-09-28) | No runs in 15 days. It wrapped one command, `python3 -m evals.agents.run`, which the builder and every recorded eval already ran directly; the suites stay, the wrapper goes. |
 | `brain-librarian` | **Remove** | The daily work it was built for did not arrive: one note ever, ten runs to ledger. Keeping the wiki true moves into the pull requests that make it wrong (§4.4). |
 | `catalog-steward` | **Remove** | It reports the freshness of an ingestion nothing schedules, and measures none of C2's targets. Recurring catalog health is C4's, as product code that alerts on the rate (`ROADMAP.md` R5). |
 
@@ -150,7 +150,6 @@ stuck, and the merges if you did not allow them. Nothing else.
 | `genesis-builder` | Opus, high | Turns one item into one pull request, and fixes what review and demonstration find | The lead, or `/build` |
 | `genesis-reviewer` | Opus, xhigh | Reviews a commit against the constitution and the wiki | The lead, `/build`, `/review` |
 | `genesis-verifier` | Sonnet, high | Demonstrates a pull request's acceptance criteria against a running system | The lead, `/build`, or by hand |
-| `eval-runner` | Sonnet, medium | Runs the eval suites a diff affects | The lead, for items that change a prompt or retrieval |
 | `storefront-scout` | Sonnet, medium | Probes storefronts and adds those that pass to the registry | The lead, until C2's targets are met |
 
 `dispatcher` goes: a task with one item is the lead's simplest case. `/review` and
@@ -202,6 +201,10 @@ shows who everything is waiting on.
   part of the librarian's job that mattered.
 - When `main` moves under an open item, merge `origin/main`, regenerate any
   migration with `--autogenerate` rather than editing it, and run the gates again.
+- Its eval step chooses suites by the paths a diff touches: an agent definition,
+  that agent's suite; search, embeddings or `evals/retrieval`, the retrieval
+  suite; once S1 lands, the stylist's prompts, the stylist suite. It compares each
+  result with the baseline the milestone's wiki page records.
 
 **`genesis-reviewer`**
 
@@ -209,13 +212,6 @@ shows who everything is waiting on.
   `gh issue view`, and `sync-raw.sh --check` by absolute path, each with a case in
   `review-readonly-guard.test.sh`.
 - It reviews the commit it is given, and ends with a `Commit:` line.
-
-**`eval-runner`**
-
-- It chooses suites by the paths a diff touches: an agent definition, that agent's
-  suite; search, embeddings or `evals/retrieval`, the retrieval suite; once S1
-  lands, the stylist's prompts, the stylist suite.
-- It compares each result with the baseline the milestone's wiki page records.
 
 **`storefront-scout`**
 
@@ -450,7 +446,7 @@ through**
   leaves it alone; and whether `PushNotification` from a background session
   reaches your phone (§4.8).
 - `.claude/agents/lead.md`: Opus, high effort, with `Agent(genesis-builder,
-  genesis-reviewer, genesis-verifier, eval-runner, storefront-scout)`,
+  genesis-reviewer, genesis-verifier, storefront-scout)`,
   `SendMessage`, `Monitor`, `PushNotification`, `ToolSearch`, `Read`, `Glob`,
   `Grep` and `Bash`. It holds §4.1's loop, §4.3's item, the limits in §4.7 and
   §4.8, and what to do when stuck, and runs each item by following `/build`'s
@@ -483,7 +479,7 @@ through**
 
 ### Phase 4 — Run the demo track through the network
 
-**PR 4.1 — Let the eval-runner run every suite a diff affects** (§4.4).
+**PR 4.1 — Have the builder run every suite a diff affects** (§4.4).
 
 Then dispatch the first real project, with merging allowed. An illustration of the
 plan; the lead derives the real one:
@@ -557,7 +553,6 @@ report; until then these are the questions:
 | `genesis-builder` | Most of its pull requests merge without steering | Cost per merged pull request; review passes per pull request |
 | `genesis-reviewer` | Its blocking findings get fixed rather than dismissed | Findings fixed against findings left |
 | `genesis-verifier` | It catches failures before merge, and *not demonstrable* stays rare | Failed criteria before merge; share not demonstrable |
-| `eval-runner` | Its suites catch regressions, or show parity, when prompts change | Regressions caught |
 
 ---
 

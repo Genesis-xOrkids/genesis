@@ -65,7 +65,6 @@ POLL_SECONDS = 30
 LABEL = "com.genesis.dispatch-watch"
 LAUNCH_AGENT = pathlib.Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 LOG = pathlib.Path.home() / "Library/Logs/genesis-dispatch.log"
-PROJECTS = pathlib.Path.home() / ".claude/projects"
 
 # States `claude agents` reports for a session that is still on its task:
 # running, or waiting on a person (a permission prompt, a question). Anything
@@ -293,17 +292,6 @@ def kept_because(place: pathlib.Path) -> str | None:
     return None
 
 
-def spent(pattern: str, what: str) -> transcript_usage.Usage:
-    """What the one transcript under Claude Code's projects matching `pattern` recorded.
-
-    Raises `UnmeasuredError` when there is not exactly one, or it cannot say.
-    """
-    transcripts = sorted(PROJECTS.glob(pattern))
-    if len(transcripts) != 1:
-        raise transcript_usage.UnmeasuredError(f"{len(transcripts)} transcripts found for {what}")
-    return transcript_usage.read(transcripts[0])
-
-
 def unknown_once(key: str, message: str) -> None:
     """Log why something's tokens are unknown, once per run of the watcher."""
     if key not in UNMEASURED:
@@ -333,7 +321,7 @@ def measure(request_ids: list[str], listing: list[dict[str, Any]], moment: dt.da
             session_id = session.get("sessionId")
             if not session_id:
                 raise transcript_usage.UnmeasuredError("`claude agents` gave it no session id")
-            usage = spent(f"*/{session_id}.jsonl", f"session {session_id}")
+            usage = transcript_usage.spent(f"*/{session_id}.jsonl", f"session {session_id}")
         except transcript_usage.UnmeasuredError as reason:
             unknown_once(
                 task["request_id"], f"task #{task['id']}: its tokens are unknown: {reason}"
@@ -351,7 +339,7 @@ def measure_runs(moment: dt.datetime) -> None:
     """
     for run in agent_activity.unmeasured(moment):
         try:
-            usage = spent(
+            usage = transcript_usage.spent(
                 f"*/{run['session_id']}/subagents/agent-{run['agent_id']}.jsonl",
                 f"agent {run['agent_id']}",
             )
