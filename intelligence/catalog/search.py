@@ -105,9 +105,9 @@ class SearchResult:
     in_stock: bool | None
     score: float = 0.0
     matched_by: tuple[str, ...] = ()
-    # How many further colourways of this style were collapsed behind this
-    # result, so the agent can say "also in four other colours" rather than
-    # letting the shopper discover it by clicking through.
+    # How many further colourways of this style the catalog holds under the
+    # same filters, beyond those on the page, so the agent can say "also in four
+    # other colours" rather than letting the shopper discover it by clicking.
     other_colourways: int = 0
 
 
@@ -323,7 +323,7 @@ def search_catalog(
         diagnostics.queries += 1
         rows = connection.execute(statement).mappings().all()
         diagnostics.notes.append("fell back to filters only")
-        return _hydrate(connection, rows, {}, diagnostics, limit), diagnostics
+        return _hydrate(connection, rows, {}, filters, diagnostics, limit), diagnostics
 
     diagnostics.fused = len(fused)
 
@@ -343,13 +343,14 @@ def search_catalog(
     )
     diagnostics.queries += 1
     rows = connection.execute(statement).mappings().all()
-    return _hydrate(connection, rows, fused, diagnostics, limit), diagnostics
+    return _hydrate(connection, rows, fused, filters, diagnostics, limit), diagnostics
 
 
 def _hydrate(
     connection: Connection,
     rows: Sequence[Any],
     scored: dict[int, tuple[float, tuple[str, ...]]],
+    filters: SearchFilters,
     diagnostics: SearchDiagnostics,
     limit: int,
 ) -> list[SearchResult]:
@@ -364,10 +365,10 @@ def _hydrate(
     tie-break - and the whole order when nothing was scored. The colourway
     collapse runs over every candidate, not over a page cut beforehand, so
     folded colourways are replaced by the next distinct styles rather than
-    leaving holes, and the folded counts include colourways below the page.
+    leaving holes.
 
-    One image query for the page rather than one per product: the same
-    one-query-per-relationship rule the GraphQL loader follows.
+    One image query and one colourway count for the page rather than one per
+    product: the same one-query-per-relationship rule the GraphQL loader follows.
     """
     shown: dict[int, Any] = {}
     for row in rows:
@@ -415,11 +416,12 @@ def _hydrate(
             images.setdefault(image["product_id"], image["source_url"])
         for result in page:
             result.image_url = images.get(result.product_id)
+        _count_colourways(connection, page, filters, diagnostics)
     return page
 
 
-def _style_key(result: SearchResult) -> tuple[str, str]:
-    """What makes two results the same garment in different colours.
+def _style_key(title: str, brand: str | None) -> tuple[str, str]:
+    """What makes two products the same garment in different colours.
 
     Colourway splitting gives each colour its own product with its own id, so
     identity has to come from the brand and the style name rather than the row.
@@ -427,30 +429,72 @@ def _style_key(result: SearchResult) -> tuple[str, str]:
     ("Barrel Jean | Washed Black") and leaving it in makes every colourway look
     like a different style, which is exactly the collapse this is trying to do.
     """
-    stem = _TITLE_SEPARATOR.split(result.title)[0].strip().lower()
-    return ((result.brand or "").lower(), stem)
+    stem = _TITLE_SEPARATOR.split(title)[0].strip().lower()
+    return ((brand or "").lower(), stem)
 
 
 def _collapse_colourways(results: list[SearchResult], limit: int) -> list[SearchResult]:
-    """Keep the best few colourways per style, and count the rest.
+    """Keep the best few colourways per style, up to a page.
 
     Order is preserved, so the highest-ranked colourway of a style is the one
-    kept. Nothing is discarded silently: the survivors carry a count of what was
-    folded behind them.
+    kept. What was folded is counted afterwards by `_count_colourways`.
     """
     kept: list[SearchResult] = []
     seen: dict[tuple[str, str], int] = {}
-    folded: dict[tuple[str, str], int] = {}
-
     for result in results:
-        key = _style_key(result)
-        count = seen.get(key, 0)
-        if count < MAX_PER_STYLE and len(kept) < limit:
-            seen[key] = count + 1
+        if len(kept) == limit:
+            break
+        key = _style_key(result.title, result.brand)
+        if seen.get(key, 0) < MAX_PER_STYLE:
+            seen[key] = seen.get(key, 0) + 1
             kept.append(result)
-        else:
-            folded[key] = folded.get(key, 0) + 1
-
-    for result in kept:
-        result.other_colourways = folded.get(_style_key(result), 0)
     return kept
+
+
+def _count_colourways(
+    connection: Connection,
+    page: list[SearchResult],
+    filters: SearchFilters,
+    diagnostics: SearchDiagnostics,
+) -> None:
+    """Record on each result how many further colourways of its style exist.
+
+    Nothing is discarded silently: the count is what lets the agent say "also in
+    four other colours". It is counted in the catalog, under the same filters,
+    rather than among the ranked candidates. The candidate window holds only
+    part of a style whenever the style is large or brands share the window, so a
+    count taken there depends on everything else the search returned.
+
+    One query for the page. SQL narrows by brand and title prefix, and
+    `_style_key` then decides, so the style rule is written once. The prefix
+    also matches longer titles ("Harbour Trench Coat" for "Harbour Trench"),
+    and those are dropped here.
+    """
+    conditions = [
+        and_(
+            Brand.__table__.c.name.is_(None)
+            if brand == ""
+            else func.lower(Brand.__table__.c.name) == brand,
+            func.lower(func.ltrim(Product.__table__.c.title)).startswith(stem, autoescape=True),
+        )
+        for brand, stem in {_style_key(result.title, result.brand) for result in page}
+    ]
+    statement = (
+        _apply_filters(_base_query(), filters)
+        .with_only_columns(
+            Product.__table__.c.id, Product.__table__.c.title, Brand.__table__.c.name
+        )
+        .where(or_(*conditions))
+        .distinct()
+    )
+    diagnostics.queries += 1
+    colourways: dict[tuple[str, str], set[int]] = {}
+    for product_id, title, brand in connection.execute(statement):
+        colourways.setdefault(_style_key(title, brand), set()).add(product_id)
+
+    on_page: dict[tuple[str, str], set[int]] = {}
+    for result in page:
+        on_page.setdefault(_style_key(result.title, result.brand), set()).add(result.product_id)
+    for result in page:
+        key = _style_key(result.title, result.brand)
+        result.other_colourways = len(colourways.get(key, set()) - on_page[key])

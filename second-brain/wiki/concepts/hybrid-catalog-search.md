@@ -66,7 +66,10 @@ the rest as `other_colourways`. It collapsed after cutting the page, though, so
 any fold returned a short page. PR #63 collapses over every candidate instead,
 so the page refills with the next distinct styles. On a synthetic 20,811-product
 catalog, the mean page at a limit of eight went from 6.3 results to 8.0
-(measured 2026-09-28, PR #63).
+(measured 2026-09-28, PR #63). The same PR counts `other_colourways` in the
+catalog, under the search's filters, with one query per page. Before, it counted
+only the colourways that happened to be among the ranked candidates, so a large
+style, or one sharing a browse with many brands, was undercounted.
 
 PR #63 also replaced the fallback's order. With no query to rank by, it now
 orders by:
@@ -102,5 +105,10 @@ retrieval) are the C3 work. PR #63 closed both defects above.
 - Category precision on semantic queries after PR #63, measured by
   `evals/retrieval/run.py` against the hosted catalog.
 - The fallback sorts every matching row, which took 32 ms at 21k products with
-  no filter. No index can serve its stock tier or brand turns, so at millions of
-  products it needs an expression index or a different order.
+  no filter (synthetic catalog, 2026-09-28, PR #63). No index can serve its
+  stock tier or brand turns, so at millions of products it needs an expression
+  index or a different order.
+- The colourway count reads every product of the page's brands and matches
+  title prefixes: 8–13 ms per page with about 520 products per brand (synthetic
+  catalog, 2026-09-28, PR #63). It grows with the size of the largest brand on
+  the page.

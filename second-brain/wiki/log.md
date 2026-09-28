@@ -192,3 +192,14 @@ Review found that newest-first alone meant "most recently onboarded storefront
 first", because a storefront is ingested in one transaction. That finding is
 where the brand turns come from. Category precision has not been re-measured on
 the hosted catalog since the change.
+
+## 2026-09-28 — colourway counts come from the catalog
+
+A second review of PR #63 found that brand turns spread one style's colourways
+across the candidate window. A 12-colourway style reported 4 in a broad browse
+and 11 when filtered to its brand. `other_colourways` is now counted in the
+catalog under the search's filters, with one query per page, rather than among
+the candidates ([[hybrid-catalog-search]]). A search now costs one query more.
+The index hook for that page also stopped saying "BM25" (the lexical ranker is
+Postgres `ts_rank`) and "eight distinct styles" (two colourways of a style can
+share a page).

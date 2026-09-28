@@ -22,7 +22,7 @@ from api.genesis_api.writer import WriteSpec, write
 from intelligence.catalog.connectors.affiliate_feed import RAKUTEN_COLUMNS, AffiliateFeedConnector
 from intelligence.catalog.ingest import ingest
 from intelligence.catalog.money import FxRates
-from intelligence.catalog.search import MAX_PER_STYLE, SearchFilters, search_catalog
+from intelligence.catalog.search import MAX_PER_STYLE, SearchFilters, SearchResult, search_catalog
 
 
 class StubEmbedder:
@@ -338,7 +338,7 @@ def test_a_page_stays_full_when_colourways_fold(catalog: Session) -> None:
     assert len(harbour) == MAX_PER_STYLE
     assert all(r.other_colourways == 5 - MAX_PER_STYLE for r in harbour)
     assert all(r.other_colourways == 0 for r in results if r not in harbour)
-    assert diagnostics.queries == 3, "refilling the page must not cost a query"
+    assert diagnostics.queries == 4, "refilling the page must not cost a query"
 
 
 def _brand_id(catalog: Session, brand: str) -> int:
@@ -416,7 +416,7 @@ def test_filters_only_fills_the_page_with_distinct_products_not_the_cheapest(
     assert len(polos) == MAX_PER_STYLE
     assert all(r.other_colourways == 1 for r in polos)
     assert results[0].price_usd_cents != 0, "the free item must not lead on price"
-    assert diagnostics.queries == 2
+    assert diagnostics.queries == 3
 
 
 def test_filters_only_puts_known_in_stock_before_unknown_before_sold_out(
@@ -502,3 +502,70 @@ def test_a_product_shows_its_buyable_offer_not_a_cheaper_sold_out_one(
         overshirt = next(r for r in results if r.product_id == product_id)
         assert overshirt.in_stock is True
         assert overshirt.price_usd_cents == 10000
+
+
+def test_a_browse_counts_every_colourway_however_many_brands_share_it(
+    catalog: Session,
+) -> None:
+    """The count is what lets the agent say "also in eleven other colours", so it
+    must be the catalog's count, not whatever share of the style happened to fit
+    in the candidate window. Brands take turns in a browse, so with forty brands
+    each gets about five rows of the window."""
+    others = [
+        _row(f"SP{brand}-{i}", f"Spread{brand} Piece {i}", f"Spread{brand}", "Womens Tops", "50.00")
+        for brand in range(40)
+        for i in range(6)
+    ]
+    colourways = [
+        _row(f"MW{i}", f"Many Colour Polo | Shade {i}", "Spreadmany", "Womens Tops", "70.00")
+        for i in range(12)
+    ]
+    # The many-colour brand is ingested last, so it is the newest and leads.
+    ingest(catalog, _connector().normalize(others))
+    ingest(catalog, _connector().normalize(colourways))
+    catalog.flush()
+    brand_ids = tuple(
+        catalog.execute(text("select id from brands where name like 'Spread%'")).scalars()
+    )
+
+    results, diagnostics = search_catalog(
+        catalog.connection(), filters=SearchFilters(brand_ids=brand_ids), limit=8
+    )
+
+    polos = [r for r in results if r.title.startswith("Many Colour Polo")]
+    assert polos, "the newest brand leads the browse"
+    assert all(r.other_colourways == 12 - len(polos) for r in polos)
+    assert diagnostics.queries == 3
+
+
+def test_the_colourway_count_is_one_style_not_every_title_it_prefixes(catalog: Session) -> None:
+    """The count narrows by title prefix in SQL and decides by style in Python,
+    so a longer style sharing the prefix, the same style from another brand, and
+    the same style with no brand at all are each counted apart."""
+    rows = [
+        _row("CP1", "Camp Tee | Black", "Prefixwear", "Womens Tops", "30.00"),
+        _row("CP2", "Camp Tee | White", "Prefixwear", "Womens Tops", "30.00"),
+        _row("CP3", "Camp Tee | Sage", "Prefixwear", "Womens Tops", "30.00"),
+        _row("CP4", "Camp Tee Dress | Black", "Prefixwear", "Womens Dresses", "60.00"),
+        _row("CP5", "Camp Tee | Black", "Otherprefix", "Womens Tops", "30.00"),
+        _row("CP6", "Camp Tee | Rust", "Otherprefix", "Womens Tops", "30.00"),
+        _row("CP7", "Camp Tee | Grey", "", "Womens Tops", "30.00"),
+    ]
+    ingest(catalog, _connector().normalize(rows))
+    catalog.flush()
+
+    results, _ = search_catalog(catalog.connection(), query="camp tee", limit=20)
+
+    styles: dict[tuple[str | None, str], list[SearchResult]] = {}
+    for result in results:
+        styles.setdefault((result.brand, result.title.split(" | ")[0]), []).append(result)
+
+    def total(brand: str | None, stem: str) -> int:
+        shown = styles[(brand, stem)]
+        assert len({result.other_colourways for result in shown}) == 1
+        return len(shown) + shown[0].other_colourways
+
+    assert total("Prefixwear", "Camp Tee") == 3
+    assert total("Prefixwear", "Camp Tee Dress") == 1
+    assert total("Otherprefix", "Camp Tee") == 2
+    assert total(None, "Camp Tee") == 1
