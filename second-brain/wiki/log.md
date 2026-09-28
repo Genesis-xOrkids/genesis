@@ -173,3 +173,12 @@ Of the ten reviewer runs recorded since 2026-09-11, four were cut off by the
 subscription's session limit, and a fifth failed on a billing error on
 2026-09-13. Nothing had recorded that fifth run's end, so it was closed by hand
 at the moment it failed.
+
+## 2026-09-28 — C2's size gap, measured rather than read
+
+[[catalog-supply]] had called the cause of C2's size gap a reading, not a
+measurement: one-size items shipping as `Default Title`. A label-by-label pass
+over every registered storefront's feed (PR #64) found it was mostly labels the
+parser could not read, and that `Default Title` states no size at all. The page
+now carries the measured shapes and what is left: sizes in systems the enum
+does not have.

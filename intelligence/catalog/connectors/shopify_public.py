@@ -42,7 +42,7 @@ from intelligence.catalog.normalized import (
     NormalizedSize,
     SourceRecord,
 )
-from intelligence.catalog.sizes import ONE_SIZE_FITS, ParsedSize, parse_size
+from intelligence.catalog.sizes import ParsedSize, parse_sizes
 
 _HTML_TAG = re.compile(r"<[^>]+>")
 _WHITESPACE = re.compile(r"\s+")
@@ -51,7 +51,8 @@ _WHITESPACE = re.compile(r"\s+")
 # these themselves, so the match is on a small set of conventions rather than
 # position. Length is an inseam and never the size: a legging sold as "Length:
 # 28" Inseam" and "Size: M" is a medium.
-_SIZE_OPTION_NAMES = {"size", "sizes", "shoe size", "waist"}
+_WAIST_OPTION_NAMES = {"waist"}
+_SIZE_OPTION_NAMES = {"size", "sizes", "shoe size", *_WAIST_OPTION_NAMES}
 _INSEAM_OPTION_NAMES = {"inseam", "length"}
 _COLOR_OPTION_NAMES = {"color", "colour", "shade", "colorway"}
 
@@ -389,33 +390,52 @@ class ShopifyPublicConnector:
                 return [str(value) for value in option.get("values") or []]
         return []
 
-    def _variant_size(self, record: dict[str, Any], variant: dict[str, Any]) -> ParsedSize | None:
-        """The one size a variant is sold in, or None when nothing says which.
+    def _size_option_index(self, record: dict[str, Any]) -> int | None:
+        """Which of ``option1``..``option3`` holds the size, by option name.
 
-        The size option is found by name. Without one, the variant's title is
-        the label, and Shopify's ``Default Title`` on a product's only variant is
-        the platform stating the product has no options at all: it is sold in one
-        configuration, the fact a literal "One Size" label records.
+        A bundle names one size option per garment in it ("Classic Organic Tee
+        (Size)", "Classic Organic Crew (Size)"), and no one of them is the
+        bundle's size, so more than one match is no match.
         """
-        size_index = self._option_index(record, _SIZE_OPTION_NAMES)
-        if size_index is None:
-            label = str(variant.get("title") or "").strip()
-            if label.lower() == "default title":
-                return ONE_SIZE_FITS if len(record.get("variants") or []) == 1 else None
-            return parse_size(label, declared_system=self._profile.size_system)
+        positions = [
+            int(option.get("position", 0))
+            for option in record.get("options") or []
+            if _names_a_size(str(option.get("name", "")))
+        ]
+        if len(positions) == 1 and 1 <= positions[0] <= 3:
+            return positions[0]
+        return None
 
+    def _variant_sizes(
+        self, record: dict[str, Any], variant: dict[str, Any]
+    ) -> tuple[ParsedSize, ...]:
+        """The sizes one variant is sold in, as stated by an option named for size.
+
+        Nothing else is read. A variant title is whatever the merchant's options
+        happen to be - a monogram initial, a pack count, a SKU - and on the
+        sample every size it yielded outside a size-named option was one of
+        those. A single ``Default Title`` variant says the listing has no
+        options, which is not the same as the garment having one size.
+        """
+        size_index = self._size_option_index(record)
+        if size_index is None:
+            return ()
         label = str(variant.get(f"option{size_index}") or "").strip()
+
         inseam_index = self._option_index(record, _INSEAM_OPTION_NAMES)
         if inseam_index is not None:
             # A waist and an inseam in two options are one waist-inseam size,
-            # read as the single label a denim tag would print. Anything else in
-            # the inseam option ("Regular", "28\" Inseam" beside an alpha size)
-            # leaves the size option to stand alone.
-            inseam = str(variant.get(f"option{inseam_index}") or "").strip()
-            combined = parse_size(f"W{label} L{inseam}")
-            if combined is not None and combined.system is SizeSystem.waist_inseam:
+            # read as the label a denim tag prints. A cut ("Regular", "Short")
+            # or a letter size beside the inseam leaves the size to stand alone.
+            inseam = str(variant.get(f"option{inseam_index}") or "").strip().removesuffix('"')
+            combined = parse_sizes(f"W{label} L{inseam}")
+            if combined and combined[0].system is SizeSystem.waist_inseam:
                 return combined
-        return parse_size(label, declared_system=self._profile.size_system)
+
+        # A number in an option named for the waist is a waist, which no system
+        # the store declares describes.
+        waist = self._option_index(record, _WAIST_OPTION_NAMES) == size_index
+        return parse_sizes(label, declared_system=None if waist else self._profile.size_system)
 
     def _offer(self, record: dict[str, Any], source_id: str) -> NormalizedOffer | None:
         variants = record.get("variants") or []
@@ -451,14 +471,12 @@ class ShopifyPublicConnector:
         # three inseams is one medium, in stock if any of the three is.
         stock_by_size: dict[ParsedSize, bool | None] = {}
         for variant in variants:
-            parsed = self._variant_size(record, variant)
-            if parsed is None:
-                continue
             available = variant.get("available")
-            in_stock_here = None if available is None else bool(available)
-            if parsed in stock_by_size:
-                in_stock_here = _in_stock_in_either(stock_by_size[parsed], in_stock_here)
-            stock_by_size[parsed] = in_stock_here
+            for parsed in self._variant_sizes(record, variant):
+                in_stock_here = None if available is None else bool(available)
+                if parsed in stock_by_size:
+                    in_stock_here = _in_stock_in_either(stock_by_size[parsed], in_stock_here)
+                stock_by_size[parsed] = in_stock_here
         sizes = [
             NormalizedSize(system=parsed.system, value=parsed.value, in_stock=in_stock_here)
             for parsed, in_stock_here in stock_by_size.items()
@@ -483,6 +501,13 @@ class ShopifyPublicConnector:
             in_stock=in_stock,
             sizes=tuple(sizes),
         )
+
+
+def _names_a_size(option_name: str) -> bool:
+    """Whether a merchant's option name says it holds the size: "Size", or a
+    garment's own size in a bundle, "Oversized Organic T-Shirt - Navy (Size)"."""
+    name = option_name.strip().lower()
+    return name in _SIZE_OPTION_NAMES or name.endswith("(size)")
 
 
 def _in_stock_in_either(first: bool | None, second: bool | None) -> bool | None:

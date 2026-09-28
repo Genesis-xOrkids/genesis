@@ -465,9 +465,10 @@ def test_a_size_is_of_unknown_stock_when_any_variant_carrying_it_is() -> None:
     assert _sizes(record) == {(SizeSystem.alpha, "M"): None}
 
 
-def test_the_only_variant_of_an_optionless_product_is_one_size() -> None:
-    """Shopify writes "Default Title" on the single variant of a product with no
-    options: the platform stating it is sold in one configuration."""
+def test_a_single_default_title_variant_states_no_size() -> None:
+    """ "Default Title" says the listing has no options, not that the garment is
+    one size. This live Colorful Standard 3-pack is filed under a product type
+    ending "/M", so it has a size; the feed just does not state it here."""
     record = {
         "id": 903,
         "title": "Classic Organic Sock - Mixed 03 (3-Pack)",
@@ -476,7 +477,7 @@ def test_the_only_variant_of_an_optionless_product_is_one_size() -> None:
         "options": [{"name": "Title", "position": 1, "values": ["Default Title"]}],
         "variants": [_variant(1, "Default Title", "Default Title", available=True)],
     }
-    assert _sizes(record) == {(SizeSystem.one_size, "one_size"): True}
+    assert _sizes(record) == {}
 
 
 def test_default_title_on_one_of_several_variants_says_nothing_about_size() -> None:
@@ -508,8 +509,25 @@ def test_a_single_variant_named_for_its_colour_stays_unsized() -> None:
     assert _sizes(record) == {}
 
 
-def test_a_qualified_letter_size_resolves_through_the_size_option() -> None:
-    """Stelle's size option carries the kids' numeric beside the letter."""
+def test_a_letter_size_with_its_chest_measurement_is_the_letter() -> None:
+    """Taylor Stitch's shirts, as published."""
+    record = {
+        "id": 906,
+        "title": "The Jack in Navy Oxford",
+        "handle": "the-jack-in-navy-oxford",
+        "product_type": "Shirts",
+        "options": [{"name": "Size", "position": 1, "values": ["XS - 36", "M - 40"]}],
+        "variants": [
+            _variant(1, "XS - 36", "XS - 36", available=True),
+            _variant(2, "M - 40", "M - 40", available=False),
+        ],
+    }
+    assert _sizes(record) == {(SizeSystem.alpha, "XS"): True, (SizeSystem.alpha, "M"): False}
+
+
+def test_a_girls_size_with_its_numeric_in_brackets_stays_unknown() -> None:
+    """Stelle's girls' sizes. The bracket is the size in a system the label does
+    not name, and the letter alone would read as an adult XS in every search."""
     record = {
         "id": 905,
         "title": "Girls Everyday Legging",
@@ -524,4 +542,107 @@ def test_a_qualified_letter_size_resolves_through_the_size_option() -> None:
             _variant(2, "Black / M (8/9)", "Black", "M (8/9)", available=False),
         ],
     }
-    assert _sizes(record) == {(SizeSystem.alpha, "XS"): True, (SizeSystem.alpha, "M"): False}
+    assert _sizes(record) == {}
+
+
+def test_a_waist_alone_is_not_read_in_the_stores_system() -> None:
+    """A waist of 30 is not a US 30, and no system in the enum holds a waist
+    without its inseam."""
+    record = {
+        "id": 907,
+        "title": "Pleated Trouser",
+        "handle": "pleated-trouser",
+        "product_type": "Pants",
+        "options": [{"name": "Waist", "position": 1, "values": ["30", "32"]}],
+        "variants": [
+            _variant(1, "30", "30", available=True),
+            _variant(2, "32", "32", available=True),
+        ],
+    }
+    assert _sizes(record) == {}
+
+
+def test_an_inseam_written_with_an_inch_mark_still_pairs_with_the_waist() -> None:
+    record = {
+        "id": 908,
+        "title": "Slim Chino",
+        "handle": "slim-chino",
+        "product_type": "Pants",
+        "options": [
+            {"name": "Size", "position": 1, "values": ["30"]},
+            {"name": "Length", "position": 2, "values": ['32"']},
+        ],
+        "variants": [_variant(1, '30 / 32"', "30", '32"', available=True)],
+    }
+    assert _sizes(record) == {(SizeSystem.waist_inseam, "30x32"): True}
+
+
+def test_a_numeric_size_beside_a_cut_keeps_the_stores_system() -> None:
+    """A women's 8 in a Short length is a US 8; only a numeric inseam makes the
+    number a waist."""
+    record = {
+        "id": 909,
+        "title": "Wide Leg Pant",
+        "handle": "wide-leg-pant",
+        "product_type": "Pants",
+        "options": [
+            {"name": "Size", "position": 1, "values": ["8"]},
+            {"name": "Length", "position": 2, "values": ["Short"]},
+        ],
+        "variants": [_variant(1, "8 / Short", "8", "Short", available=True)],
+    }
+    assert _sizes(record) == {(SizeSystem.us, "8"): True}
+
+
+@pytest.mark.parametrize(
+    ("option_name", "values"),
+    [
+        # Stone and Strand's monogram initials, which main's title fallback read
+        # as S, M and L.
+        ("Initial", ["S", "M", "L"]),
+        # A product whose only option is the inseam: the number is not a size.
+        ("Length", ["30", "32"]),
+        ("Style", ["Small", "Large"]),
+        ("Pack", ["One", "Two"]),
+    ],
+)
+def test_only_an_option_named_for_the_size_is_read(option_name: str, values: list[str]) -> None:
+    record = {
+        "id": 910,
+        "title": "Charm Necklace",
+        "handle": "charm-necklace",
+        "product_type": "Accessories",
+        "options": [{"name": option_name, "position": 1, "values": values}],
+        "variants": [
+            _variant(index, value, value, available=True) for index, value in enumerate(values)
+        ],
+    }
+    assert _sizes(record) == {}
+
+
+def test_a_garments_own_size_option_is_read_but_a_bundles_are_not() -> None:
+    """Colorful Standard names a single garment's option "<name> (Size)", and a
+    bundle carries one such option per garment, none of them the bundle's."""
+    single = {
+        "id": 911,
+        "title": "Oversized Organic T-Shirt - Navy Blue",
+        "handle": "oversized-organic-t-shirt-navy-blue",
+        "product_type": "T-Shirt",
+        "options": [
+            {"name": "Oversized Organic T-Shirt - Navy Blue (Size)", "position": 1, "values": ["M"]}
+        ],
+        "variants": [_variant(1, "M", "M", available=True)],
+    }
+    bundle = {
+        "id": 912,
+        "title": "Classic Organic Bundle",
+        "handle": "classic-organic-bundle",
+        "product_type": "T-Shirt",
+        "options": [
+            {"name": "Classic Organic Tee - Navy Blue (Size)", "position": 1, "values": ["M"]},
+            {"name": "Classic Organic Crew - Navy Blue (Size)", "position": 2, "values": ["L"]},
+        ],
+        "variants": [_variant(1, "M / L", "M", "L", available=True)],
+    }
+    assert _sizes(single) == {(SizeSystem.alpha, "M"): True}
+    assert _sizes(bundle) == {}

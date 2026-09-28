@@ -4,11 +4,12 @@ A size string is only meaningful with its system: "38" is an EU dress, an EU
 shoe, and an Italian jacket, and picking one silently is how a size filter
 starts excluding the right garments. The parser therefore reads the system from
 the string when it is stated, accepts one the source declares, and otherwise
-returns None rather than guessing.
+returns nothing rather than guessing.
 
 Sizes are not converted between systems here. Conversion is brand-specific -
 which is why StyleProfileSize scopes a size to a brand - so a global conversion
-table would encode a fiction.
+table would encode a fiction. A label that states one size in two systems, "M
+(US 8)", is two facts, and both are returned.
 """
 
 from __future__ import annotations
@@ -72,20 +73,27 @@ _SYSTEM_PREFIXES: dict[str, SizeSystem] = {
     "jp": SizeSystem.jp,
 }
 
-_PREFIXED = re.compile(r"^(?P<system>[a-z]{2,3})[\s\-_]*(?P<value>\d+(?:\.\d+)?)$")
+_NUMBER = r"\d+(?:\.\d+)?"
+_PREFIXED = re.compile(rf"^(?P<system>[a-z]{{2,3}})[\s\-_]*(?P<value>{_NUMBER})$")
 _WAIST_INSEAM = re.compile(r"^w?(?P<waist>\d{2})\s*(?:x|/|\s|l)\s*(?P<inseam>\d{2})$")
-_NUMERIC = re.compile(r"^\d+(?:\.\d+)?$")
-# A letter size followed by a measurement that restates it: "XS - 36" (chest),
-# "S-30" (inseam), "L: US 10-13" (the shoe sizes a sock fits), "XS (4/5)" (the
-# kids' numeric it corresponds to). The qualifier must carry a number, so a word
-# that changes the garment - "Small - Petite", "M (Tall)" - leaves it unread.
-_QUALIFIED = re.compile(
-    r"^(?P<size>[a-z0-9/ ]+?)\s*"
-    r"(?:[-:]\s*[^()]*\d[^()]*|\([^()]*\d[^()]*\))$"
-)
+_NUMERIC = re.compile(rf"^{_NUMBER}$")
 # Two letter sizes joined by a hyphen or a space, "S-M" or "XS S": the range a
 # slash states, written another way.
 _ALPHA_PAIR = re.compile(r"^(?P<low>[a-z0-9]+)(?:\s*-\s*|\s+)(?P<high>[a-z0-9]+)$")
+# A letter size followed by a qualifier, after a dash or colon or in brackets.
+_QUALIFIED = re.compile(
+    r"^(?P<size>[a-z0-9/ ]+?)\s*(?:[-:]\s*(?P<after>[^()]+)|\((?P<bracketed>[^()]+)\))$"
+)
+# The qualifiers that restate a letter size rather than change it: a number in a
+# named system, one size ("US 8") or a range of them ("US 10-13"), or after a
+# dash a bare measurement ("36", Taylor Stitch's chest; "30", Marine Layer's
+# inseam). A word ("Petite", "Tall") changes the garment, and a bare number in
+# brackets ("(4/5)", "(6)") is the same size in a system the label does not name
+# - how Stelle writes girls' sizes - so neither is read.
+_IN_A_SYSTEM = re.compile(
+    rf"^(?P<system>[a-z]{{2,3}})\s*(?P<value>{_NUMBER})(?P<range>\s*-\s*{_NUMBER})?$"
+)
+_MEASUREMENT = re.compile(rf"^{_NUMBER}$")
 
 
 @dataclass(frozen=True)
@@ -94,57 +102,54 @@ class ParsedSize:
     value: str
 
 
-# Sold in a single configuration. Connectors record it too when the source states
-# that fact in its structure rather than in a label.
-ONE_SIZE_FITS = ParsedSize(system=SizeSystem.one_size, value="one_size")
+def parse_sizes(raw: str, *, declared_system: SizeSystem | None = None) -> tuple[ParsedSize, ...]:
+    """Every size one label states, in the systems it states them in.
 
-
-def parse_size(raw: str, *, declared_system: SizeSystem | None = None) -> ParsedSize | None:
-    """Parse one size label.
-
-    Returns None when the string carries no system and none was declared, which
-    the caller stores as unknown. That is the honest outcome: a bare "38" with no
-    context is genuinely ambiguous, and recording a guess would make the
+    Returns nothing when the string carries no system and none was declared,
+    which the caller stores as unknown. That is the honest outcome: a bare "38"
+    with no context is genuinely ambiguous, and recording a guess would make the
     ambiguity invisible to everyone downstream.
     """
     text = raw.strip().lower()
     if not text:
-        return None
+        return ()
 
     if text in ONE_SIZE:
-        return ONE_SIZE_FITS
+        return (ParsedSize(system=SizeSystem.one_size, value="one_size"),)
 
     alpha = _alpha(text)
     if alpha is not None:
-        return alpha
+        return (alpha,)
 
     qualified = _QUALIFIED.match(text)
     if qualified:
-        alpha = _alpha(qualified.group("size"))
-        if alpha is not None:
-            return alpha
+        facts = _qualified(qualified)
+        if facts:
+            return facts
 
     waist_inseam = _WAIST_INSEAM.match(text)
     if waist_inseam:
-        return ParsedSize(
-            system=SizeSystem.waist_inseam,
-            value=f"{waist_inseam.group('waist')}x{waist_inseam.group('inseam')}",
+        return (
+            ParsedSize(
+                system=SizeSystem.waist_inseam,
+                value=f"{waist_inseam.group('waist')}x{waist_inseam.group('inseam')}",
+            ),
         )
 
     prefixed = _PREFIXED.match(text)
     if prefixed:
         system = _SYSTEM_PREFIXES.get(prefixed.group("system"))
         if system is not None:
-            return ParsedSize(system=system, value=_trim_number(prefixed.group("value")))
+            return (ParsedSize(system=system, value=_trim_number(prefixed.group("value"))),)
 
     if _NUMERIC.match(text):
         if declared_system is None:
             # Ambiguous on purpose: "38" means different garments in different
             # systems, and the source did not say which.
-            return None
-        return ParsedSize(system=declared_system, value=_trim_number(text))
+            return ()
+        return (ParsedSize(system=declared_system, value=_trim_number(text)),)
 
-    return None
+    return ()
 
 
 def _alpha(text: str) -> ParsedSize | None:
@@ -158,6 +163,29 @@ def _alpha(text: str) -> ParsedSize | None:
         if joined in ALPHA_SIZES:
             return ParsedSize(system=SizeSystem.alpha, value=joined.upper())
     return None
+
+
+def _qualified(match: re.Match[str]) -> tuple[ParsedSize, ...]:
+    """A letter size and the qualifier after it, when the qualifier restates it.
+
+    "M (US 8)" is two facts, M and US 8. "L: US 10-13" is L and the shoe sizes
+    it fits, which are a range rather than one size, so only L is recorded.
+    """
+    alpha = _alpha(match.group("size").strip())
+    if alpha is None:
+        return ()
+    qualifier = (match.group("after") or match.group("bracketed")).strip()
+    in_a_system = _IN_A_SYSTEM.match(qualifier)
+    if in_a_system:
+        system = _SYSTEM_PREFIXES.get(in_a_system.group("system"))
+        if system is None:
+            return ()
+        if in_a_system.group("range"):
+            return (alpha,)
+        return (alpha, ParsedSize(system=system, value=_trim_number(in_a_system.group("value"))))
+    if match.group("after") and _MEASUREMENT.match(qualifier):
+        return (alpha,)
+    return ()
 
 
 def _trim_number(value: str) -> str:

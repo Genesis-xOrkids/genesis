@@ -134,11 +134,12 @@ SIZE_NOTES = """\
   known-unsized: dropping them would let an unresolved category hide a missing size, and would
   make this measure rise as C2's category measure fell.
   Dropped, the measure would read {share_without_unplaced} instead.
-- An offer with no size row is not always an ingestion gap. The connector writes no size row for
-  a single-variant product, the `Default Title` shape a genuinely one-size item ships in, and
-  none for a label `parse_size` cannot read, a bare numeric with no declared system being
-  ambiguous on purpose (`intelligence/catalog/connectors/shopify_public.py`,
-  `intelligence/catalog/sizes.py`).
+- An offer with no size row is not always an ingestion gap. The connector reads sizes only from
+  an option named for the size, so it writes none for a single-variant `Default Title` product,
+  which states that the listing has no options rather than that the garment is one size, and
+  none for a label `parse_sizes` cannot read: a bare numeric with no declared system, or a size
+  in a system the enum does not have (kids' ages, bra band and cup), stays unknown on purpose
+  (`intelligence/catalog/connectors/shopify_public.py`, `intelligence/catalog/sizes.py`).
 - A product row is one colourway of one style, so the product count overstates the options an
   outfit can draw on. The title count beside it is the nearer figure (C3,
   `second-brain/wiki/concepts/hybrid-catalog-search.md`).

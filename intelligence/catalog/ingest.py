@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import ARRAY, Integer, Table, any_, delete, func, literal, select
 from sqlalchemy.orm import Session
 
-from api.genesis_api.models import Offer, Product
+from api.genesis_api.models import Offer, OfferSize, Product
 from api.genesis_api.models.enums import Provenance
 from api.genesis_api.writer import WriteSpec, write
 from intelligence.catalog.normalized import NormalizationResult, NormalizedOffer, NormalizedProduct
@@ -47,6 +48,7 @@ class IngestReport:
     offers_written: int = 0
     images_written: int = 0
     sizes_written: int = 0
+    sizes_retired: int = 0
     brands_resolved: int = 0
     retailers_resolved: int = 0
     quarantined: int = 0
@@ -250,9 +252,42 @@ def _write_offers(
         for offer, outcome in zip(writable, results, strict=True)
         for size in offer.sizes
     ]
-    if size_specs:
-        write(session, size_specs)
+    size_results = write(session, size_specs) if size_specs else []
     report.sizes_written = len(size_specs)
+    report.sizes_retired = _retire_sizes(
+        session,
+        offer_ids=[outcome.id for outcome in results],
+        kept_size_ids=[outcome.id for outcome in size_results],
+    )
+
+
+def _retire_sizes(session: Session, *, offer_ids: list[int], kept_size_ids: list[int]) -> int:
+    """Delete the size rows of offers this run wrote that this run did not write.
+
+    The writer upserts, so it adds and updates sizes but never removes one. A
+    size the source stopped listing, or one an earlier connector read wrongly
+    ("29" as US 29 before it was read as the waist of 29x32), would otherwise
+    keep its last stock forever beside the current reading, and a size filter
+    would go on matching it. The offer's sizes are the latest run's, entire.
+
+    Scoped to the offers written here, so a run over one storefront never
+    touches another's rows, and idempotent: a second run retires nothing.
+    Arrays keep it one statement at any size, where an IN list would pass
+    Postgres' bind-parameter limit on a large storefront. The kept ids go
+    through a subquery rather than ``<> ALL``, because Postgres hashes the
+    first and compares every pair in the second: 13 ms against 3.7 s for 40,000
+    rows on the local database.
+    """
+    table = cast(Table, OfferSize.__table__)
+    retired = session.execute(
+        delete(table)
+        .where(
+            table.c.offer_id == any_(literal(offer_ids, ARRAY(Integer))),
+            table.c.id.not_in(select(func.unnest(literal(kept_size_ids, ARRAY(Integer))))),
+        )
+        .returning(table.c.id)
+    )
+    return len(retired.all())
 
 
 def product_id_for(session: Session, source: str, source_id: str) -> int | None:
