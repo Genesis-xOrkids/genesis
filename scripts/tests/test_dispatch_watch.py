@@ -380,7 +380,7 @@ def test_an_ended_tasks_stopped_session_is_measured_once_and_an_unreadable_one_s
             }
         )
     )
-    monkeypatch.setattr(dispatch_watch, "PROJECTS", projects)
+    monkeypatch.setattr(transcript_usage, "PROJECTS", projects)
     monkeypatch.setattr(dispatch_watch, "UNMEASURED", set())
     for request_id in ("req-done", "req-lost", "req-going"):
         (tasks_dir / f"task-{request_id}").mkdir(parents=True)
@@ -445,7 +445,7 @@ def test_a_settled_runs_transcript_is_measured_and_a_missing_one_said_once(
             }
         )
     )
-    monkeypatch.setattr(dispatch_watch, "PROJECTS", projects)
+    monkeypatch.setattr(transcript_usage, "PROJECTS", projects)
     monkeypatch.setattr(dispatch_watch, "UNMEASURED", set())
     settled = [
         {"id": 7, "session_id": "session-1", "agent_id": "a1"},

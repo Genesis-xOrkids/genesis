@@ -4,7 +4,7 @@ type: concept
 sources: [CLAUDE.md, PLAN.md, ROADMAP.md]
 related: ["[[pre-ship-checklist]]", "[[styling-intelligence]]", "[[hybrid-catalog-search]]", "[[model-tiering]]", "[[provenance-creates-rows]]", "[[agent-network]]"]
 created: 2026-09-07
-last-updated: 2026-09-16
+last-updated: 2026-09-28
 ---
 
 ## What it is
@@ -80,10 +80,18 @@ after the reviewer's first run on 2026-09-12 - the after-the-fact move this page
 warns about - so on 2026-09-13 the gate itself was tested with a seeded
 regression. A reviewer told to ignore the constitution's Data rules failed
 exactly the three Data cases (`jsonb-column`, `stored-on-sale`, `null-as-false`)
-and passed the other five. `eval-runner`, `dispatcher`, `genesis-builder` and
+and passed the other five. `dispatcher`, `genesis-builder` and
 `storefront-scout` have no suite yet, so a
 change to their prompts is not gated; the runner refuses them by name rather
 than passing them. The last two end in a pull request rather than in a report
 with counts, which is why no suite was written for them - but nothing else
 gates their prompts either, because neither the reviewer nor CI reads an agent
 definition ([[agent-network]]).
+
+A suite run is not free: each case is a full session of the agent under test,
+so the reviewer's suite is eight Opus sessions. The runner starts three at a
+time, because eight at once is the burst that has cut runs off at the
+subscription's session limit, and measures every case from its transcript the
+way agent runs are measured, so the table a pull request carries says what the
+run spent (2026-09-28). A case whose tokens cannot be read is unknown, not
+free ([[null-means-unknown]]).
