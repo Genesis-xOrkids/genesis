@@ -173,3 +173,17 @@ Of the ten reviewer runs recorded since 2026-09-11, four were cut off by the
 subscription's session limit, and a fifth failed on a billing error on
 2026-09-13. Nothing had recorded that fifth run's end, so it was closed by hand
 at the moment it failed.
+
+## 2026-09-28 — the eval-runner removed, the suite capped and priced
+
+`eval-runner` never ran in the fifteen days after it was added. It chose a
+suite, ran one command and relayed the table that command prints, and every
+eval on record - the reviewer's first run, the seeded regression, #48's 8/8 -
+ran the command directly. Nothing started it: the trigger on pull requests was
+only planned. The suites stay; the builder's eval step now picks them.
+
+The suite's own cost was the real exposure: eight Opus sessions at once, with
+nothing recording what they spent. `evals/agents/run.py` now runs three at a
+time and prices each case from its transcript ([[evals-as-gates]]). The price
+table has no entry for `claude-opus-5-5`, the model the reviewer runs on, so
+those cases show tokens with "no price" until one is added.
