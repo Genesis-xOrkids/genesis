@@ -4,7 +4,7 @@ type: decision
 sources: [PLAN.md, ROADMAP.md]
 related: ["[[source-agnostic-core]]", "[[catalog-supply]]", "[[commerce-and-compliance]]", "[[trend-corpus]]", "[[risk-register]]"]
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-29
 ---
 
 ## The decision
@@ -56,6 +56,28 @@ Access to the affiliate layer is an approval queue, not an engineering task —
 [[commerce-and-compliance]] X1, and risk R2. The mitigation is to lead with
 platform-native routes (Shopify, Klarna) that do not gate on traffic volume, which
 is also why C1 was built against public storefronts first.
+
+## Only apparel enters the catalog
+
+**Decided by the user on 2026-09-27.** Records that are not fashion items are
+rejected at the connector boundary and quarantined with a named reason. That
+covers home textiles, bath goods, gift cards and services, loyalty rewards,
+personal care and fitness equipment. It is not a vendor filter bolted on
+downstream, and it does not apply to one source only.
+
+The rule is conservative by instruction:
+
+- **Only unambiguous evidence rejects.** The title must name a non-apparel item.
+- **Anything worn protects.** A title or merchant category that names a garment
+  keeps the record, and bundles of garments are apparel. A "Bath Robe" and a
+  "Bra Trio Bundle" stay; a "Bath Towel Set" goes.
+- **Unclear titles stay.** A title that names neither a garment nor a
+  non-apparel item is kept, uncategorised.
+
+Rows the feed wrote before the rule existed are removed by the ingest run that
+first rejects them. Nothing a person or an agent wrote is ever touched. PR #66
+implements it in `vocabulary.not_apparel`, and [[catalog-supply]] records the
+measured effect on C2.
 
 ## What was learned by doing it
 

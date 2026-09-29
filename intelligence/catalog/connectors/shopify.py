@@ -58,9 +58,11 @@ class ShopifyConnector:
             if not source_id:
                 result.record_failure(raw, "identify", "record has no id")
                 continue
-            rejected = vocabulary.not_apparel(str(record.get("title") or ""))
+            rejected = vocabulary.not_apparel(
+                str(record.get("title") or ""), record.get("productType")
+            )
             if rejected is not None:
-                result.record_failure(raw, "filter", str(rejected))
+                result.reject(raw, rejected)
                 continue
             try:
                 product, offer = self._one(record, source_id)

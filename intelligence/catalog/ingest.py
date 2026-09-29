@@ -6,9 +6,14 @@ column: a connector's output becomes write specs, and the writer upserts them on
 their natural keys. That is what makes a re-sync idempotent rather than
 duplicating the catalog.
 
-The one statement that does not is the delete in :func:`_retire_sizes`. The
-writer only upserts, and an offer's sizes are a set the source restates in full
-each run, so the sizes it stopped stating are removed beside the writer.
+Two statements do not, both deletes, because the writer only upserts. The
+first is in :func:`_retire_sizes`: an offer's sizes are a set the source
+restates in full each run, so the sizes it stopped stating are removed beside
+the writer. The second is in :func:`_remove_rejected`: a record the connector
+now turns away as not apparel may have been written by a run before the rule
+existed, and upserting never takes it back out. Both are scoped to what this
+run's source wrote and to rows the feed itself wrote, so neither can reach a
+row a person or an agent wrote.
 
 Failures are quarantined, never dropped. A run reports what it wrote and what it
 could not read, so a source changing shape shows up as a number instead of as a
@@ -17,17 +22,26 @@ catalog that quietly stopped growing.
 
 from __future__ import annotations
 
+import collections
 import re
 from dataclasses import dataclass, field
 from typing import cast
 
-from sqlalchemy import ARRAY, Integer, Table, any_, delete, func, literal, select
+import structlog
+from sqlalchemy import ARRAY, Integer, Table, Text, any_, delete, exists, func, literal, select
 from sqlalchemy.orm import Session
 
 from api.genesis_api.models import Offer, OfferSize, Product
 from api.genesis_api.models.enums import Provenance
 from api.genesis_api.writer import WriteSpec, write
-from intelligence.catalog.normalized import NormalizationResult, NormalizedOffer, NormalizedProduct
+from intelligence.catalog.normalized import (
+    FILTER_STAGE,
+    NormalizationResult,
+    NormalizedOffer,
+    NormalizedProduct,
+)
+
+log = structlog.get_logger(__name__)
 
 _SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 
@@ -48,16 +62,24 @@ def slugify(name: str) -> str:
 @dataclass
 class IngestReport:
     """What one run did. Every number here counts rows actually written, except
-    ``sizes_retired``, which counts size rows deleted."""
+    ``sizes_retired`` and ``products_removed``, which count rows deleted.
+
+    ``quarantined`` and ``filtered`` are both records put in quarantine, and
+    they mean opposite things. A quarantined record could not be read, and a
+    rising count is a source changing shape. A filtered one was read and turned
+    away as not apparel, which a storefront selling bedding does by design.
+    """
 
     products_written: int = 0
     offers_written: int = 0
     images_written: int = 0
     sizes_written: int = 0
     sizes_retired: int = 0
+    products_removed: int = 0
     brands_resolved: int = 0
     retailers_resolved: int = 0
     quarantined: int = 0
+    filtered: int = 0
     unresolved_offers: list[str] = field(default_factory=list)
 
 
@@ -72,10 +94,14 @@ def ingest(session: Session, result: NormalizationResult) -> IngestReport:
     offer written here are replaced by it, and a size it omits is deleted. A
     caller that updates an offer without knowing its sizes (a price or stock
     recheck) must not come through here.
+
+    Records the connector turned away as not apparel are removed from the
+    catalog here too, with whatever earlier runs wrote for them.
     """
     report = IngestReport()
 
     _write_failures(session, result, report)
+    _remove_rejected(session, result, report)
     brand_ids = _resolve_brands(session, result.products, report)
     retailer_ids = _resolve_retailers(session, result.offers, report)
 
@@ -97,7 +123,78 @@ def _write_failures(session: Session, result: NormalizationResult, report: Inges
     ]
     if specs:
         write(session, specs)
-    report.quarantined = len(specs)
+    report.filtered = sum(1 for _, stage, _ in result.failures if stage == FILTER_STAGE)
+    report.quarantined = len(specs) - report.filtered
+
+
+def _remove_rejected(session: Session, result: NormalizationResult, report: IngestReport) -> None:
+    """Delete the products a rejected record produced in earlier runs.
+
+    A product belongs to a record when its ``source_id`` is the record's id or
+    starts with it and a colon, the form ``NormalizedProduct`` documents for a
+    record split into colourways. Only products the feed wrote are touched
+    (``provenance = feed_sync``), and not one that carries an offer anything
+    else wrote, so nothing a person or an agent recorded is ever deleted.
+
+    Offers go first, because ``fk_offers_product_id`` declares no ``ON DELETE``;
+    the schema's cascades take sizes, images, materials and attributes. Each
+    removal is logged with its title and the phrase that rejected it, per
+    source, so a false positive is readable in the run's log rather than only
+    as a product that went missing.
+    """
+    by_source: dict[str, list[str]] = collections.defaultdict(list)
+    for record, stage, _ in result.failures:
+        if stage == FILTER_STAGE:
+            by_source[record.source].append(record.source_id)
+    products = cast(Table, Product.__table__)
+    offers = cast(Table, Offer.__table__)
+    for source, record_ids in by_source.items():
+        prefixes = [_like_escaped(record_id) + ":%" for record_id in record_ids]
+        doomed = session.execute(
+            select(products.c.id, products.c.source_id, products.c.title).where(
+                products.c.source == source,
+                products.c.provenance == Provenance.feed_sync,
+                (products.c.source_id == any_(literal(record_ids, ARRAY(Text))))
+                | products.c.source_id.like(any_(literal(prefixes, ARRAY(Text)))),
+                ~exists().where(
+                    offers.c.product_id == products.c.id,
+                    offers.c.provenance != Provenance.feed_sync,
+                ),
+            )
+        ).all()
+        if not doomed:
+            continue
+        product_ids = [row.id for row in doomed]
+        removed_offers = session.execute(
+            delete(offers)
+            .where(offers.c.product_id == any_(literal(product_ids, ARRAY(Integer))))
+            .returning(offers.c.id)
+        )
+        offer_count = len(removed_offers.all())
+        session.execute(
+            delete(products).where(products.c.id == any_(literal(product_ids, ARRAY(Integer))))
+        )
+        report.products_removed += len(product_ids)
+        phrases = collections.Counter(
+            result.rejected[
+                row.source_id
+                if row.source_id in result.rejected
+                else row.source_id.rsplit(":", 1)[0]
+            ].phrase
+            for row in doomed
+        )
+        log.info(
+            "non_apparel_removed",
+            source=source,
+            products=len(product_ids),
+            offers=offer_count,
+            by_phrase=dict(phrases.most_common()),
+            titles=sorted({row.title for row in doomed}),
+        )
+
+
+def _like_escaped(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _resolve_brands(

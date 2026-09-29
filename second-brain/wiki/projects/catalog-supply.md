@@ -1,10 +1,10 @@
 ---
 title: Catalog Supply (C1–C4)
 type: project
-sources: [ROADMAP.md, scripts/catalog_coverage.py, intelligence/catalog/search.py, intelligence/catalog/sizes.py]
+sources: [ROADMAP.md, scripts/catalog_coverage.py, intelligence/catalog/search.py, intelligence/catalog/sizes.py, intelligence/catalog/vocabulary.py]
 related: ["[[current-state]]", "[[source-agnostic-core]]", "[[hybrid-catalog-search]]", "[[embeddings-and-vectors]]", "[[catalog-sources]]", "[[fashion-taxonomy]]", "[[no-silent-fallbacks]]", "[[null-means-unknown]]", "[[styling-intelligence]]"]
 created: 2026-09-07
-last-updated: 2026-09-28
+last-updated: 2026-09-29
 ---
 
 ## What it is
@@ -70,8 +70,10 @@ Both readings, measured 2026-09-24 against the hosted catalog by
 | Carrying a size in stock or of unknown stock — **C4's signal, not a criterion** | 55.3% | the same 20,033 offers |
 | Size data present over every offer — the pre-correction reading, superseded | 73.3% | 21,055 offers |
 
-1,932 of those offers (2026-09-24) have a product with no category at all, so
-they can be placed neither inside nor outside the excluded categories. The script
+1,932 of those offers (2026-09-24) had a product with no category at all, so
+they could be placed neither inside nor outside the excluded categories. That
+figure is stale once PR #66's re-ingest runs: the vocabulary work below resolves
+most of them, and it removes home goods from both of C2's denominators. The script
 keeps them in the denominator, because null is unknown rather than known-unsized
 ([[null-means-unknown]]), and prints what the measure would read without them
 (75.6%) so the choice is auditable. 1,022 offers are in the excluded categories
@@ -102,6 +104,35 @@ girls' sizes written `XS (4/5)` or `4T` (~1,200 offers), bra band and cup (~205)
 sizes for men and women at once (~180) — plus home goods and colour-only bags
 that belong to the non-apparel and category work. Those systems are an open
 question below.
+
+**Category coverage moved on vocabulary and a boundary rule, not on breadth.**
+On 2026-09-27 the hosted catalog carried a resolved category on 88.8% of 41,926
+products. The uncategorised ones were concentrated in a few storefronts, and
+they were words the vocabulary lacked, not garments it could not know. Organic
+Basics, Knix, Negative and Pepper sell underwear, and the vocabulary had no
+lingerie terms at all. Rothy's names its shoes "The Driver" and "Mary Jane".
+Cozy Earth, Hill House Home and Alo sell towels, bedding, gift cards and loyalty
+rewards through the same feed as their clothing. PR #66 did two things (see
+[[fashion-taxonomy]]):
+
+- It completed `intelligence/catalog/vocabulary.py` against the existing
+  `Category` enum.
+- It made connectors turn away records that are not apparel, a rule the user
+  decided on 2026-09-27. Ingestion removes what earlier
+  runs let in, in the same run.
+
+Measured on a 4-page sample of all 27 storefronts, 14.6% of 24,391 products were
+uncategorised before and 2.0% of 23,409 after, with 327 records turned away. The
+same sample ingested end to end into a local database read 85.4% before and 98.0%
+after. The hosted estimate is ~98.5% once a person re-ingests after merge.
+Removing non-apparel shrinks both C2 denominators: the product count, and the
+offers the size measure is taken over. Home goods carry no size, so the size
+share rose too, from 81.9% to 86.5% on that sample.
+
+"Resolved" is not "correct". About 150 of the sample's newly resolved products
+were decided by a tag or a description rather than the title or the product type.
+After the hosted re-ingest, the coordinator runs `evals/retrieval` and
+spot-checks those.
 
 The workflow exists: `probe_storefronts.py` vets candidates without
 adding them, `seed_storefronts.py --file storefronts.txt` registers those that
@@ -164,3 +195,7 @@ numbers to watch when this starts.
   and sizes stated for men and women at once (`W10/M9`, ~180) each need a
   `SizeSystem` value and a migration. Together they are about as large as what is
   left between C2's size measure and its 90% target (PR #64).
+- **Hair accessories and Rothy's model names.** Both are left without a category
+  on purpose. Hair accessories have no `Category` value (96 products in the
+  2026-09-28 sample). Rothy's titles such as "The Point II" name a model, not a
+  garment (244 products). Both are listed as open decisions.

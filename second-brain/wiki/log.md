@@ -226,3 +226,17 @@ over every registered storefront's feed (PR #64) found it was mostly labels the
 parser could not read, and that `Default Title` states no size at all. The page
 now carries the measured shapes and what is left: sizes in systems the enum
 does not have.
+
+## 2026-09-29 — only apparel enters the catalog, and C2's category gap closes
+
+The user decided on 2026-09-27 that records which are not fashion items are
+rejected at the connector boundary, conservatively: a title must name a
+non-apparel item, and anything naming a garment keeps the record. PR #66
+implements the rule for every connector. The ingest run that rejects a record
+also removes the products earlier runs wrote for it, so no separate cleanup is
+needed. The same PR completes the category vocabulary against the existing
+enum. Recorded on [[catalog-sources]], with the measured effect on
+[[catalog-supply]]: 85.4% to 98.0% of products categorised on a 27-storefront
+sample ingested end to end, ~98.5% estimated for the hosted catalog after a
+re-ingest. Hair accessories and Rothy's model-name titles are left null and
+listed on [[open-decisions]].

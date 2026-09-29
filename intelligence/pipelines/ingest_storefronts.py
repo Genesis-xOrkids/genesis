@@ -103,6 +103,11 @@ class StorefrontOutcome:
     def quarantine_rate(self) -> float:
         """Share of records that could not be read.
 
+        Records turned away as not apparel are not in it (``IngestReport``
+        counts them as ``filtered``): a storefront that sells bedding beside its
+        sleepwear turns away a third of its feed by design, and counting that
+        would both hide a real change of shape and raise the alarm every night.
+
         Zero records seen reports zero rather than undefined: a storefront that
         returned nothing has a different problem, and the status says which.
         """
@@ -131,6 +136,14 @@ class RunSummary:
     @property
     def quarantined(self) -> int:
         return sum(o.report.quarantined for o in self.outcomes if o.report)
+
+    @property
+    def filtered(self) -> int:
+        return sum(o.report.filtered for o in self.outcomes if o.report)
+
+    @property
+    def products_removed(self) -> int:
+        return sum(o.report.products_removed for o in self.outcomes if o.report)
 
     @property
     def quarantine_rate(self) -> float:
@@ -294,6 +307,8 @@ def persist(
         products=report.products_written if report else 0,
         sizes_retired=report.sizes_retired if report else 0,
         quarantined=report.quarantined if report else 0,
+        filtered=report.filtered if report else 0,
+        products_removed=report.products_removed if report else 0,
         error=outcome.error,
     )
     return outcome

@@ -45,6 +45,8 @@ CATEGORY_TERMS: dict[str, Category] = {
     "mini dress": Category.dress,
     "sweatshirt dress": Category.dress,
     "sundress": Category.dress,
+    "kaftan": Category.dress,
+    "caftan": Category.dress,
     "dress": Category.dress,
     "jumpsuit": Category.jumpsuit,
     "romper": Category.jumpsuit,
@@ -58,6 +60,8 @@ CATEGORY_TERMS: dict[str, Category] = {
     "peacoat": Category.coat,
     "pea coat": Category.coat,
     "anorak": Category.coat,
+    "poncho": Category.coat,
+    "cape": Category.coat,
     "windbreaker": Category.coat,
     "raincoat": Category.coat,
     "coat": Category.coat,
@@ -66,6 +70,7 @@ CATEGORY_TERMS: dict[str, Category] = {
     "denim jacket": Category.jacket,
     "bomber": Category.jacket,
     "shacket": Category.jacket,
+    "overshirt": Category.jacket,
     "jacket": Category.jacket,
     "waistcoat": Category.vest,
     "vest": Category.vest,
@@ -82,7 +87,6 @@ CATEGORY_TERMS: dict[str, Category] = {
     "button-down": Category.shirt,
     "oxford": Category.shirt,
     "blouse": Category.shirt,
-    "overshirt": Category.shirt,
     "shirt": Category.shirt,
     "t-shirt": Category.top,
     "tee": Category.top,
@@ -104,30 +108,17 @@ CATEGORY_TERMS: dict[str, Category] = {
     "legging": Category.pants,
     "pant": Category.pants,
     "slack": Category.pants,
-    "shorts": Category.shorts,
     "skirt": Category.skirt,
     "skort": Category.skirt,
     "sports bra": Category.activewear,
     "leotard": Category.activewear,
     "unitard": Category.activewear,
-    "swim short": Category.swimwear,
-    "swim trunk": Category.swimwear,
-    "swim brief": Category.swimwear,
-    "bikini brief": Category.lingerie,
-    "boxer brief": Category.lingerie,
     "nipple cover": Category.lingerie,
     "underwear": Category.lingerie,
     "bralette": Category.lingerie,
-    "boyshort": Category.lingerie,
-    "boybrief": Category.lingerie,
-    "hipster": Category.lingerie,
     "pasties": Category.lingerie,
-    "thong": Category.lingerie,
-    "brief": Category.lingerie,
     "boxer": Category.lingerie,
-    "trunk": Category.lingerie,
     "bra": Category.lingerie,
-    "pajama short": Category.sleepwear,
     "sleep shirt": Category.sleepwear,
     "sleep sack": Category.sleepwear,
     "sleep set": Category.sleepwear,
@@ -136,12 +127,12 @@ CATEGORY_TERMS: dict[str, Category] = {
     "nightshirt": Category.sleepwear,
     "nightie": Category.sleepwear,
     "bathrobe": Category.sleepwear,
-    "bath wrap": Category.sleepwear,
-    "towel wrap": Category.sleepwear,
     "sleeper": Category.sleepwear,
     "pajama": Category.sleepwear,
     "pyjama": Category.sleepwear,
     "robe": Category.sleepwear,
+    "kimono": Category.sleepwear,
+    "wearable blanket": Category.sleepwear,
     "pj": Category.sleepwear,
     "sneaker": Category.sneakers,
     "trainer": Category.sneakers,
@@ -178,6 +169,7 @@ CATEGORY_TERMS: dict[str, Category] = {
     "scarves": Category.scarf,
     "scarf": Category.scarf,
     "snood": Category.scarf,
+    "shawl": Category.scarf,
     "hat": Category.hat,
     "cap": Category.hat,
     "beanie": Category.hat,
@@ -220,10 +212,28 @@ CATEGORY_TERMS: dict[str, Category] = {
 # Longest-first matching cannot express that, because the modifier is often the
 # longer word, so these are a second tier: removed before nouns are matched, and
 # consulted only when no noun is left (see :func:`category_for`). Removing them
-# first is also what keeps "Short Sleeve Tee" out of shorts - "short" is an
-# inflection of "shorts" (see :func:`_inflections`), and in "short sleeve" it
-# describes a sleeve.
+# first is also what keeps "Short Sleeve Tee", "Short Robe" and "Short Pajama Set"
+# out of shorts: "short" names shorts alone ("Bike Short"), and beside another
+# garment it describes a length. The same holds for the cuts of underwear, which
+# describe swimwear as readily: a "Hipster Bikini Bottom" and a "Swim Boyshort"
+# are swimwear, a "Core Thong" is lingerie. "Bikini brief" is a cut of underwear
+# in its own right, so it is listed whole and outlasts the "bikini" inside it.
 CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
+    "short": Category.shorts,
+    "jean short": Category.shorts,
+    "denim short": Category.shorts,
+    "chino short": Category.shorts,
+    "cargo short": Category.shorts,
+    "sweat short": Category.shorts,
+    "board short": Category.shorts,
+    "shawl collar": Category.sweater,
+    "bikini brief": Category.lingerie,
+    "boyshort": Category.lingerie,
+    "boybrief": Category.lingerie,
+    "hipster": Category.lingerie,
+    "thong": Category.lingerie,
+    "brief": Category.lingerie,
+    "trunk": Category.lingerie,
     "short sleeve": Category.top,
     "shortsleeve": Category.top,
     "long sleeve": Category.top,
@@ -253,6 +263,24 @@ CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
     "hoop": Category.jewelry,
     "stud": Category.jewelry,
 }
+
+# Things a person wears that the taxonomy has no category for. A name or shelf
+# naming one and no garment leaves the category null, which stops a tag or a
+# description supplying a wrong one: Hill House tags its hair bows "Dresses".
+# Whether these get a category of their own is an open decision, not this list's.
+UNCATEGORISED_TERMS: dict[str, None] = dict.fromkeys(
+    (
+        "hair bow",
+        "bow",
+        "scrunchie",
+        "headband",
+        "claw clip",
+        "hair clip",
+        "hair tie",
+        "barrette",
+        "barette",
+    )
+)
 
 SILHOUETTE_TERMS: dict[str, Silhouette] = {
     "a-line": Silhouette.a_line,
@@ -647,16 +675,26 @@ def category_for(*texts: str | None) -> Category | None:
     Sweaters" is a sweater, and "Long Sleeve" alone is a top.
 
     Tags and descriptions follow one text at a time, because they name the
-    garments an item is worn with as readily as the item itself.
+    garments an item is worn with as readily as the item itself. That is also
+    why a text naming something worn that has no category (see
+    :data:`UNCATEGORISED_TERMS`) ends the search with null rather than handing
+    it on to them.
     """
     for group in (texts[:2], *((text,) for text in texts[2:])):
         nouns = tuple(_without(text, CATEGORY_MODIFIER_TERMS) if text else None for text in group)
         found = _first(CATEGORY_TERMS, nouns)
-        if found is None:
-            found = _first(CATEGORY_MODIFIER_TERMS, group)
+        if found is not None:
+            return found
+        if _names_any(UNCATEGORISED_TERMS, nouns):
+            return None
+        found = _first(CATEGORY_MODIFIER_TERMS, group)
         if found is not None:
             return found
     return None
+
+
+def _names_any[T](terms: dict[str, T], texts: tuple[str | None, ...]) -> bool:
+    return any(text and _phrase_in(text, terms) is not None for text in texts)
 
 
 def silhouette_for(*texts: str | None) -> Silhouette | None:
@@ -695,18 +733,25 @@ def gender_for(*texts: str | None) -> Gender | None:
     return _first(GENDER_TERMS, texts)
 
 
-def not_apparel(title: str) -> NotApparel | None:
+def not_apparel(title: str, *shelves: str | None) -> NotApparel | None:
     """Why a record is not a fashion item, when its title says so.
 
-    Conservative by construction. Only the title is read: a department called
-    "Home" also shelves the robes, and a description mentions the towel a
-    swimsuit dries with. A title that names any garment is apparel however much
-    else it says, so a "Bath Robe" stays and so does a "Bra Trio Bundle"; a set
-    or bundle is judged by what it names, and a "Bath Towel Set" names only
-    towels. A title naming neither is kept and left uncategorised, because not
-    knowing what a thing is does not show that it is not clothing.
+    Conservative by construction, in two directions. Only the title can reject:
+    a department called "Home" also shelves the robes. The merchant's category
+    for the item can protect it as well as the title: a record is apparel if its
+    title, or any of ``shelves`` (the product type or feed category), names
+    something worn, however much else the title says. So a "Bath Robe" stays, a
+    "Bra Trio Bundle" stays, and a "Waffle Bath Wrap" filed under "Robes" stays.
+    A set or bundle is judged by what it names, and a "Bath Towel Set" names
+    only towels. A title naming neither is kept and left uncategorised, because
+    not knowing what a thing is does not show that it is not clothing.
+
+    Tags and descriptions cannot protect. Both name what an item is sold beside
+    as readily as the item: Alo tags its yoga blocks with its tops, and Cozy
+    Earth tags its bedding bundles with its slippers.
     """
-    if category_for(title) is not None:
+    texts = (title, *shelves)
+    if category_for(*texts) is not None or _names_any(UNCATEGORISED_TERMS, texts):
         return None
     phrase = _phrase_in(title, NON_APPAREL_TERMS)
     if phrase is None:

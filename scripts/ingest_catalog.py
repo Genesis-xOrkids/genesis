@@ -5,7 +5,9 @@
     PYTHONPATH=. uv run python scripts/ingest_catalog.py --max-pages 2   # smoke run
 
 Safe to re-run. Every write goes through the upsert writer keyed on natural
-keys, so a second pass updates rather than duplicating.
+keys, so a second pass updates rather than duplicating. A run also deletes the
+feed-written products of records it turns away as not apparel, so the first run
+after that rule changes removes what earlier runs let in.
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ from intelligence.catalog.fx import current_rates
 from intelligence.pipelines.ingest_storefronts import run
 
 # Above this share of unreadable records, a source has probably changed shape
-# rather than simply carrying a few odd listings.
+# rather than simply carrying a few odd listings. Records turned away as not
+# apparel are not unreadable and do not count toward it.
 QUARANTINE_ALERT_RATE = 0.05
 
 
@@ -38,7 +41,12 @@ def main() -> int:
         max_pages=args.max_pages,
     )
 
-    header = f"{'storefront':28s} {'status':11s} {'route':12s} {'seen':>6s} {'prod':>6s} {'offers':>6s} {'quar':>5s}"
+    # "quar" is records that could not be read; "filt" is records read and turned
+    # away as not apparel, and "rm" the products earlier runs wrote for them.
+    header = (
+        f"{'storefront':28s} {'status':11s} {'route':12s} {'seen':>6s} {'prod':>6s} "
+        f"{'offers':>6s} {'quar':>5s} {'filt':>5s} {'rm':>5s}"
+    )
     print(header)
     print("-" * len(header))
     for outcome in summary.outcomes:
@@ -48,14 +56,18 @@ def main() -> int:
             f"{outcome.records_seen:6d} "
             f"{report.products_written if report else 0:6d} "
             f"{report.offers_written if report else 0:6d} "
-            f"{report.quarantined if report else 0:5d}"
+            f"{report.quarantined if report else 0:5d} "
+            f"{report.filtered if report else 0:5d} "
+            f"{report.products_removed if report else 0:5d}"
             + (f"  {outcome.error[:52]}" if outcome.error else "")
         )
 
     print(
         f"\n{summary.records_seen} records seen, "
         f"{summary.products_written} products, {summary.offers_written} offers, "
-        f"{summary.quarantined} quarantined ({summary.quarantine_rate:.1%})"
+        f"{summary.quarantined} unreadable ({summary.quarantine_rate:.1%}), "
+        f"{summary.filtered} turned away as not apparel, "
+        f"{summary.products_removed} earlier products of theirs removed"
     )
 
     failed = summary.by_status(IngestionRunStatus.failed)

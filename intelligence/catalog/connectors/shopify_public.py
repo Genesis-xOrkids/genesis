@@ -185,9 +185,9 @@ class ShopifyPublicConnector:
             if not title:
                 result.record_failure(raw, "identify", "product has no title")
                 continue
-            rejected = vocabulary.not_apparel(title)
+            rejected = vocabulary.not_apparel(title, record.get("product_type"))
             if rejected is not None:
-                result.record_failure(raw, "filter", str(rejected))
+                result.reject(raw, rejected)
                 continue
 
             try:

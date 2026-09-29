@@ -87,8 +87,8 @@ def test_no_non_apparel_term_is_also_a_garment(phrase: str) -> None:
         ("Breathable Button Up Sleep Shirt", Category.sleepwear),
         ("The Tiny Sully PJ Set", Category.sleepwear),
         ("Women's Bamboo Stretch-Knit Pajama Short", Category.sleepwear),
-        ("Pima After Bath Wrap in Baltic Blue", Category.sleepwear),
-        ("The Towel Wrap", Category.sleepwear),
+        ("Waffle Bath Kimono", Category.sleepwear),
+        ("Sherpa Wearable Blanket", Category.sleepwear),
         ("Classic Pyjama Set", Category.sleepwear),
         ("Lace Nightie", Category.sleepwear),
         ("Striped Nightshirt", Category.sleepwear),
@@ -155,7 +155,7 @@ def test_no_non_apparel_term_is_also_a_garment(phrase: str) -> None:
         ("Luxe Jersey Henley", Category.top),
         ("The Doris Mini Tunic", Category.top),
         ("The Canal Popover in Rinsed Indigo", Category.shirt),
-        ("Pacifica Stretch Twill Overshirt", Category.shirt),
+        ("Pacifica Stretch Twill Overshirt", Category.jacket),
         ("Cloud 9 Terry Relaxed Crewneck", Category.sweater),
         ("Classic Crew Neck", Category.sweater),
         ("Cloud 9 Terry Sweatshirt", Category.sweater),
@@ -165,6 +165,11 @@ def test_no_non_apparel_term_is_also_a_garment(phrase: str) -> None:
         ("Whipped Cardi in Garnet", Category.cardigan),
         # jackets, jumpsuits, dresses, skirts
         ("Quilted Shacket", Category.jacket),
+        ("Blanket Poncho", Category.coat),
+        ("Sherpa Blanket Cape", Category.coat),
+        ("Silk Kaftan", Category.dress),
+        ("Linen Caftan", Category.dress),
+        ("Cashmere Travel Shawl", Category.scarf),
         ("The Jillee Ruffle Onesie", Category.jumpsuit),
         ("The Utility Coverall in Linen", Category.jumpsuit),
         ("Girls Flutter-Sleeve Bow Back Sundress", Category.dress),
@@ -190,6 +195,24 @@ def test_the_added_terms_resolve_the_titles_they_were_added_for(
         ("Girls Short Sleeve Celestial Sequin Tutu Dress", Category.dress),
         ("Girls Performance Short-Sleeve Leotard", Category.activewear),
         ('Solemate™ 2.5" Short', Category.shorts),
+        ("Short Sleeved Tee", Category.top),
+        ("Short-Sleeved Shirt", Category.shirt),
+        ("Washable Silk Short Robe", Category.sleepwear),
+        ("Short Pajama Set", Category.sleepwear),
+        ("Kids Furry Short Boot", Category.boots),
+        ("Bike Short", Category.shorts),
+        ("Cargo Shorts", Category.shorts),
+        ("The Cheeky Jean Short", Category.shorts),
+        ("The Pull-On Performance Chino Short", Category.shorts),
+        ("Teen Period Swim Board Shorts", Category.swimwear),
+        # A cut of underwear describes swimwear as readily as it names lingerie.
+        ("Hipster Bikini Bottom", Category.swimwear),
+        ("Swim Boyshort", Category.swimwear),
+        ("Swim Scoop Brief in Cobalt", Category.swimwear),
+        ("Teen Period Swim Full Coverage Hipster", Category.swimwear),
+        ("Core Thong 3-Pack", Category.lingerie),
+        ("Core Icon Boxer Shorts 2-pack", Category.lingerie),
+        ("Men's Soft Modal Boxer Brief", Category.lingerie),
         # A modifier names the garment only when no noun does.
         ("Conquer Reform Crewneck Short Sleeve", Category.top),
         ("Organic Cotton Crewneck Tee", Category.top),
@@ -262,6 +285,10 @@ def test_a_noun_on_the_shelf_outranks_a_modifier_in_the_name() -> None:
     assert category_for("Air Alpaca Long-Sleeve Slim Crew", "Sweaters") is Category.sweater
     assert category_for("Archive Long-Sleeve Crew", "Knit Tops") is Category.top
     assert category_for("SuperForm Rib Longsleeve", "Longsleeve") is Category.top
+    assert (
+        category_for("Slumberknit Shawl Collar Short Sleeve Short Set", "Sleep Sets")
+        is Category.sleepwear
+    )
 
 
 def test_a_noun_in_the_name_still_outranks_one_on_the_shelf() -> None:
@@ -378,6 +405,63 @@ def test_titles_that_name_only_non_apparel_are_rejected(title: str, kind: NonApp
 )
 def test_garments_and_unknowns_are_kept(title: str) -> None:
     assert not_apparel(title) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "shelf"),
+    [
+        # Garments whose titles also name a home or bath word.
+        ("Waffle Bath Kimono", None),
+        ("Blanket Poncho", None),
+        ("Hooded Towel Poncho", None),
+        ("Sherpa Blanket Cape", None),
+        ("Wearable Blanket", None),
+        ("Cashmere Throw Shawl", None),
+        ("Terry Towel Scrunchie", None),
+        # The merchant's category protects what the title leaves unsaid.
+        ("Waffle Bath Wrap", "Robes"),
+        ("Pima After Bath Wrap in Baltic Blue", "Loungewear Robes"),
+    ],
+)
+def test_anything_the_record_says_is_worn_protects_it(title: str, shelf: str | None) -> None:
+    assert not_apparel(title, shelf) is None
+
+
+def test_only_the_title_can_reject() -> None:
+    """A shelf protects but never accuses: Hill House files robes under Home."""
+    assert not_apparel("The Hotel Robe", "Home") is None
+    assert not_apparel("Waffle Bath Wrap") is not None
+    assert not_apparel("Waffle Bath Wrap", "Bath") is not None
+
+
+def test_a_shelf_is_a_category_not_a_tag() -> None:
+    """Alo files its yoga blocks under "Internal" and tags them with the tops
+    they are sold beside; only the category is passed, so the block is still
+    turned away."""
+    assert not_apparel("Uplifting Yoga Block", "Internal") is not None
+
+
+@pytest.mark.parametrize(
+    "texts",
+    [
+        ("The Belle Bow", "The Belle Bow", "Dresses Girls Accessories"),
+        ("Bamboo Stretch Knit Skinny Scrunchies", None, None, "Pairs with our knit sweater."),
+        ("The Cleo Headband", "The Cleo Headband", "Dresses"),
+        ("90's Claw Clip", "Women:Accessories:Hair Management:Hair Ties"),
+        ("Sunflower Barette", "Accessories", "tops"),
+    ],
+)
+def test_worn_things_the_taxonomy_has_no_category_for_stay_null(
+    texts: tuple[str | None, ...],
+) -> None:
+    """A tag or a description must not supply a category for a hair bow."""
+    assert category_for(*texts) is None
+
+
+def test_an_uncategorised_word_gives_way_to_a_garment() -> None:
+    assert category_for("The Kids Bow Mary Jane") is Category.shoes
+    assert category_for("Bow Back Sundress") is Category.dress
+    assert category_for("Bow Studs 14K", "Earrings 14K Studs") is Category.jewelry
 
 
 def test_the_quarantine_reason_leads_with_a_name_a_count_can_group_on() -> None:

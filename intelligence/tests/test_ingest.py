@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Callable
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -16,7 +17,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.genesis_api.models import Brand, IngestionFailure, Offer, OfferSize, Product
-from api.genesis_api.models.enums import Category, ColorFamily, SizeSystem
+from api.genesis_api.models.enums import Category, ColorFamily, Provenance, SizeSystem
+from api.genesis_api.writer import WriteSpec, write
 from intelligence.catalog.connectors.affiliate_feed import (
     RAKUTEN_COLUMNS,
     AffiliateFeedConnector,
@@ -266,7 +268,12 @@ def test_bad_records_are_quarantined_with_their_payload(session: Session) -> Non
     [
         (
             _shopify,
-            {**SHOPIFY_RECORDS[1], "id": "gid://shopify/Product/9", "title": "Luxe Bath Towels"},
+            {
+                **SHOPIFY_RECORDS[1],
+                "id": "gid://shopify/Product/9",
+                "title": "Luxe Bath Towels",
+                "productType": "Bath",
+            },
             {**SHOPIFY_RECORDS[1], "id": "gid://shopify/Product/10", "title": "Luxe Bath Robe"},
         ),
         (
@@ -303,7 +310,8 @@ def test_every_connector_quarantines_what_is_not_apparel(
     source = connector()
     report = ingest(session, source.normalize([towel, robe]))
 
-    assert report.quarantined == 1
+    assert report.filtered == 1
+    assert report.quarantined == 0, "a record turned away is not a record that could not be read"
     assert report.products_written == 1
     failure = session.execute(
         select(IngestionFailure.__table__.c.stage, IngestionFailure.__table__.c.error).where(
@@ -316,6 +324,132 @@ def test_every_connector_quarantines_what_is_not_apparel(
         select(Product.__table__.c.category).where(Product.__table__.c.source == source.source)
     ).scalar_one()
     assert category is Category.sleepwear
+
+
+def _public_record(record_id: int, title: str, *colours: str) -> dict[str, object]:
+    """A public-feed record, split into one product per colour when it has several."""
+    options = [{"name": "Color", "position": 1, "values": list(colours)}] if colours else []
+    variants = [
+        {"id": record_id * 10 + index, "option1": colour, "price": "88.00", "available": True}
+        for index, colour in enumerate(colours or ("Default Title",))
+    ]
+    return {
+        "id": record_id,
+        "title": title,
+        "handle": f"h{record_id}",
+        "options": options,
+        "variants": variants,
+    }
+
+
+def _products_of(session: Session, source: str) -> set[str]:
+    table = Product.__table__
+    return set(session.execute(select(table.c.source_id).where(table.c.source == source)).scalars())
+
+
+def _before_the_rule(session: Session, records: list[dict[str, object]]) -> str:
+    """Write records the way a run before the non-apparel rule would have.
+
+    Read under a garment's title, so the rule lets every one through, then
+    given back its own: the towels land as products, with the ids a real run
+    gives them, the way they sit in the hosted catalog today."""
+    disguised = _public().normalize([{**record, "title": "Placeholder Tee"} for record in records])
+    titles = {str(record["id"]): str(record["title"]) for record in records}
+    disguised.products = [
+        replace(product, title=titles[product.source_id.split(":")[0]])
+        for product in disguised.products
+    ]
+    ingest(session, disguised)
+    return _public().source
+
+
+def test_a_run_removes_what_earlier_runs_wrote_for_a_record_it_turns_away(
+    session: Session,
+) -> None:
+    """Ingestion upserts, so a towel written before the rule existed would stay
+    in the catalog forever beside the quarantine row that now turns it away."""
+    records = [
+        _public_record(9, "Luxe Bath Towels", "Ivory", "Stone"),
+        _public_record(10, "Luxe Bath Robe", "Ivory"),
+        _public_record(11, "Candle BOTANIC"),
+    ]
+    source = _before_the_rule(session, records)
+    assert _products_of(session, source) == {"9:ivory", "9:stone", "10", "11"}
+
+    report = ingest(session, _public().normalize(records))
+
+    assert report.filtered == 2
+    assert report.products_removed == 3
+    assert _products_of(session, source) == {"10"}
+    offers = Offer.__table__
+    remaining_offers = set(
+        session.execute(select(offers.c.source_id).where(offers.c.source == source)).scalars()
+    )
+    assert remaining_offers == {"10"}
+
+    again = ingest(session, _public().normalize(records))
+    assert again.products_removed == 0
+    assert _products_of(session, source) == {"10"}
+
+
+def test_removal_never_reaches_what_a_person_or_an_agent_wrote(session: Session) -> None:
+    records = [
+        _public_record(9, "Luxe Bath Towels"),
+        _public_record(12, "Nantucket Washcloths"),
+    ]
+    source = _before_the_rule(session, records)
+    products = Product.__table__
+    # A person re-entered one towel by hand, and a stylist attached an offer to
+    # the other: neither row is the feed's to take back.
+    session.execute(
+        products.update()
+        .where(products.c.source == source, products.c.source_id == "9")
+        .values(provenance=Provenance.user_entry)
+    )
+    washcloths = product_id_for(session, source, "12")
+    assert washcloths is not None
+    retailer_id = session.execute(select(Offer.__table__.c.retailer_id).limit(1)).scalar_one()
+    write(
+        session,
+        [
+            WriteSpec(
+                entity="Offer",
+                natural_key={"source": "stylist-desk", "source_id": "washcloths"},
+                values={
+                    "provenance": Provenance.stylist_entry,
+                    "product_id": washcloths,
+                    "retailer_id": retailer_id,
+                    "url": "https://example.test/washcloths",
+                    "price_amount_minor": 3200,
+                    "currency": "USD",
+                },
+            )
+        ],
+    )
+
+    report = ingest(session, _public().normalize(records))
+
+    assert report.filtered == 2
+    assert report.products_removed == 0
+    assert _products_of(session, source) == {"9", "12"}
+
+
+def test_removal_is_scoped_to_the_source_that_turned_the_record_away(session: Session) -> None:
+    """Shopify product ids are unique only within a store: a towel turned away
+    by one storefront says nothing about product 9 at another."""
+    records = [_public_record(9, "Luxe Bath Towels")]
+    elsewhere = ShopifyPublicConnector(
+        profile=StorefrontProfile(
+            domain="elsewhere.test", retailer_name="Elsewhere", currency="USD"
+        ),
+        rates=RATES,
+    )
+    ingest(session, elsewhere.normalize([_public_record(9, "Linen Shirt")]))
+
+    _before_the_rule(session, records)
+    ingest(session, _public().normalize(records))
+
+    assert _products_of(session, elsewhere.source) == {"9"}
 
 
 def test_per_size_availability_survives_ingestion(session: Session) -> None:

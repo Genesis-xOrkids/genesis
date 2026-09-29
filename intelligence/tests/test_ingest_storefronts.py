@@ -25,10 +25,16 @@ from sqlalchemy.orm import Session
 from api.genesis_api.models import IngestionRun, Offer, Product, Storefront
 from api.genesis_api.models.enums import IngestionRunStatus, SizeSystem, StorefrontRoute
 from api.genesis_api.writer import WriteSpec, write
+from intelligence.catalog.connectors.shopify_public import (
+    ShopifyPublicConnector,
+    StorefrontProfile,
+)
 from intelligence.catalog.fetching import BlockedError, DisallowedByRobotsError, FetchError
 from intelligence.catalog.money import FxRates
 from intelligence.pipelines.ingest_storefronts import (
     ROUTE_TTL,
+    Fetched,
+    RunSummary,
     StorefrontTarget,
     fetch_storefront,
     persist,
@@ -318,3 +324,41 @@ def test_quarantine_rate_has_a_denominator(storefront: StorefrontTarget) -> None
         domain="x", status=IngestionRunStatus.succeeded, route=StorefrontRoute.public_feed
     )
     assert empty.quarantine_rate == 0.0
+
+
+def test_records_turned_away_as_not_apparel_do_not_raise_the_quarantine_rate(
+    session: Session, storefront: StorefrontTarget
+) -> None:
+    """The rate is the alarm for a source changing shape. A storefront selling
+    bedding beside its sleepwear turns a third of its feed away by design, and
+    counting that would ring the alarm every night and hide a real change."""
+    products = json.loads((FIXTURES / "everlane_products.json").read_text())["products"][:6]
+    bedding = [
+        {**products[0], "id": 900 + index, "title": title, "product_type": "Home"}
+        for index, title in enumerate(("Bamboo Sheet Set", "Luxe Bath Towels", "Duvet Cover"))
+    ]
+    unreadable = {**products[1], "id": 999, "variants": [{"title": "M", "price": ""}]}
+    records = [*products, *bedding, unreadable]
+    profile = StorefrontProfile(
+        domain=storefront.domain, retailer_name="Runner Test", currency="USD"
+    )
+    fetched = Fetched(
+        route=StorefrontRoute.public_feed,
+        profile=profile,
+        normalized=ShopifyPublicConnector(profile=profile, rates=RATES).normalize(records),
+        records_seen=len(records),
+    )
+
+    outcome = persist(session, storefront, fetched, NOW)
+    summary = RunSummary(outcomes=[outcome])
+
+    assert outcome.report is not None
+    assert (outcome.report.quarantined, outcome.report.filtered) == (1, 3)
+    assert summary.filtered == 3
+    assert summary.quarantine_rate == pytest.approx(1 / len(records))
+    recorded = session.execute(
+        select(IngestionRun.__table__.c.quarantined).where(
+            IngestionRun.__table__.c.storefront_id == storefront.id
+        )
+    ).scalar_one()
+    assert recorded == 1, "the run row records what could not be read, as its rate does"
