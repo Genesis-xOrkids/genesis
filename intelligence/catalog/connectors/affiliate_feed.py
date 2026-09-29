@@ -119,6 +119,12 @@ class AffiliateFeedConnector:
             if not source_id:
                 result.record_failure(raw, "identify", f"row has no {columns.product_id}")
                 continue
+            rejected = vocabulary.not_apparel(
+                str(row.get(columns.title) or ""), _text(row.get(columns.category))
+            )
+            if rejected is not None:
+                result.reject(raw, rejected)
+                continue
             try:
                 product, offer = self._one(row, source_id)
             except (CurrencyError, ColorError, ValueError, KeyError, TypeError) as exc:

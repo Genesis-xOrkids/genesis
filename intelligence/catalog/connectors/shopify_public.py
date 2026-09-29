@@ -56,26 +56,6 @@ _SIZE_OPTION_NAMES = {"size", "sizes", "shoe size", *_WAIST_OPTION_NAMES}
 _INSEAM_OPTION_NAMES = {"inseam", "length"}
 _COLOR_OPTION_NAMES = {"color", "colour", "shade", "colorway"}
 
-# Storefronts sell warranties, gift cards, and shipping protection through the
-# same catalog. They are real products and none of them are clothing, so they are
-# filtered rather than ingested and later explained away.
-_NON_GARMENT_TERMS = {
-    "gift card",
-    "e-gift",
-    "egift",
-    "warranty",
-    "protection",
-    "insurance",
-    "shipping",
-    "donation",
-    "sample",
-    "swatch",
-    "returns coverage",
-    "package protection",
-    "carbon offset",
-    "extended care",
-}
-
 
 # A storefront states its own country in /meta.json. That stated fact gives a
 # default size system for the bare numeric labels these feeds are full of
@@ -177,11 +157,6 @@ def _slug(value: str) -> str:
     return _SLUG.sub("-", value.lower()).strip("-") or "default"
 
 
-def looks_like_a_garment(title: str, product_type: str | None) -> bool:
-    haystack = f"{title} {product_type or ''}".lower()
-    return not any(term in haystack for term in _NON_GARMENT_TERMS)
-
-
 class ShopifyPublicConnector:
     """Translates one storefront's public product feed."""
 
@@ -210,8 +185,9 @@ class ShopifyPublicConnector:
             if not title:
                 result.record_failure(raw, "identify", "product has no title")
                 continue
-            if not looks_like_a_garment(title, record.get("product_type")):
-                result.record_failure(raw, "filter", "not a garment (service or gift SKU)")
+            rejected = vocabulary.not_apparel(title, record.get("product_type"))
+            if rejected is not None:
+                result.reject(raw, rejected)
                 continue
 
             try:

@@ -30,5 +30,13 @@ class Connector(Protocol):
 
     def normalize(self, records: Iterable[Any]) -> NormalizationResult:
         """Translate raw source records. Never raises for a single bad record:
-        that record is quarantined and the run continues."""
+        that record is quarantined and the run continues.
+
+        Every connector asks :func:`intelligence.catalog.vocabulary.not_apparel`
+        of each record, passing its title and the source's own category for the
+        item, and hands a rejected record to ``NormalizationResult.reject``.
+        That is what keeps towels and gift cards out of the catalog whichever
+        source they arrive from, and what lets ingestion remove the ones an
+        earlier run let in. Product ids follow the form ``NormalizedProduct``
+        documents, or that removal cannot find them."""
         ...

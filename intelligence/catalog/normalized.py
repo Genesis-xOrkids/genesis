@@ -30,6 +30,11 @@ from api.genesis_api.models.enums import (
     SleeveLength,
     SleeveStyle,
 )
+from intelligence.catalog.vocabulary import NotApparel
+
+# The quarantine stage of a record read and turned away as not apparel, as
+# distinct from one that could not be read at all.
+FILTER_STAGE = "filter"
 
 
 @dataclass(frozen=True)
@@ -60,7 +65,13 @@ class NormalizedSize:
 
 @dataclass(frozen=True)
 class NormalizedProduct:
-    """One purchasable style in one colorway, in canonical terms."""
+    """One purchasable style in one colorway, in canonical terms.
+
+    ``source_id`` is the source record's own id, or ``<record id>:<suffix>`` when
+    a connector splits one record into several products (one per colourway),
+    where the suffix contains no colon. Ingestion relies on that form to find
+    every product a record produced; the record id itself may contain colons.
+    """
 
     source: str
     source_id: str
@@ -128,11 +139,23 @@ class SourceRecord:
 
 @dataclass
 class NormalizationResult:
-    """What one connector run produced, including what it could not read."""
+    """What one connector run produced, including what it could not read and
+    what it turned away."""
 
     products: list[NormalizedProduct] = field(default_factory=list)
     offers: list[NormalizedOffer] = field(default_factory=list)
     failures: list[tuple[SourceRecord, str, str]] = field(default_factory=list)
+    rejected: dict[str, NotApparel] = field(default_factory=dict)
 
     def record_failure(self, record: SourceRecord, stage: str, error: str) -> None:
         self.failures.append((record, stage, error))
+
+    def reject(self, record: SourceRecord, reason: NotApparel) -> None:
+        """Turn away a record that is not apparel.
+
+        Quarantined like a record that could not be read, so the reason is on
+        file, and kept by the record's id so ingestion can remove what earlier
+        runs wrote for it.
+        """
+        self.record_failure(record, FILTER_STAGE, str(reason))
+        self.rejected[record.source_id] = reason

@@ -1,0 +1,560 @@
+"""Category vocabulary and the non-apparel rule.
+
+Titles here are real ones, read from the storefronts' own ``/products.json`` on
+2026-09-28, wherever the case came from the catalog rather than from reasoning
+about it. A made-up title tests the vocabulary against the words its author
+expected; a real one tests it against the words merchants use.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from api.genesis_api.models.enums import Category
+from intelligence.catalog.vocabulary import (
+    CATEGORY_MODIFIER_TERMS,
+    CATEGORY_TERMS,
+    NON_APPAREL_TERMS,
+    NonApparelKind,
+    NotApparel,
+    category_for,
+    not_apparel,
+)
+
+# --- every term names its own category ------------------------------------
+
+
+@pytest.mark.parametrize("phrase", sorted(CATEGORY_TERMS))
+def test_every_category_term_standing_alone_names_its_own_category(phrase: str) -> None:
+    """A longer phrase or a modifier that swallowed this one would make it dead:
+    listed, and never the answer."""
+    assert category_for(phrase) is CATEGORY_TERMS[phrase]
+
+
+@pytest.mark.parametrize("phrase", sorted(CATEGORY_MODIFIER_TERMS))
+def test_every_modifier_standing_alone_names_its_category(phrase: str) -> None:
+    assert category_for(phrase) is CATEGORY_MODIFIER_TERMS[phrase]
+
+
+@pytest.mark.parametrize("phrase", sorted(NON_APPAREL_TERMS))
+def test_every_non_apparel_term_is_rejected_for_what_it_names(phrase: str) -> None:
+    rejected = not_apparel(phrase)
+    assert rejected == NotApparel(kind=NON_APPAREL_TERMS[phrase], phrase=phrase)
+
+
+@pytest.mark.parametrize("phrase", sorted(NON_APPAREL_TERMS))
+def test_no_non_apparel_term_is_also_a_garment(phrase: str) -> None:
+    """A term in both vocabularies would be kept by the garment check every time,
+    and so could never reject anything."""
+    assert category_for(phrase) is None
+
+
+# --- the terms added for C2, on the titles that asked for them -------------
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # lingerie
+        ("Revolution V-Neck Bra", Category.lingerie),
+        ("Core Rib Triangle Bralette", Category.lingerie),
+        ("Essential No-Show Thong", Category.lingerie),
+        ("Core Briefs 3-Pack", Category.lingerie),
+        ("Flex Hipster 3-pack", Category.lingerie),
+        ("Teen Light Leakproof No-Show Boyshort", Category.lingerie),
+        ("Leakproof UltraThin No-Show Boybrief", Category.lingerie),
+        ("Men's Best Damn™ Cotton Modal Boxer Brief 5\"", Category.lingerie),
+        ("Men's Poplin Boxer in Lapis Confection Stripe", Category.lingerie),
+        ("Core Trunks 12-Pack", Category.lingerie),
+        ("Women's Seamless Underwear", Category.lingerie),
+        ("Core Play String Bikini Briefs", Category.lingerie),
+        ("Nippies Skin Adhesive Reusable Nipple Covers Coco", Category.lingerie),
+        ("Pasties in Sand", Category.lingerie),
+        ("Embroidery Lift Up Corset Ecru", Category.lingerie),
+        ("Effortless Lace Teddy Black", Category.lingerie),
+        # activewear
+        ("Catalyst Sports Bra", Category.activewear),
+        ("Girls Performance Flutter Sleeve Leotard", Category.activewear),
+        ("Girls Gymnastics Unitard", Category.activewear),
+        # sleepwear
+        ("Washable Silk Robe", Category.sleepwear),
+        ("Bathe Me Bathrobe", Category.sleepwear),
+        ("The Lux Nightgown", Category.sleepwear),
+        ("The Footie Pajama", Category.sleepwear),
+        ("Baby Sleeper in French Blue", Category.sleepwear),
+        ("The Sleep Sack", Category.sleepwear),
+        ("The Quintessential Sleep Set", Category.sleepwear),
+        ("Breathable Button Up Sleep Shirt", Category.sleepwear),
+        ("The Tiny Sully PJ Set", Category.sleepwear),
+        ("Women's Bamboo Stretch-Knit Pajama Short", Category.sleepwear),
+        ("Waffle Bath Kimono", Category.sleepwear),
+        ("Sherpa Wearable Blanket", Category.sleepwear),
+        ("Classic Pyjama Set", Category.sleepwear),
+        ("Lace Nightie", Category.sleepwear),
+        ("Striped Nightshirt", Category.sleepwear),
+        ("Organic Sleepwear Set", Category.sleepwear),
+        # shoes, boots, sandals
+        ("The Casual Clog", Category.shoes),
+        ("The Almond Slingback", Category.shoes),
+        ("Twist Sling-Back Flat", Category.shoes),
+        ("The Cruiser Mary Jane", Category.shoes),
+        ("The Scuff Slipper", Category.shoes),
+        ("The Driver", Category.shoes),
+        ("The Max Square Ballerina", Category.shoes),
+        ("The D'Orsay Espadrille", Category.shoes),
+        ("The Penny Loafer Mule", Category.shoes),
+        ("The Wedge", Category.shoes),
+        ("Collegium x Everlane Moc Toe Derby", Category.shoes),
+        ("Suede Moccasin", Category.shoes),
+        ("The Western Bootie", Category.boots),
+        ("The Weekend Slide", Category.sandals),
+        ("The Men's Flip Flop", Category.sandals),
+        # bags
+        ("The Wristlet", Category.bag),
+        ("The Universal Pouch", Category.bag),
+        ("The Party Pouches", Category.bag),
+        ("Zip Around Wallet", Category.bag),
+        ("Card Holder", Category.bag),
+        ("The Carryall", Category.bag),
+        ("The Travel Duffel", Category.bag),
+        ("The Weekender", Category.bag),
+        ("The Belt Bag", Category.bag),
+        ("Nylon Fanny Pack", Category.bag),
+        # jewelry
+        ("Capri Anklet", Category.jewelry),
+        ("Petite Puff Charm", Category.jewelry),
+        ("The Friendship Talisman Pendant", Category.jewelry),
+        ("Three Diamond Choker", Category.jewelry),
+        ("Sterling Silver Bangle", Category.jewelry),
+        ("Tiny Pavé Nose Stud 14K", Category.jewelry),
+        ("Seamless Titanium Piercing Hoop in Gold", Category.jewelry),
+        ("Pearl Cluster Brooch", Category.jewelry),
+        # hats, scarves, gloves, hosiery, eyewear
+        ("Airlift Solar Visor", Category.hat),
+        ("Wool Beret", Category.hat),
+        ("Cashmere Snood", Category.scarf),
+        ("Silk Scarves Set", Category.scarf),
+        ("Cashmere Mittens", Category.gloves),
+        ("MeMoí Thigh High Stockings Black", Category.hosiery),
+        ("Sheer Pantyhose", Category.hosiery),
+        ("ALO Wire Frame Sunglasses", Category.eyewear),
+        # swimwear
+        ("Laguna One Piece", Category.swimwear),
+        ("Teen Racerback Tankini Swim Top", Category.swimwear),
+        ("The Alexia Rashguard", Category.swimwear),
+        ("Long Sleeve Rash Guard", Category.swimwear),
+        ("Micro Chenille Cropped V-Neck Coverup", Category.swimwear),
+        ("Polar Fleece Retreat Cover Up", Category.swimwear),
+        ("Maxi Sarong Tigris", Category.swimwear),
+        ("Swim High Waist Bottom in Black", Category.swimwear),
+        # tops, shirts, sweaters, cardigans
+        ("Modal Rib Long Sleeve", Category.top),
+        ("SuperForm Rib Longsleeve", Category.top),
+        ("CloudKnit Boxy Shortsleeve", Category.top),
+        ("Women's Chelsea Short Sleeve", Category.top),
+        ("Luxe Jersey Henley", Category.top),
+        ("The Doris Mini Tunic", Category.top),
+        ("The Canal Popover in Rinsed Indigo", Category.shirt),
+        ("Pacifica Stretch Twill Overshirt", Category.jacket),
+        ("Cloud 9 Terry Relaxed Crewneck", Category.sweater),
+        ("Classic Crew Neck", Category.sweater),
+        ("Cloud 9 Terry Sweatshirt", Category.sweater),
+        ("Women Organic Quarter Zip", Category.sweater),
+        ("Cloud 9 Fleece Half Zip", Category.sweater),
+        ("Nimbus 1/4 Zip", Category.sweater),
+        ("Whipped Cardi in Garnet", Category.cardigan),
+        # jackets, jumpsuits, dresses, skirts
+        ("Quilted Shacket", Category.jacket),
+        ("Blanket Poncho", Category.coat),
+        ("Sherpa Blanket Cape", Category.coat),
+        ("Silk Kaftan", Category.dress),
+        ("Linen Caftan", Category.dress),
+        ("Cashmere Travel Shawl", Category.scarf),
+        ("The Jillee Ruffle Onesie", Category.jumpsuit),
+        ("The Utility Coverall in Linen", Category.jumpsuit),
+        ("Girls Flutter-Sleeve Bow Back Sundress", Category.dress),
+        ("Studio Skort", Category.skirt),
+    ],
+)
+def test_the_added_terms_resolve_the_titles_they_were_added_for(
+    title: str, expected: Category
+) -> None:
+    assert category_for(title) is expected
+
+
+# --- collisions ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # "short" is the singular of "shorts", and it is also a sleeve length.
+        ("Breezeweight Active Short Sleeve Tee", Category.top),
+        ("Stretch Selvage Short Sleeve Shirt", Category.shirt),
+        ("Women's Bamboo Stretch-Knit Short Sleeve Pajama Top", Category.sleepwear),
+        ("Girls Short Sleeve Celestial Sequin Tutu Dress", Category.dress),
+        ("Girls Performance Short-Sleeve Leotard", Category.activewear),
+        ('Solemate™ 2.5" Short', Category.shorts),
+        ("Short Sleeved Tee", Category.top),
+        ("Short-Sleeved Shirt", Category.shirt),
+        ("Washable Silk Short Robe", Category.sleepwear),
+        ("Short Pajama Set", Category.sleepwear),
+        ("Kids Furry Short Boot", Category.boots),
+        ("Bike Short", Category.shorts),
+        ("Cargo Shorts", Category.shorts),
+        ("The Cheeky Jean Short", Category.shorts),
+        ("The Pull-On Performance Chino Short", Category.shorts),
+        ("Teen Period Swim Board Shorts", Category.swimwear),
+        # A cut of underwear describes swimwear as readily as it names lingerie.
+        ("Hipster Bikini Bottom", Category.swimwear),
+        ("Swim Boyshort", Category.swimwear),
+        ("Swim Scoop Brief in Cobalt", Category.swimwear),
+        ("Teen Period Swim Full Coverage Hipster", Category.swimwear),
+        ("Core Thong 3-Pack", Category.lingerie),
+        ("Core Icon Boxer Shorts 2-pack", Category.lingerie),
+        ("Men's Soft Modal Boxer Brief", Category.lingerie),
+        # A modifier names the garment only when no noun does.
+        ("Conquer Reform Crewneck Short Sleeve", Category.top),
+        ("Organic Cotton Crewneck Tee", Category.top),
+        ("Cotton Henley Dress", Category.dress),
+        ("Long Sleeve Mini Dress", Category.dress),
+        ("Pima Long Sleeve Nightgown in Parisian Green", Category.sleepwear),
+        ("Quarter Zip Jacket", Category.jacket),
+        ("Popover Dress", Category.dress),
+        ("One Piece Jumpsuit", Category.jumpsuit),
+        ("Corset Dress", Category.dress),
+        ("Teddy Fleece Jacket", Category.jacket),
+        ("The Teddy Slipper", Category.shoes),
+        ("Cozy Slipper Socks", Category.hosiery),
+        ("Wedge Heel Boot", Category.boots),
+        ("Cable Knit Crewneck", Category.sweater),
+        ("Kids Classic Knit Tank Top", Category.top),
+        ("Women's Bamboo Stretch-Knit Tapered Pant", Category.pants),
+        ("Women's Bamboo Stretch-Knit Kimono Robe", Category.sleepwear),
+        ("Knit Cami Mini Dress", Category.dress),
+        ("The ReWool Duffle Coat", Category.coat),
+        ("Kangaroo Pouch Pocket Tee", Category.top),
+        ("Pearl Charm Bracelet", Category.jewelry),
+        ("Hoop Earrings", Category.jewelry),
+        ("Choker Neck Top", Category.top),
+        ("Ballerina Wrap Top", Category.top),
+        ("Driver Cap", Category.hat),
+        ("Derby Hat", Category.hat),
+        ("Stud Detail Boot", Category.boots),
+        # Nouns that meet inside one title.
+        ("Bra Top", Category.top),
+        ("Thong Sandal", Category.sandals),
+        ("Classic Swim Shorts", Category.swimwear),
+        ('5" Vintage Swim Trunk', Category.swimwear),
+        ("Swim Brief", Category.swimwear),
+        ("Sweatshirt Dress", Category.dress),
+        ("Girls Glittery Mary Jane Dress Shoe", Category.shoes),
+        ("Kids Ballet Booties", Category.boots),
+        ("Sieve Thong in Buff (Pack)", Category.lingerie),
+        ("Sculpt Cheeky Low Rise Swim Bottom", Category.swimwear),
+    ],
+)
+def test_colliding_terms_resolve_to_the_garment_the_title_names(
+    title: str, expected: Category
+) -> None:
+    assert category_for(title) is expected
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Girls Ballet Dresses", Category.dress),
+        ("Luxury Watches", Category.watch),
+        ("Silk Scarves", Category.scarf),
+        ("Beaded Pouches", Category.bag),
+    ],
+)
+def test_sibilant_plurals_match(title: str, expected: Category) -> None:
+    """ "Dresses" is "dress" plus "es", and until it was accepted a whole product
+    type of dresses matched nothing."""
+    assert category_for(title) is expected
+
+
+def test_a_noun_on_the_shelf_outranks_a_modifier_in_the_name() -> None:
+    """The name and the merchant's category are read together: a modifier
+    describes the garment, and the shelf's noun names it."""
+    assert (
+        category_for("Super Fine Cashmere Long Sleeve Crewneck", "Crew Neck Sweaters")
+        is Category.sweater
+    )
+    assert category_for("Air Alpaca Long-Sleeve Slim Crew", "Sweaters") is Category.sweater
+    assert category_for("Archive Long-Sleeve Crew", "Knit Tops") is Category.top
+    assert category_for("SuperForm Rib Longsleeve", "Longsleeve") is Category.top
+    assert (
+        category_for("Slumberknit Shawl Collar Short Sleeve Short Set", "Sleep Sets")
+        is Category.sleepwear
+    )
+
+
+def test_a_noun_in_the_name_still_outranks_one_on_the_shelf() -> None:
+    """A department is a shelf, not a description: "Knit Cami Mini Dress" is
+    filed under Sweaters so knitwear shoppers find it, and it is a dress."""
+    assert category_for("Knit Cami Mini Dress", "Sweaters") is Category.dress
+    assert category_for("The Utility Coverall in Linen", "Dresses") is Category.jumpsuit
+
+
+def test_tags_and_descriptions_do_not_outrank_a_modifier_in_the_name() -> None:
+    """They name what an item is worn with as readily as the item: Negative tags
+    its henleys with its sleepwear."""
+    assert category_for("Whipped Henley in Mink", "Lounge", "sleepwear pajama") is Category.top
+    assert category_for("The Monty", None, "Womens Shoes") is Category.shoes
+    assert category_for(None, "Underwear_Bras_Scoop") is Category.lingerie
+
+
+# --- the non-apparel rule ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("title", "kind"),
+    [
+        ("Luxe Bath Towels", NonApparelKind.home_goods),
+        ("Nantucket Washcloths", NonApparelKind.home_goods),
+        ("Bamboo Fitted Sheet", NonApparelKind.home_goods),
+        ("Luxe Bath Sheets", NonApparelKind.home_goods),
+        ("Bamboo Pillowcases", NonApparelKind.home_goods),
+        ("Striped Linen Throw Pillow", NonApparelKind.home_goods),
+        ("Soft-Wash Cotton Quilted Shams", NonApparelKind.home_goods),
+        ("Bamboo Duvet Cover", NonApparelKind.home_goods),
+        ("The Bed Set", NonApparelKind.home_goods),
+        ("Bubble Cuddle Blanket", NonApparelKind.home_goods),
+        ("Down Alternative Throw", NonApparelKind.home_goods),
+        ("Waterfront Coverlet", NonApparelKind.home_goods),
+        ("Bamboo Bedding Basic Bundle", NonApparelKind.home_goods),
+        ("Complete Luxe Bath Bundle", NonApparelKind.home_goods),
+        ("Plush Loop Bath Mat", NonApparelKind.home_goods),
+        ("Everlane x Peace & Quiet Welcome Mat", NonApparelKind.home_goods),
+        ("The Placemat (Set of 4)", NonApparelKind.home_goods),
+        ("The Coaster (Set of 4)", NonApparelKind.home_goods),
+        ("The Cocktail Napkin Set", NonApparelKind.home_goods),
+        ("The Candle in Drift", NonApparelKind.home_goods),
+        ("Gah! Water Bottle", NonApparelKind.home_goods),
+        ("Jewelry Tray", NonApparelKind.home_goods),
+        ("Vintage Silver Shell Dish", NonApparelKind.home_goods),
+        ("Everlane x Peace & Quiet Suede Catchall", NonApparelKind.home_goods),
+        ("Cosmic Star Ornament", NonApparelKind.home_goods),
+        ("The Packing Cubes", NonApparelKind.home_goods),
+        ("Travel Mini Jewellery Box", NonApparelKind.home_goods),
+        ("Keepsake Tin", NonApparelKind.home_goods),
+        ("Cooling Mattress Protector", NonApparelKind.home_goods),
+        ("Coronado Lounge Chair", NonApparelKind.home_goods),
+        ("Digital Gift Card", NonApparelKind.gift_or_service),
+        ("ALO e-Gift Card", NonApparelKind.gift_or_service),
+        ("£50 Gift Voucher", NonApparelKind.gift_or_service),
+        ("E-Gift Code", NonApparelKind.gift_or_service),
+        ("Signature Gift Wrapping", NonApparelKind.gift_or_service),
+        ("Small DIY Gift Envelope", NonApparelKind.gift_or_service),
+        ("Stelle Gift Box", NonApparelKind.gift_or_service),
+        ("ShipInsure Package Protection", NonApparelKind.gift_or_service),
+        ("Expedited shipping", NonApparelKind.gift_or_service),
+        ("Free Returns Coverage", NonApparelKind.gift_or_service),
+        ("Easy Returns", NonApparelKind.gift_or_service),
+        ("Cozy Earth Annual Membership", NonApparelKind.gift_or_service),
+        ("Bamboo Sheet Swatch", NonApparelKind.gift_or_service),
+        ("Alo Access Reward", NonApparelKind.loyalty_reward),
+        ("Mini Shampoo & Conditioner Duo", NonApparelKind.personal_care),
+        ("Mega-C Body Wash", NonApparelKind.personal_care),
+        ("Hill House x Wet Brush Pro Detangler Brush", NonApparelKind.personal_care),
+        ("Hill House x Wet Brush Heatless Curler Set", NonApparelKind.personal_care),
+        ("Enzyme Facial Cleanser", NonApparelKind.personal_care),
+        ("Hydrating Serum", NonApparelKind.personal_care),
+        ("Chill & Unwind Essential Oil (Lavender)", NonApparelKind.personal_care),
+        ("Cashmere Comb", NonApparelKind.personal_care),
+        ("Uplifting Yoga Block", NonApparelKind.fitness_equipment),
+        ("Bend It Yoga Wheel", NonApparelKind.fitness_equipment),
+        ("Extra Long Yoga Strap", NonApparelKind.fitness_equipment),
+    ],
+)
+def test_titles_that_name_only_non_apparel_are_rejected(title: str, kind: NonApparelKind) -> None:
+    rejected = not_apparel(title)
+    assert rejected is not None
+    assert rejected.kind is kind
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # A garment beside a non-apparel word is a garment.
+        "Luxe Bath Robe",
+        "Ribbed Terry Bath Robe",
+        "Blanket Scarf",
+        "Throw-On Midi Dress",
+        "UPF 50+ Long Sleeve Sun Protection Shirt",
+        "Places To Go UV Protection Jacket",
+        "Pepper Pillows Reusable Nipple Covers (1 Pair)",
+        "Pillow Slide",
+        "Quilted Colville Overshirt",
+        "Sample Sale Midi Dress",
+        "Free Shipping Tee",
+        "Yoga Mat Sock",
+        # A set or bundle of garments is apparel.
+        "The Classic All You Bra Trio Bundle",
+        "Women's Bamboo Stretch-Knit Short Sleeve Pajama Set",
+        "Mixed Metal Cosmic Dome Hoops Gift Set",
+        "Supima® Cotton Wirefree Bra Duo Black",
+        # Not knowing what a thing is does not show it is not clothing.
+        "The Point II",
+        "Teen Leakproof Starter Kit",
+        "The Belle Bow",
+        "UPF 50+ Sun Protection Face Mask",
+        "",
+    ],
+)
+def test_garments_and_unknowns_are_kept(title: str) -> None:
+    assert not_apparel(title) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "shelf"),
+    [
+        # Garments whose titles also name a home or bath word.
+        ("Waffle Bath Kimono", None),
+        ("Blanket Poncho", None),
+        ("Hooded Towel Poncho", None),
+        ("Sherpa Blanket Cape", None),
+        ("Wearable Blanket", None),
+        ("Cashmere Throw Shawl", None),
+        ("Terry Towel Scrunchie", None),
+        # The merchant's category protects what the title leaves unsaid.
+        ("Waffle Bath Wrap", "Robes"),
+        ("Pima After Bath Wrap in Baltic Blue", "Loungewear Robes"),
+    ],
+)
+def test_anything_the_record_says_is_worn_protects_it(title: str, shelf: str | None) -> None:
+    assert not_apparel(title, shelf) is None
+
+
+def test_only_the_title_can_reject() -> None:
+    """A shelf protects but never accuses: Hill House files robes under Home."""
+    assert not_apparel("The Hotel Robe", "Home") is None
+    assert not_apparel("Complete Luxe Bath Bundle") is not None
+    assert not_apparel("Complete Luxe Bath Bundle", "Bath") is not None
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["The Towel Wrap", "Pima After Bath Wrap in Baltic Blue", "Luxe Bath Wrap", "Waffle Bath Wrap"],
+)
+def test_bath_and_towel_wraps_are_worn(title: str) -> None:
+    """Decided 2026-09-29: a wrap is worn, and the rule of 2026-09-27 keeps
+    garments. It stands on its own name, with no shelf needed."""
+    assert not_apparel(title) is None
+    assert category_for(title) is Category.sleepwear
+
+
+@pytest.mark.parametrize(
+    ("title", "phrase"),
+    [
+        ("Cashmere Knit Throw", "throw"),
+        ("Waffle Knit Bath Towel", "towel"),
+        ("Teddy Sherpa Throw", "throw"),
+        ("Wedge Pillow", "pillow"),
+        ("Storage Trunk", "storage trunk"),
+    ],
+)
+def test_a_modifier_does_not_make_a_garment_of_what_the_title_names(
+    title: str, phrase: str
+) -> None:
+    """Knit, teddy, wedge and trunk describe a garment only when the title names
+    no other thing: these are a throw, a towel, a pillow and a trunk."""
+    assert category_for(title) is None
+    rejected = not_apparel(title)
+    assert rejected is not None
+    assert rejected.phrase == phrase
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Bath Slipper", Category.shoes),
+        ("Sample Sale Slipper", Category.shoes),
+        ("Core Trunks 12-Pack", Category.lingerie),
+        ("Cable Knit Crewneck", Category.sweater),
+    ],
+)
+def test_a_descriptor_does_not_stop_a_modifier(title: str, expected: Category) -> None:
+    assert category_for(title) is expected
+    assert not_apparel(title) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "phrase"),
+    [
+        ("Bamboo Flat Sheet", "flat sheet"),
+        ("Soft-Wash Cotton Flat Sheet", "flat sheet"),
+        ("The Top Sheet", "top sheet"),
+    ],
+)
+def test_a_name_for_a_thing_not_worn_claims_the_garment_word_inside_it(
+    title: str, phrase: str
+) -> None:
+    """Measured on the sample: "flat" filed 37 flat sheets as shoes and "top" four
+    top sheets as tops, and the garment it named kept every one of them."""
+    assert category_for(title) is None
+    rejected = not_apparel(title)
+    assert rejected is not None
+    assert rejected.phrase == phrase
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Ballet Flat", Category.shoes),
+        ("Crop Top", Category.top),
+        ("Crystal Crossover Hoops Ornament Bauble in Gold", Category.jewelry),
+        ("Hill House x Studs Gift Box", Category.jewelry),
+    ],
+)
+def test_the_garment_is_kept_when_no_longer_name_claims_it(title: str, expected: Category) -> None:
+    """Hoops and studs are nouns: jewelry in a gift box or a bauble is the
+    jewelry."""
+    assert category_for(title) is expected
+    assert not_apparel(title) is None
+
+
+def test_a_shelf_cannot_protect_a_title_that_names_a_thing_not_worn() -> None:
+    """One shelf holds many things, so it vouches only for a title that names
+    nothing itself."""
+    assert not_apparel("Luxe Bath Towel", "Home > Bath > Towels & Robes") is not None
+    assert not_apparel("Cashmere Knit Throw", "Sweaters") is not None
+    assert not_apparel("The Monty", "Womens Shoes") is None
+    assert not_apparel("Soft Bath Essentials", "Robes") is None
+
+
+def test_a_shelf_is_a_category_not_a_tag() -> None:
+    """Alo files its yoga blocks under "Internal" and tags them with the tops
+    they are sold beside; only the category is passed, so the block is still
+    turned away."""
+    assert not_apparel("Uplifting Yoga Block", "Internal") is not None
+
+
+@pytest.mark.parametrize(
+    "texts",
+    [
+        ("The Belle Bow", "The Belle Bow", "Dresses Girls Accessories"),
+        ("Bamboo Stretch Knit Skinny Scrunchies", None, None, "Pairs with our knit sweater."),
+        ("The Cleo Headband", "The Cleo Headband", "Dresses"),
+        ("90's Claw Clip", "Women:Accessories:Hair Management:Hair Ties"),
+        ("Sunflower Barette", "Accessories", "tops"),
+    ],
+)
+def test_worn_things_the_taxonomy_has_no_category_for_stay_null(
+    texts: tuple[str | None, ...],
+) -> None:
+    """A tag or a description must not supply a category for a hair bow."""
+    assert category_for(*texts) is None
+
+
+def test_an_uncategorised_word_gives_way_to_a_garment() -> None:
+    assert category_for("The Kids Bow Mary Jane") is Category.shoes
+    assert category_for("Bow Back Sundress") is Category.dress
+    assert category_for("Bow Studs 14K", "Earrings 14K Studs") is Category.jewelry
+
+
+def test_the_quarantine_reason_leads_with_a_name_a_count_can_group_on() -> None:
+    rejected = not_apparel("Luxe Bath Towel Set")
+    assert str(rejected) == "not_apparel: home_goods (towel)"

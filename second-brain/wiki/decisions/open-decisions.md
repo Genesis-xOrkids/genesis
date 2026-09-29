@@ -4,7 +4,7 @@ type: decision
 sources: [ROADMAP.md, PLAN.md]
 related: ["[[roadmap]]", "[[plan]]", "[[enterprise-studio]]", "[[trend-corpus]]", "[[embeddings-and-vectors]]", "[[consumer-application]]", "[[database-choice]]", "[[catalog-supply]]"]
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-29
 ---
 
 ## What it is
@@ -49,6 +49,22 @@ Separate from the roadmap's list, and older:
 4. Whether to apply to the Shopify Agentic Storefront / UCP and Pinterest Trends
    partner programs immediately. **Recommended; lead times are weeks.** This is
    [[commerce-and-compliance]] X1 and it has not been filed.
+
+## Catalog taxonomy gaps, 2026-09-28
+
+Two groups of products are left without a category on purpose. Both were
+measured in a sample of every registered storefront's feed ([[catalog-supply]]).
+
+- **Hair accessories.** Scrunchies, headbands, claw clips, hair ties and hair
+  bows: 96 products in the sample, from Hill House, Alo, Knix, Lunya and Pepper.
+  They are worn, so they are not rejected, but `Category` has no value for
+  them. Fashionpedia gives them a category of their own. For now they stay null,
+  and a tag cannot give them a wrong category. **Open:** add `hair_accessory`,
+  or keep them null?
+- **Rothy's model-name titles.** "The Point II", "The Square" and "The Monty"
+  name a model rather than a garment. 244 products in the sample have no
+  product type, tags or description to fall back on. No vocabulary can place
+  them without guessing, so they are left to C3's image route.
 
 ## The `[verify]` list
 
