@@ -68,8 +68,9 @@ class NormalizedProduct:
     """One purchasable style in one colorway, in canonical terms.
 
     ``source_id`` is the source record's own id, or ``<record id>:<suffix>`` when
-    a connector splits one record into several products (one per colourway).
-    Ingestion relies on that form to find every product a record produced.
+    a connector splits one record into several products (one per colourway),
+    where the suffix contains no colon. Ingestion relies on that form to find
+    every product a record produced; the record id itself may contain colons.
     """
 
     source: str

@@ -68,16 +68,25 @@ downstream, and it does not apply to one source only.
 The rule is conservative by instruction:
 
 - **Only unambiguous evidence rejects.** The title must name a non-apparel item.
-- **Anything worn protects.** A title or merchant category that names a garment
-  keeps the record, and bundles of garments are apparel. A "Bath Robe" and a
-  "Bra Trio Bundle" stay; a "Bath Towel Set" goes.
+- **Anything worn protects.** A title that names a garment keeps the record,
+  and bundles of garments are apparel. A "Bath Robe" and a "Bra Trio Bundle"
+  stay; a "Bath Towel Set" goes. The merchant's category protects a title that
+  names nothing itself, but not one that names a non-apparel item: a "Luxe Bath
+  Towel" on a "Towels & Robes" shelf is still a towel.
 - **Unclear titles stay.** A title that names neither a garment nor a
   non-apparel item is kept, uncategorised.
+- **Bath and towel wraps are worn garments** (decided 2026-09-29, applying the
+  rule above). They are kept, as sleepwear.
 
-Rows the feed wrote before the rule existed are removed by the ingest run that
-first rejects them. Nothing a person or an agent wrote is ever touched. PR #66
-implements it in `vocabulary.not_apparel`, and [[catalog-supply]] records the
-measured effect on C2.
+The ingest run that first rejects a record removes the rows the feed wrote for it
+before the rule existed. That removal takes only products whose provenance is
+the feed's. It skips any product carrying an offer from another writer, or a
+long-tail attribute a person or a model labelled, since those rows would cascade
+away with it. The size retirement that runs beside it (PR #64) is narrower still:
+it deletes only size rows of offers the same run has just written, and size
+rows record no provenance of their own. PR #66 implements the rule in
+`vocabulary.not_apparel`, and [[catalog-supply]] records the measured effect on
+C2.
 
 ## What was learned by doing it
 

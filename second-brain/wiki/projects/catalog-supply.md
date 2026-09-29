@@ -122,12 +122,12 @@ rewards through the same feed as their clothing. PR #66 did two things (see
   runs let in, in the same run.
 
 Measured on a 4-page sample of all 27 storefronts, 14.6% of 24,391 products were
-uncategorised before and 2.0% of 23,409 after, with 327 records turned away. The
+uncategorised before and 2.0% of 23,368 after, with 339 records turned away. The
 same sample ingested end to end into a local database read 85.4% before and 98.0%
 after. The hosted estimate is ~98.5% once a person re-ingests after merge.
 Removing non-apparel shrinks both C2 denominators: the product count, and the
 offers the size measure is taken over. Home goods carry no size, so the size
-share rose too, from 81.9% to 86.5% on that sample.
+share rose too, from 81.9% to 86.7% on that sample.
 
 "Resolved" is not "correct". About 150 of the sample's newly resolved products
 were decided by a tag or a description rather than the title or the product type.

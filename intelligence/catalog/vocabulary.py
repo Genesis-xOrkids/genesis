@@ -132,6 +132,8 @@ CATEGORY_TERMS: dict[str, Category] = {
     "pyjama": Category.sleepwear,
     "robe": Category.sleepwear,
     "kimono": Category.sleepwear,
+    "bath wrap": Category.sleepwear,
+    "towel wrap": Category.sleepwear,
     "wearable blanket": Category.sleepwear,
     "pj": Category.sleepwear,
     "sneaker": Category.sneakers,
@@ -182,6 +184,8 @@ CATEGORY_TERMS: dict[str, Category] = {
     "bracelet": Category.jewelry,
     "ring": Category.jewelry,
     "pendant": Category.jewelry,
+    "hoop": Category.jewelry,
+    "stud": Category.jewelry,
     "anklet": Category.jewelry,
     "bangle": Category.jewelry,
     "brooch": Category.jewelry,
@@ -260,8 +264,6 @@ CATEGORY_MODIFIER_TERMS: dict[str, Category] = {
     "pouch": Category.bag,
     "choker": Category.jewelry,
     "charm": Category.jewelry,
-    "hoop": Category.jewelry,
-    "stud": Category.jewelry,
 }
 
 # Things a person wears that the taxonomy has no category for. A name or shelf
@@ -458,6 +460,8 @@ NON_APPAREL_TERMS: dict[str, NonApparelKind] = {
     "towel": NonApparelKind.home_goods,
     "washcloth": NonApparelKind.home_goods,
     "wash cloth": NonApparelKind.home_goods,
+    "flat sheet": NonApparelKind.home_goods,
+    "top sheet": NonApparelKind.home_goods,
     "sheet": NonApparelKind.home_goods,
     "pillowcase": NonApparelKind.home_goods,
     "pillow case": NonApparelKind.home_goods,
@@ -469,6 +473,7 @@ NON_APPAREL_TERMS: dict[str, NonApparelKind] = {
     "throw": NonApparelKind.home_goods,
     "coverlet": NonApparelKind.home_goods,
     "bedding": NonApparelKind.home_goods,
+    "bed set": NonApparelKind.home_goods,
     "mattress": NonApparelKind.home_goods,
     "bath": NonApparelKind.home_goods,
     "mat": NonApparelKind.home_goods,
@@ -536,6 +541,20 @@ NON_APPAREL_TERMS: dict[str, NonApparelKind] = {
     "yoga wheel": NonApparelKind.fitness_equipment,
     "yoga strap": NonApparelKind.fitness_equipment,
     "yoga mat": NonApparelKind.fitness_equipment,
+    "storage trunk": NonApparelKind.home_goods,
+}
+
+# The terms above that describe a thing rather than name it. A "Bath Slipper" is
+# a slipper and a "Sample Sale Slipper" a slipper; a "Waffle Knit Bath Towel" is
+# a towel. Only a term that names the thing stops a modifier from naming it as a
+# garment (see :func:`category_for`) and stops a shelf from protecting it (see
+# :func:`not_apparel`). A descriptor still rejects a title that names nothing
+# else, as "Complete Luxe Bath Bundle" does.
+_NON_APPAREL_DESCRIPTORS = frozenset({"bath", "sample", "shipping", "returns"})
+_NON_APPAREL_NOUNS = {
+    phrase: kind
+    for phrase, kind in NON_APPAREL_TERMS.items()
+    if phrase not in _NON_APPAREL_DESCRIPTORS
 }
 
 
@@ -615,6 +634,16 @@ def _inflections(phrase: str) -> tuple[str, ...]:
     return tuple(forms)
 
 
+# Names of things not worn that have a garment word inside them. Each claims
+# that word: "flat sheet" is taken out of a title before "flat" can make the
+# sheet a shoe, which filed 37 Cozy Earth and Lunya flat sheets as shoes.
+_NON_APPAREL_CLAIMS = {
+    phrase: kind
+    for phrase, kind in _NON_APPAREL_NOUNS.items()
+    if _phrase_in(phrase, CATEGORY_TERMS) is not None
+}
+
+
 class GarmentAttributes(TypedDict):
     """Every attribute derivable from a garment's own descriptive text.
 
@@ -679,14 +708,26 @@ def category_for(*texts: str | None) -> Category | None:
     why a text naming something worn that has no category (see
     :data:`UNCATEGORISED_TERMS`) ends the search with null rather than handing
     it on to them.
+
+    A modifier names nothing when the item's own name names a thing that is not
+    worn: "Cashmere Knit Throw" is a throw, not a sweater, and "Wedge Pillow" is
+    a pillow, not a shoe. Nor does a garment word inside a longer name for a
+    thing that is not worn: a "Flat Sheet" is a sheet and not a flat, a "Top
+    Sheet" not a top (see :data:`_NON_APPAREL_CLAIMS`).
     """
+    names_goods = _names_any(_NON_APPAREL_NOUNS, texts[:1])
     for group in (texts[:2], *((text,) for text in texts[2:])):
-        nouns = tuple(_without(text, CATEGORY_MODIFIER_TERMS) if text else None for text in group)
+        nouns = tuple(
+            _without(_without(text, _NON_APPAREL_CLAIMS), CATEGORY_MODIFIER_TERMS) if text else None
+            for text in group
+        )
         found = _first(CATEGORY_TERMS, nouns)
         if found is not None:
             return found
         if _names_any(UNCATEGORISED_TERMS, nouns):
             return None
+        if names_goods:
+            continue
         found = _first(CATEGORY_MODIFIER_TERMS, group)
         if found is not None:
             return found
@@ -737,19 +778,29 @@ def not_apparel(title: str, *shelves: str | None) -> NotApparel | None:
     """Why a record is not a fashion item, when its title says so.
 
     Conservative by construction, in two directions. Only the title can reject:
-    a department called "Home" also shelves the robes. The merchant's category
-    for the item can protect it as well as the title: a record is apparel if its
-    title, or any of ``shelves`` (the product type or feed category), names
-    something worn, however much else the title says. So a "Bath Robe" stays, a
-    "Bra Trio Bundle" stays, and a "Waffle Bath Wrap" filed under "Robes" stays.
-    A set or bundle is judged by what it names, and a "Bath Towel Set" names
-    only towels. A title naming neither is kept and left uncategorised, because
-    not knowing what a thing is does not show that it is not clothing.
+    a department called "Home" also shelves the robes. A title that names
+    something worn keeps the record however much else it says, so a "Bath Robe"
+    stays and a "Bra Trio Bundle" stays. A set or bundle is judged by what it
+    names, and a "Bath Towel Set" names only towels. A title naming neither is
+    kept and left uncategorised, because not knowing what a thing is does not
+    show that it is not clothing.
+
+    The merchant's category for the item (``shelves``: the product type or feed
+    category) protects a title that names nothing: "The Monty" filed under
+    "Womens Shoes" stays. It does not protect a title that names a thing that is
+    not worn, because one shelf holds many things: "Luxe Bath Towel" filed under
+    "Home > Bath > Towels & Robes" is still a towel. A descriptor such as "bath"
+    names nothing, so "Waffle Bath Kimono" is judged by the kimono.
 
     Tags and descriptions cannot protect. Both name what an item is sold beside
     as readily as the item: Alo tags its yoga blocks with its tops, and Cozy
     Earth tags its bedding bundles with its slippers.
     """
+    if category_for(title) is not None or _names_any(UNCATEGORISED_TERMS, (title,)):
+        return None
+    goods = _phrase_in(title, _NON_APPAREL_NOUNS)
+    if goods is not None:
+        return NotApparel(kind=NON_APPAREL_TERMS[goods], phrase=goods)
     texts = (title, *shelves)
     if category_for(*texts) is not None or _names_any(UNCATEGORISED_TERMS, texts):
         return None

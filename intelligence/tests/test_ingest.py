@@ -17,7 +17,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.genesis_api.models import Brand, IngestionFailure, Offer, OfferSize, Product
-from api.genesis_api.models.enums import Category, ColorFamily, Provenance, SizeSystem
+from api.genesis_api.models.enums import (
+    AttributeSource,
+    Category,
+    ColorFamily,
+    Provenance,
+    SizeSystem,
+)
 from api.genesis_api.writer import WriteSpec, write
 from intelligence.catalog.connectors.affiliate_feed import (
     RAKUTEN_COLUMNS,
@@ -356,7 +362,10 @@ def _before_the_rule(session: Session, records: list[dict[str, object]]) -> str:
     disguised = _public().normalize([{**record, "title": "Placeholder Tee"} for record in records])
     titles = {str(record["id"]): str(record["title"]) for record in records}
     disguised.products = [
-        replace(product, title=titles[product.source_id.split(":")[0]])
+        replace(
+            product,
+            title=titles.get(product.source_id) or titles[product.source_id.rsplit(":", 1)[0]],
+        )
         for product in disguised.products
     ]
     ingest(session, disguised)
@@ -450,6 +459,75 @@ def test_removal_is_scoped_to_the_source_that_turned_the_record_away(session: Se
     ingest(session, _public().normalize(records))
 
     assert _products_of(session, elsewhere.source) == {"9"}
+
+
+def _label(session: Session, source: str, source_id: str, label_source: AttributeSource) -> None:
+    product_id = product_id_for(session, source, source_id)
+    assert product_id is not None
+    value_id = write(
+        session,
+        [
+            WriteSpec(
+                entity="TaxonomyValue",
+                natural_key={"namespace": "detail", "value": "waffle"},
+                values={"label": "Waffle"},
+            )
+        ],
+    )[0].id
+    write(
+        session,
+        [
+            WriteSpec(
+                entity="ProductAttribute",
+                natural_key={"product_id": product_id, "value_id": value_id},
+                values={"source": label_source, "confidence": 0.9},
+            )
+        ],
+    )
+
+
+def test_removal_never_takes_a_label_a_person_or_a_model_added(session: Session) -> None:
+    """Attributes cascade with their product, so a product someone labelled is
+    not the feed's alone to delete. One the feed labelled from its own fields
+    still is."""
+    records = [
+        _public_record(9, "Luxe Bath Towels"),
+        _public_record(12, "Nantucket Washcloths"),
+        _public_record(13, "Ribbed Terry Hand Towels"),
+        _public_record(14, "Waffle Bath Sheets"),
+    ]
+    source = _before_the_rule(session, records)
+    _label(session, source, "9", AttributeSource.human_label)
+    _label(session, source, "12", AttributeSource.model_vision)
+    _label(session, source, "13", AttributeSource.model_text)
+    _label(session, source, "14", AttributeSource.source_field)
+
+    report = ingest(session, _public().normalize(records))
+
+    assert report.products_removed == 1
+    assert _products_of(session, source) == {"9", "12", "13"}
+
+
+def test_a_record_id_containing_a_colon_is_not_mistaken_for_a_colourway(
+    session: Session,
+) -> None:
+    """SKUs "A" and "A:B" are two records. Turning "A" away must not delete the
+    product "A:B" this run is writing, nor the retired colourway "A:B:red" of the
+    kept record "A:B"; and attributing that colourway must not guess by cutting
+    at the last colon, which named no rejected record and rolled the run back."""
+    shirt_before = {**_public_record(0, "Linen Shirt", "Red", "Blue"), "id": "A:B"}
+    shirt_now = {**_public_record(0, "Linen Shirt", "Blue", "Green"), "id": "A:B"}
+    towel = {**_public_record(0, "Luxe Bath Towels"), "id": "A"}
+    napkins = {**_public_record(0, "Linen Napkins", "Ivory"), "id": "C:D"}
+    source = _before_the_rule(session, [towel, shirt_before, napkins])
+    kept_shirt = product_id_for(session, source, "A:B:blue")
+    assert _products_of(session, source) == {"A", "A:B:red", "A:B:blue", "C:D"}
+
+    report = ingest(session, _public().normalize([towel, shirt_now, napkins]))
+
+    assert report.products_removed == 2
+    assert _products_of(session, source) == {"A:B:red", "A:B:blue", "A:B:green"}
+    assert product_id_for(session, source, "A:B:blue") == kept_shirt, "updated, not recreated"
 
 
 def test_per_size_availability_survives_ingestion(session: Session) -> None:

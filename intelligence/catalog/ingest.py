@@ -11,9 +11,15 @@ first is in :func:`_retire_sizes`: an offer's sizes are a set the source
 restates in full each run, so the sizes it stopped stating are removed beside
 the writer. The second is in :func:`_remove_rejected`: a record the connector
 now turns away as not apparel may have been written by a run before the rule
-existed, and upserting never takes it back out. Both are scoped to what this
-run's source wrote and to rows the feed itself wrote, so neither can reach a
-row a person or an agent wrote.
+existed, and upserting never takes it back out.
+
+The two are guarded differently, because the rows differ. ``_retire_sizes``
+deletes only size rows of offers this run has just written; ``OfferSize``
+records no provenance, so what it rests on is that an offer's sizes are the
+feed's to restate. ``_remove_rejected`` deletes only products the feed wrote
+(``provenance = feed_sync``), and skips any product carrying an offer or a
+long-tail attribute from another writer, so it cannot take a person's or a
+model's work with it.
 
 Failures are quarantined, never dropped. A run reports what it wrote and what it
 could not read, so a source changing shape shows up as a number instead of as a
@@ -31,8 +37,8 @@ import structlog
 from sqlalchemy import ARRAY, Integer, Table, Text, any_, delete, exists, func, literal, select
 from sqlalchemy.orm import Session
 
-from api.genesis_api.models import Offer, OfferSize, Product
-from api.genesis_api.models.enums import Provenance
+from api.genesis_api.models import Offer, OfferSize, Product, ProductAttribute
+from api.genesis_api.models.enums import AttributeSource, Provenance
 from api.genesis_api.writer import WriteSpec, write
 from intelligence.catalog.normalized import (
     FILTER_STAGE,
@@ -132,9 +138,16 @@ def _remove_rejected(session: Session, result: NormalizationResult, report: Inge
 
     A product belongs to a record when its ``source_id`` is the record's id or
     starts with it and a colon, the form ``NormalizedProduct`` documents for a
-    record split into colourways. Only products the feed wrote are touched
-    (``provenance = feed_sync``), and not one that carries an offer anything
-    else wrote, so nothing a person or an agent recorded is ever deleted.
+    record split into colourways. Record ids may contain colons themselves
+    (a SKU "A" beside a SKU "A:B"), so a product is attributed to the longest
+    record id that matches it among every record this run saw, and removed only
+    when that record was rejected. A product this run is writing is never
+    removed, whatever its id looks like.
+
+    Only products the feed wrote are touched (``provenance = feed_sync``), and
+    not one that carries anything another writer added to it: an offer not from
+    the feed, or a long-tail attribute a person or a model labelled. Those rows
+    hang off the product and would go with it.
 
     Offers go first, because ``fk_offers_product_id`` declares no ``ON DELETE``;
     the schema's cascades take sizes, images, materials and attributes. Each
@@ -142,15 +155,26 @@ def _remove_rejected(session: Session, result: NormalizationResult, report: Inge
     source, so a false positive is readable in the run's log rather than only
     as a product that went missing.
     """
-    by_source: dict[str, list[str]] = collections.defaultdict(list)
+    rejected_by_source: dict[str, list[str]] = collections.defaultdict(list)
+    seen_by_source: dict[str, set[str]] = collections.defaultdict(set)
     for record, stage, _ in result.failures:
+        seen_by_source[record.source].add(record.source_id)
         if stage == FILTER_STAGE:
-            by_source[record.source].append(record.source_id)
+            rejected_by_source[record.source].append(record.source_id)
+    written_by_source: dict[str, set[str]] = collections.defaultdict(set)
+    for product in result.products:
+        written_by_source[product.source].add(product.source_id)
+        # A written product's record is its own id or, split per colourway, the
+        # id before its last colon: the suffix never contains one.
+        seen_by_source[product.source].add(product.source_id)
+        seen_by_source[product.source].add(product.source_id.rsplit(":", 1)[0])
+
     products = cast(Table, Product.__table__)
     offers = cast(Table, Offer.__table__)
-    for source, record_ids in by_source.items():
+    attributes = cast(Table, ProductAttribute.__table__)
+    for source, record_ids in rejected_by_source.items():
         prefixes = [_like_escaped(record_id) + ":%" for record_id in record_ids]
-        doomed = session.execute(
+        candidates = session.execute(
             select(products.c.id, products.c.source_id, products.c.title).where(
                 products.c.source == source,
                 products.c.provenance == Provenance.feed_sync,
@@ -160,8 +184,19 @@ def _remove_rejected(session: Session, result: NormalizationResult, report: Inge
                     offers.c.product_id == products.c.id,
                     offers.c.provenance != Provenance.feed_sync,
                 ),
+                ~exists().where(
+                    attributes.c.product_id == products.c.id,
+                    attributes.c.source != AttributeSource.source_field,
+                ),
             )
         ).all()
+        known = seen_by_source[source]
+        owners = {row.id: _owner(row.source_id, known) for row in candidates}
+        doomed = [
+            row
+            for row in candidates
+            if row.source_id not in written_by_source[source] and owners[row.id] in result.rejected
+        ]
         if not doomed:
             continue
         product_ids = [row.id for row in doomed]
@@ -175,14 +210,7 @@ def _remove_rejected(session: Session, result: NormalizationResult, report: Inge
             delete(products).where(products.c.id == any_(literal(product_ids, ARRAY(Integer))))
         )
         report.products_removed += len(product_ids)
-        phrases = collections.Counter(
-            result.rejected[
-                row.source_id
-                if row.source_id in result.rejected
-                else row.source_id.rsplit(":", 1)[0]
-            ].phrase
-            for row in doomed
-        )
+        phrases = collections.Counter(result.rejected[owners[row.id]].phrase for row in doomed)
         log.info(
             "non_apparel_removed",
             source=source,
@@ -191,6 +219,22 @@ def _remove_rejected(session: Session, result: NormalizationResult, report: Inge
             by_phrase=dict(phrases.most_common()),
             titles=sorted({row.title for row in doomed}),
         )
+
+
+def _owner(product_source_id: str, record_ids: set[str]) -> str:
+    """The record a product id belongs to: the longest id that is it or its prefix.
+
+    Always found for a product the removal query matched, because the query
+    matched it on one of the rejected ids, and those are among ``record_ids``.
+    """
+    return max(
+        (
+            record_id
+            for record_id in record_ids
+            if product_source_id == record_id or product_source_id.startswith(f"{record_id}:")
+        ),
+        key=len,
+    )
 
 
 def _like_escaped(text: str) -> str:

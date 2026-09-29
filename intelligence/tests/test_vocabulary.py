@@ -320,6 +320,7 @@ def test_tags_and_descriptions_do_not_outrank_a_modifier_in_the_name() -> None:
         ("Striped Linen Throw Pillow", NonApparelKind.home_goods),
         ("Soft-Wash Cotton Quilted Shams", NonApparelKind.home_goods),
         ("Bamboo Duvet Cover", NonApparelKind.home_goods),
+        ("The Bed Set", NonApparelKind.home_goods),
         ("Bubble Cuddle Blanket", NonApparelKind.home_goods),
         ("Down Alternative Throw", NonApparelKind.home_goods),
         ("Waterfront Coverlet", NonApparelKind.home_goods),
@@ -430,8 +431,98 @@ def test_anything_the_record_says_is_worn_protects_it(title: str, shelf: str | N
 def test_only_the_title_can_reject() -> None:
     """A shelf protects but never accuses: Hill House files robes under Home."""
     assert not_apparel("The Hotel Robe", "Home") is None
-    assert not_apparel("Waffle Bath Wrap") is not None
-    assert not_apparel("Waffle Bath Wrap", "Bath") is not None
+    assert not_apparel("Complete Luxe Bath Bundle") is not None
+    assert not_apparel("Complete Luxe Bath Bundle", "Bath") is not None
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["The Towel Wrap", "Pima After Bath Wrap in Baltic Blue", "Luxe Bath Wrap", "Waffle Bath Wrap"],
+)
+def test_bath_and_towel_wraps_are_worn(title: str) -> None:
+    """Decided 2026-09-29: a wrap is worn, and the rule of 2026-09-27 keeps
+    garments. It stands on its own name, with no shelf needed."""
+    assert not_apparel(title) is None
+    assert category_for(title) is Category.sleepwear
+
+
+@pytest.mark.parametrize(
+    ("title", "phrase"),
+    [
+        ("Cashmere Knit Throw", "throw"),
+        ("Waffle Knit Bath Towel", "towel"),
+        ("Teddy Sherpa Throw", "throw"),
+        ("Wedge Pillow", "pillow"),
+        ("Storage Trunk", "storage trunk"),
+    ],
+)
+def test_a_modifier_does_not_make_a_garment_of_what_the_title_names(
+    title: str, phrase: str
+) -> None:
+    """Knit, teddy, wedge and trunk describe a garment only when the title names
+    no other thing: these are a throw, a towel, a pillow and a trunk."""
+    assert category_for(title) is None
+    rejected = not_apparel(title)
+    assert rejected is not None
+    assert rejected.phrase == phrase
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Bath Slipper", Category.shoes),
+        ("Sample Sale Slipper", Category.shoes),
+        ("Core Trunks 12-Pack", Category.lingerie),
+        ("Cable Knit Crewneck", Category.sweater),
+    ],
+)
+def test_a_descriptor_does_not_stop_a_modifier(title: str, expected: Category) -> None:
+    assert category_for(title) is expected
+    assert not_apparel(title) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "phrase"),
+    [
+        ("Bamboo Flat Sheet", "flat sheet"),
+        ("Soft-Wash Cotton Flat Sheet", "flat sheet"),
+        ("The Top Sheet", "top sheet"),
+    ],
+)
+def test_a_name_for_a_thing_not_worn_claims_the_garment_word_inside_it(
+    title: str, phrase: str
+) -> None:
+    """Measured on the sample: "flat" filed 37 flat sheets as shoes and "top" four
+    top sheets as tops, and the garment it named kept every one of them."""
+    assert category_for(title) is None
+    rejected = not_apparel(title)
+    assert rejected is not None
+    assert rejected.phrase == phrase
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Ballet Flat", Category.shoes),
+        ("Crop Top", Category.top),
+        ("Crystal Crossover Hoops Ornament Bauble in Gold", Category.jewelry),
+        ("Hill House x Studs Gift Box", Category.jewelry),
+    ],
+)
+def test_the_garment_is_kept_when_no_longer_name_claims_it(title: str, expected: Category) -> None:
+    """Hoops and studs are nouns: jewelry in a gift box or a bauble is the
+    jewelry."""
+    assert category_for(title) is expected
+    assert not_apparel(title) is None
+
+
+def test_a_shelf_cannot_protect_a_title_that_names_a_thing_not_worn() -> None:
+    """One shelf holds many things, so it vouches only for a title that names
+    nothing itself."""
+    assert not_apparel("Luxe Bath Towel", "Home > Bath > Towels & Robes") is not None
+    assert not_apparel("Cashmere Knit Throw", "Sweaters") is not None
+    assert not_apparel("The Monty", "Womens Shoes") is None
+    assert not_apparel("Soft Bath Essentials", "Robes") is None
 
 
 def test_a_shelf_is_a_category_not_a_tag() -> None:

@@ -240,3 +240,13 @@ enum. Recorded on [[catalog-sources]], with the measured effect on
 sample ingested end to end, ~98.5% estimated for the hosted catalog after a
 re-ingest. Hair accessories and Rothy's model-name titles are left null and
 listed on [[open-decisions]].
+
+## 2026-09-29 — bath and towel wraps are garments; removal guards corrected
+
+Bath and towel wraps are worn, so under the 2026-09-27 rule they are kept, as
+sleepwear ([[catalog-sources]]). Review of PR #66 also found the page overstated
+what in-run removal protects: it guarded offers from other writers but not
+long-tail attributes a person or a model added, which cascade with the product.
+The guard now covers both, and the page says what `_retire_sizes` actually rests
+on: only the size rows of offers the same run has just written, since size rows
+record no provenance.
