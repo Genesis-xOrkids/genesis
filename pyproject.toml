@@ -4,14 +4,14 @@ version = "0.1.0"
 description = "Genesis - AI fashion stylist (B2C) and trend & design studio (B2B)"
 requires-python = ">=3.12"
 dependencies = [
-    "sqlalchemy>=2.0.54",
+    "sqlalchemy>=2.1.1",
     "alembic>=1.20.0",
     "psycopg[binary]>=3.3.6",
     "pgvector>=0.3.6",
     "strawberry-graphql>=0.327.7",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    "anthropic>=1.7.0",
+    "anthropic>=1.9.0",
     "structlog>=24.4.0",
     "protego>=0.7.0",
 ]
@@ -29,7 +29,7 @@ embeddings = [
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.0",
-    "ruff>=0.16.8",
+    "ruff>=0.16.9",
     "mypy>=1.14.0",
 ]
 
