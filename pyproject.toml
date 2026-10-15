@@ -4,14 +4,14 @@ version = "0.1.0"
 description = "Genesis - AI fashion stylist (B2C) and trend & design studio (B2B)"
 requires-python = ">=3.12"
 dependencies = [
-    "sqlalchemy>=2.0.54",
+    "sqlalchemy>=2.1.4",
     "alembic>=1.20.0",
     "psycopg[binary]>=3.3.6",
-    "pgvector>=0.3.6",
-    "strawberry-graphql>=0.327.7",
-    "pydantic>=2.10.0",
+    "pgvector>=0.5.1",
+    "strawberry-graphql>=0.334.2",
+    "pydantic>=2.14.1",
     "pydantic-settings>=2.7.0",
-    "anthropic>=1.7.0",
+    "anthropic>=1.13.0",
     "structlog>=24.4.0",
     "protego>=0.7.0",
 ]
@@ -21,16 +21,16 @@ dependencies = [
 # pipelines never need torch, and making every deploy carry two gigabytes of it
 # to serve a GraphQL query is the wrong trade.
 embeddings = [
-    "torch>=2.6.0",
+    "torch>=2.14.1",
     "open-clip-torch>=2.32.0",
-    "transformers>=5.17.0",
+    "transformers>=5.19.0",
     "pillow>=11.0.0",
 ]
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.0",
-    "ruff>=0.16.8",
-    "mypy>=1.14.0",
+    "ruff>=0.17.0",
+    "mypy>=2.4.0",
 ]
 
 [tool.uv]
